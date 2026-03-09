@@ -1,0 +1,75 @@
+version: 1
+updated_at: "2026-03-09"
+
+role_families:
+  include:
+    - backend
+    - data
+    - ml_ai
+    - devops_platform
+    - qa_test
+  soft_include:
+    - full_stack
+    - security
+  exclude_domains:
+    - mechanical
+    - civil
+    - electrician
+    - plumber
+    - nurse
+    - artist
+    - phd
+    - thesis
+
+regions:
+  include_codes:
+    - "01" # Stockholm
+    - "14" # Vastra Gotaland
+    - "12" # Skane
+    - "03" # Uppsala
+  include_names:
+    - stockholm
+    - goteborg
+    - malmo
+    - uppsala
+
+remote:
+  preference: remote_or_hybrid
+  remote_keywords:
+    - remote
+    - distans
+    - hybrid
+
+language:
+  preferred:
+    - en
+    - mixed
+
+watched_companies:
+  - spotify
+  - klarna
+  - nordea
+  - volvo
+  - ericsson
+
+skills:
+  stretch:
+    - docker
+    - kubernetes
+    - terraform
+    - aws
+    - azure
+    - python
+    - react
+
+scoring:
+  minimum_target_score: 25
+  noise_threshold: 0
+  title_allowlist_weight: 35
+  role_family_weight: 25
+  company_watch_weight: 20
+  region_weight: 10
+  language_weight: 10
+  remote_weight: 10
+  stretch_weight: 5
+  exclusion_penalty: 60

@@ -1,0 +1,268 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Navigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { AppLayout } from "@/components/AppLayout";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StaggerContainer, FadeUp } from "@/components/motion";
+import { Plus, X, Zap, Target, BookOpen, TrendingUp, Check, AlertCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+const PROFICIENCY_OPTIONS = ["strong", "learning", "interested"] as const;
+const PROFICIENCY_COLORS: Record<string, string> = {
+  strong: "bg-accent/10 text-accent border-accent/20",
+  learning: "bg-primary/10 text-primary border-primary/20",
+  interested: "bg-muted text-muted-foreground border-border",
+};
+
+export default function SkillGap() {
+  const { user, loading } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [newSkill, setNewSkill] = useState("");
+  const [newProf, setNewProf] = useState<string>("learning");
+
+  // Fetch user skills
+  const { data: userSkills } = useQuery({
+    queryKey: ["user-skills", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("user_skills")
+        .select("*")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: true });
+      return data ?? [];
+    },
+  });
+
+  // Fetch market skills from latest digest
+  const { data: marketSkills } = useQuery({
+    queryKey: ["market-skills"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("weekly_digests")
+        .select("digest_json")
+        .order("period_end", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!data) return { top: [], rising: [] };
+      const d = data.digest_json as any;
+      return {
+        top: (d?.top_skills ?? []) as Array<{ skill: string; count: number }>,
+        rising: (d?.rising_skills ?? []) as Array<{ skill: string; pct_change: number }>,
+      };
+    },
+  });
+
+  const addSkill = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("user_skills").insert({
+        user_id: user!.id,
+        skill: newSkill.trim(),
+        proficiency: newProf,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-skills"] });
+      setNewSkill("");
+      toast({ title: "Skill added" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const removeSkill = useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase.from("user_skills").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user-skills"] }),
+  });
+
+  const updateProficiency = useMutation({
+    mutationFn: async ({ id, proficiency }: { id: number; proficiency: string }) => {
+      const { error } = await supabase.from("user_skills").update({ proficiency }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["user-skills"] }),
+  });
+
+  if (!loading && !user) return <Navigate to="/auth" replace />;
+
+  const mySkillNames = new Set((userSkills ?? []).map((s) => s.skill.toLowerCase()));
+  const topMarket = marketSkills?.top ?? [];
+  const risingMarket = marketSkills?.rising ?? [];
+
+  // Categorize market skills
+  const strongSkills = topMarket.filter((s) =>
+    userSkills?.some((u) => u.skill.toLowerCase() === s.skill.toLowerCase() && u.proficiency === "strong")
+  );
+  const missingSkills = topMarket.filter((s) => !mySkillNames.has(s.skill.toLowerCase())).slice(0, 10);
+  const risingIMiss = risingMarket.filter((s) => !mySkillNames.has(s.skill.toLowerCase())).slice(0, 8);
+  const learnNext = [...missingSkills.slice(0, 3), ...risingIMiss.slice(0, 2)].slice(0, 5);
+
+  return (
+    <AppLayout>
+      <StaggerContainer className="space-y-6">
+        <FadeUp>
+          <div>
+            <h1 className="font-mono text-xl font-bold tracking-tight">Skill Gap Tracker</h1>
+            <p className="text-[11px] text-muted-foreground">Compare your skills against market demand</p>
+          </div>
+        </FadeUp>
+
+        {/* Add skill */}
+        <FadeUp>
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Add a skill (e.g. React, Python, Kubernetes)..."
+              value={newSkill}
+              onChange={(e) => setNewSkill(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && newSkill.trim()) addSkill.mutate(); }}
+              className="h-8 max-w-xs text-xs"
+            />
+            <Select value={newProf} onValueChange={setNewProf}>
+              <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PROFICIENCY_OPTIONS.map((p) => (
+                  <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="h-8 text-xs gap-1" onClick={() => addSkill.mutate()} disabled={!newSkill.trim() || addSkill.isPending}>
+              <Plus className="h-3 w-3" /> Add
+            </Button>
+          </div>
+        </FadeUp>
+
+        {/* My skills */}
+        {userSkills && userSkills.length > 0 && (
+          <FadeUp>
+            <Card className="border-border/50">
+              <CardContent className="p-4">
+                <h2 className="mb-3 flex items-center gap-2 font-mono text-xs font-semibold">
+                  <Target className="h-3.5 w-3.5 text-primary" /> My Skills
+                </h2>
+                <div className="flex flex-wrap gap-1.5">
+                  {userSkills.map((s) => (
+                    <Badge
+                      key={s.id}
+                      variant="outline"
+                      className={`gap-1 text-[10px] cursor-pointer ${PROFICIENCY_COLORS[s.proficiency]}`}
+                      onClick={() => {
+                        const next = PROFICIENCY_OPTIONS[(PROFICIENCY_OPTIONS.indexOf(s.proficiency as any) + 1) % 3];
+                        updateProficiency.mutate({ id: s.id, proficiency: next });
+                      }}
+                    >
+                      {s.skill}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeSkill.mutate(s.id); }}
+                        className="ml-0.5 hover:text-destructive"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+                <p className="mt-2 text-[10px] text-muted-foreground">Click a skill to cycle proficiency: strong → learning → interested</p>
+              </CardContent>
+            </Card>
+          </FadeUp>
+        )}
+
+        {/* Gap analysis grid */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <FadeUp>
+            <Card className="border-accent/20">
+              <CardContent className="p-4">
+                <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold text-accent">
+                  <Check className="h-3.5 w-3.5" /> Strong Match
+                </h3>
+                <p className="mb-2 text-[10px] text-muted-foreground">Skills you're strong in that the market wants</p>
+                <div className="space-y-1">
+                  {strongSkills.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground italic">Add skills above to see matches</p>
+                  ) : strongSkills.map((s) => (
+                    <div key={s.skill} className="flex items-center justify-between">
+                      <span className="text-xs">{s.skill}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">{s.count} jobs</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </FadeUp>
+
+          <FadeUp>
+            <Card className="border-destructive/20">
+              <CardContent className="p-4">
+                <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold text-destructive">
+                  <AlertCircle className="h-3.5 w-3.5" /> Missing
+                </h3>
+                <p className="mb-2 text-[10px] text-muted-foreground">In-demand skills you haven't added</p>
+                <div className="space-y-1">
+                  {missingSkills.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground italic">Great coverage!</p>
+                  ) : missingSkills.map((s) => (
+                    <div key={s.skill} className="flex items-center justify-between">
+                      <span className="text-xs">{s.skill}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">{s.count} jobs</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </FadeUp>
+
+          <FadeUp>
+            <Card className="border-primary/20">
+              <CardContent className="p-4">
+                <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold text-primary">
+                  <TrendingUp className="h-3.5 w-3.5" /> Rising
+                </h3>
+                <p className="mb-2 text-[10px] text-muted-foreground">Trending skills you don't have yet</p>
+                <div className="space-y-1">
+                  {risingIMiss.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground italic">You're ahead of trends!</p>
+                  ) : risingIMiss.map((s) => (
+                    <div key={s.skill} className="flex items-center justify-between">
+                      <span className="text-xs">{s.skill}</span>
+                      <span className="font-mono text-[10px] text-accent">+{isFinite(s.pct_change) ? Math.round(s.pct_change) : 0}%</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </FadeUp>
+
+          <FadeUp>
+            <Card className="border-border/40">
+              <CardContent className="p-4">
+                <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold">
+                  <BookOpen className="h-3.5 w-3.5" /> Learn Next
+                </h3>
+                <p className="mb-2 text-[10px] text-muted-foreground">Top recommendations based on gaps + trends</p>
+                <div className="space-y-1.5">
+                  {learnNext.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground italic">Add your skills to get recommendations</p>
+                  ) : learnNext.map((s, i) => (
+                    <div key={s.skill} className="flex items-center gap-2">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 font-mono text-[9px] text-primary">{i + 1}</span>
+                      <span className="text-xs font-medium">{s.skill}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </FadeUp>
+        </div>
+      </StaggerContainer>
+    </AppLayout>
+  );
+}

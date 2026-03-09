@@ -1,0 +1,1 @@
+"""SweJobs ingestion pipeline package."""

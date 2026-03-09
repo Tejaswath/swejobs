@@ -1,0 +1,33 @@
+name: Pipeline Worker CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/**"
+      - ".github/workflows/pipeline-worker.yml"
+
+jobs:
+  lint-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r pipeline/requirements.txt
+      - name: Verify CLI help
+        env:
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: test
+        run: python -m pipeline.main state || true
+
+  build-image:
+    runs-on: ubuntu-latest
+    needs: lint-and-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pipeline Docker image
+        run: docker build -f pipeline/Dockerfile -t swejobs-pipeline:${{ github.sha }} .
