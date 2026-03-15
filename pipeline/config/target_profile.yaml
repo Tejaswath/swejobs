@@ -1,37 +1,81 @@
-version: 1
-updated_at: "2026-03-09"
+version: 4
+updated_at: "2026-03-10"
 
 role_families:
   include:
+    - software_engineering
     - backend
-    - data
-    - ml_ai
+    - frontend
+    - mobile
+    - ai_ml
+    - data_engineering
     - devops_platform
     - qa_test
+    - security
   soft_include:
     - full_stack
-    - security
   exclude_domains:
     - mechanical
     - civil
     - electrician
     - plumber
     - nurse
+    - sjuksköterska
+    - sjukskoterska
+    - distriktsköterska
+    - distriktsskoterska
+    - barnmorska
+    - fysioterapeut
+    - tandhygienist
+    - farmaceut
+    - socialpedagog
+    - kommunikatör
+    - kommunikator
+    - chaufför
+    - chauffor
+    - frisör
+    - frisor
     - artist
     - phd
+    - postdoktor
+    - postdoctoral
+    - biologi
+    - doktorand
+    - universitetslektor
+    - lektor
     - thesis
+    - hvb
+    - stödboende
+    - stodboende
+    - vård
+    - vard
+    - warehouse
+    - construction
+    - business developer
+    - marknadskoordinator
+    - product manager
+    - project manager
+    - engineering manager
+    - manager
+    - director
+    - technician
+    - tekniker
+    - accountant
+    - controller
+    - business analyst
+    - underhållsingenjör
+    - underhallsingenjor
+    - reläskyddsspecialist
+    - relaskyddsspecialist
+    - säljare
+    - saljare
+    - sales
+    - support
 
 regions:
-  include_codes:
-    - "01" # Stockholm
-    - "14" # Vastra Gotaland
-    - "12" # Skane
-    - "03" # Uppsala
-  include_names:
-    - stockholm
-    - goteborg
-    - malmo
-    - uppsala
+  # Empty = all Sweden by default.
+  include_codes: []
+  include_names: []
 
 remote:
   preference: remote_or_hybrid
@@ -45,13 +89,6 @@ language:
     - en
     - mixed
 
-watched_companies:
-  - spotify
-  - klarna
-  - nordea
-  - volvo
-  - ericsson
-
 skills:
   stretch:
     - docker
@@ -61,15 +98,54 @@ skills:
     - azure
     - python
     - react
+    - mlops
+    - machine learning
+    - data engineering
+
+company_maps:
+  tiers_file: company_tiers.yaml
+  aliases_file: company_aliases.yaml
+
+watched_companies:
+  - spotify
+  - klarna
+  - nordea
+  - volvo cars
+  - ericsson
+  - paypal
+  - saab
+  - avanza
+  - zalando
+  - frostbite
+  - kambi
+  - nordnet
+  - cisco
+  - amazon
+  - warner bros discovery
+  - electronic arts
 
 scoring:
-  minimum_target_score: 25
-  noise_threshold: 0
-  title_allowlist_weight: 35
-  role_family_weight: 25
+  minimum_target_score: 18
+  noise_threshold: -20
+  title_allowlist_weight: 18
+  role_family_weight: 14
+  soft_role_family_weight: 6
   company_watch_weight: 20
-  region_weight: 10
-  language_weight: 10
-  remote_weight: 10
-  stretch_weight: 5
+  main_company_tier_a_weight: 25
+  main_company_tier_b_weight: 15
+  main_company_tier_c_weight: 6
+  entry_graduate_weight: 22
+  entry_trainee_weight: 22
+  entry_junior_weight: 18
+  region_weight: 0
+  language_weight: 8
+  remote_weight: 6
+  fresh_weight: 8
+  stretch_weight: 4
+  senior_penalty: 34
+  years_3plus_penalty: 28
+  swedish_required_penalty: 22
+  citizenship_required_penalty: 28
+  security_clearance_penalty: 22
+  consultancy_penalty: 14
   exclusion_penalty: 60

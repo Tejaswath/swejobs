@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { pickLatestDigest, type DigestRow } from "@/lib/digest";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,31 +28,33 @@ export default function SkillGap() {
   const [newProf, setNewProf] = useState<string>("learning");
 
   // Fetch user skills
-  const { data: userSkills } = useQuery({
+  const { data: userSkills, error: userSkillsError } = useQuery({
     queryKey: ["user-skills", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("user_skills")
         .select("*")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: true });
+      if (error) throw error;
       return data ?? [];
     },
   });
 
   // Fetch market skills from latest digest
-  const { data: marketSkills } = useQuery({
+  const { data: marketSkills, error: marketSkillsError } = useQuery({
     queryKey: ["market-skills"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("weekly_digests")
-        .select("digest_json")
-        .order("period_end", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (!data) return { top: [], rising: [] };
-      const d = data.digest_json as any;
+        .select("id, period_start, period_end, generated_at, digest_json")
+        .order("generated_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
+      if (!latest) return { top: [], rising: [] };
+      const d = latest.digest_json as any;
       return {
         top: (d?.top_skills ?? []) as Array<{ skill: string; count: number }>,
         rising: (d?.rising_skills ?? []) as Array<{ skill: string; pct_change: number }>,
@@ -62,8 +64,9 @@ export default function SkillGap() {
 
   const addSkill = useMutation({
     mutationFn: async () => {
+      if (!user) throw new Error("Sign in required");
       const { error } = await supabase.from("user_skills").insert({
-        user_id: user!.id,
+        user_id: user.id,
         skill: newSkill.trim(),
         proficiency: newProf,
       });
@@ -79,6 +82,7 @@ export default function SkillGap() {
 
   const removeSkill = useMutation({
     mutationFn: async (id: number) => {
+      if (!user) throw new Error("Sign in required");
       const { error } = await supabase.from("user_skills").delete().eq("id", id);
       if (error) throw error;
     },
@@ -87,21 +91,71 @@ export default function SkillGap() {
 
   const updateProficiency = useMutation({
     mutationFn: async ({ id, proficiency }: { id: number; proficiency: string }) => {
+      if (!user) throw new Error("Sign in required");
       const { error } = await supabase.from("user_skills").update({ proficiency }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["user-skills"] }),
   });
 
-  if (!loading && !user) return <Navigate to="/auth" replace />;
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="space-y-2">
+          <h1 className="font-mono text-xl font-bold tracking-tight">Skill Gap Tracker</h1>
+          <p className="text-xs text-muted-foreground">Loading your skills...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
-  const mySkillNames = new Set((userSkills ?? []).map((s) => s.skill.toLowerCase()));
-  const topMarket = marketSkills?.top ?? [];
-  const risingMarket = marketSkills?.rising ?? [];
+  if (userSkillsError || marketSkillsError) {
+    const message =
+      (userSkillsError as Error | null)?.message ||
+      (marketSkillsError as Error | null)?.message ||
+      "Unknown query error";
+    return (
+      <AppLayout>
+        <div className="space-y-3 py-10">
+          <h1 className="font-mono text-xl font-bold tracking-tight">Skill Gap Tracker</h1>
+          <Card className="border-destructive/40">
+            <CardContent className="space-y-3 p-4">
+              <p className="text-sm font-medium text-destructive">Could not load skill-gap data.</p>
+              <p className="text-xs text-muted-foreground">{message}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void qc.invalidateQueries({ queryKey: ["user-skills"] });
+                  void qc.invalidateQueries({ queryKey: ["market-skills"] });
+                }}
+              >
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const mySkillNames = new Set(
+    (userSkills ?? [])
+      .map((s) => String(s.skill ?? "").trim().toLowerCase())
+      .filter((name) => name.length > 0),
+  );
+  const topMarket = (marketSkills?.top ?? []).filter((s) => typeof s.skill === "string" && s.skill.trim().length > 0);
+  const risingMarket = (marketSkills?.rising ?? []).filter(
+    (s) => typeof s.skill === "string" && s.skill.trim().length > 0,
+  );
 
   // Categorize market skills
   const strongSkills = topMarket.filter((s) =>
-    userSkills?.some((u) => u.skill.toLowerCase() === s.skill.toLowerCase() && u.proficiency === "strong")
+    userSkills?.some(
+      (u) =>
+        String(u.skill ?? "").toLowerCase() === s.skill.toLowerCase() &&
+        u.proficiency === "strong",
+    )
   );
   const missingSkills = topMarket.filter((s) => !mySkillNames.has(s.skill.toLowerCase())).slice(0, 10);
   const risingIMiss = risingMarket.filter((s) => !mySkillNames.has(s.skill.toLowerCase())).slice(0, 8);
@@ -118,28 +172,46 @@ export default function SkillGap() {
         </FadeUp>
 
         {/* Add skill */}
-        <FadeUp>
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Add a skill (e.g. React, Python, Kubernetes)..."
-              value={newSkill}
-              onChange={(e) => setNewSkill(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && newSkill.trim()) addSkill.mutate(); }}
-              className="h-8 max-w-xs text-xs"
-            />
-            <Select value={newProf} onValueChange={setNewProf}>
-              <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {PROFICIENCY_OPTIONS.map((p) => (
-                  <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button size="sm" className="h-8 text-xs gap-1" onClick={() => addSkill.mutate()} disabled={!newSkill.trim() || addSkill.isPending}>
-              <Plus className="h-3 w-3" /> Add
-            </Button>
-          </div>
-        </FadeUp>
+        {user ? (
+          <FadeUp>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Add a skill (e.g. React, Python, Kubernetes)..."
+                value={newSkill}
+                onChange={(e) => setNewSkill(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && newSkill.trim()) addSkill.mutate(); }}
+                className="h-8 max-w-xs text-xs"
+              />
+              <Select value={newProf} onValueChange={setNewProf}>
+                <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {PROFICIENCY_OPTIONS.map((p) => (
+                    <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-8 text-xs gap-1" onClick={() => addSkill.mutate()} disabled={!newSkill.trim() || addSkill.isPending}>
+                <Plus className="h-3 w-3" /> Add
+              </Button>
+            </div>
+          </FadeUp>
+        ) : (
+          <FadeUp>
+            <Card className="border-border/50">
+              <CardContent className="flex items-center justify-between gap-3 p-4">
+                <div>
+                  <p className="text-sm font-medium">Sign in to track your personal skill gap</p>
+                  <p className="text-xs text-muted-foreground">
+                    You can still view market-demand skills below.
+                  </p>
+                </div>
+                <Button size="sm" asChild>
+                  <a href="/auth">Sign in</a>
+                </Button>
+              </CardContent>
+            </Card>
+          </FadeUp>
+        )}
 
         {/* My skills */}
         {userSkills && userSkills.length > 0 && (

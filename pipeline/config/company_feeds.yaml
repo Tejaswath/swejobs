@@ -1,0 +1,199 @@
+updated_at: "2026-03-13"
+
+# v1 uses only feeds that were endpoint-verified during implementation.
+feeds:
+  - feed_key: spotify_lever
+    display_name: Spotify
+    provider: lever
+    slug_or_url: spotify
+    company_canonical: spotify
+    enabled: true
+    priority: 10
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - android
+      - backend
+      - frontend
+      - mobile
+      - software
+      - java
+      - kotlin
+      - fullstack
+
+  - feed_key: kambi_greenhouse
+    display_name: Kambi
+    provider: greenhouse
+    slug_or_url: kambi
+    company_canonical: kambi
+    enabled: true
+    priority: 20
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - java
+      - kotlin
+      - python
+
+  - feed_key: nordnet_teamtailor
+    display_name: Nordnet
+    provider: teamtailor
+    slug_or_url: https://career.nordnetab.com/
+    company_canonical: nordnet
+    enabled: true
+    priority: 25
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - cloud
+      - java
+      - kotlin
+      - python
+
+  - feed_key: avanza_teamtailor
+    display_name: Avanza
+    provider: teamtailor
+    slug_or_url: https://career.avanza.se/
+    company_canonical: avanza
+    enabled: true
+    priority: 30
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - cloud
+      - java
+      - kotlin
+      - python
+      - data
+      - infrastructure
+
+  - feed_key: wolt_greenhouse
+    display_name: Wolt
+    provider: greenhouse
+    slug_or_url: wolt
+    company_canonical: wolt
+    enabled: true
+    priority: 35
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - cloud
+      - java
+      - kotlin
+      - python
+      - data
+
+  - feed_key: storytel_teamtailor
+    display_name: Storytel
+    provider: teamtailor
+    slug_or_url: https://jobs.storytel.com/
+    company_canonical: storytel
+    enabled: true
+    priority: 40
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - cloud
+      - java
+      - kotlin
+      - python
+      - data
+      - android
+
+  - feed_key: qliro_teamtailor
+    display_name: Qliro
+    provider: teamtailor
+    slug_or_url: https://career.qliro.com/
+    company_canonical: qliro
+    enabled: true
+    priority: 45
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - cloud
+      - java
+      - kotlin
+      - python
+      - data
+
+  - feed_key: fortnox_teamtailor
+    display_name: Fortnox
+    provider: teamtailor
+    slug_or_url: https://fortnoxab.teamtailor.com/
+    company_canonical: fortnox
+    enabled: true
+    priority: 50
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - cloud
+      - java
+      - kotlin
+      - python
+      - data
+      - machine learning
+      - analytics

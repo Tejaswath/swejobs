@@ -82,6 +82,12 @@ export type Database = {
       jobs: {
         Row: {
           application_deadline: string | null
+          career_stage: string
+          career_stage_confidence: number
+          citizenship_required: boolean
+          company_canonical: string | null
+          company_tier: string
+          consultancy_flag: boolean
           description: string | null
           employer_id: string | null
           employer_name: string | null
@@ -91,6 +97,7 @@ export type Database = {
           ingested_at: string | null
           is_active: boolean | null
           is_noise: boolean
+          is_grad_program: boolean
           is_relevant: boolean | null
           is_target_role: boolean
           lang: string | null
@@ -107,13 +114,27 @@ export type Database = {
           remote_flag: boolean | null
           removed_at: string | null
           role_family: string
+          security_clearance_required: boolean
+          is_direct_company_source: boolean
+          source_name: string
+          source_company_key: string | null
+          source_kind: string | null
+          source_provider: string | null
           source_url: string | null
+          swedish_required: boolean
           ssyk_code: string | null
           updated_at: string | null
           working_hours: string | null
+          years_required_min: number | null
         }
         Insert: {
           application_deadline?: string | null
+          career_stage?: string
+          career_stage_confidence?: number
+          citizenship_required?: boolean
+          company_canonical?: string | null
+          company_tier?: string
+          consultancy_flag?: boolean
           description?: string | null
           employer_id?: string | null
           employer_name?: string | null
@@ -123,6 +144,7 @@ export type Database = {
           ingested_at?: string | null
           is_active?: boolean | null
           is_noise?: boolean
+          is_grad_program?: boolean
           is_relevant?: boolean | null
           is_target_role?: boolean
           lang?: string | null
@@ -139,13 +161,27 @@ export type Database = {
           remote_flag?: boolean | null
           removed_at?: string | null
           role_family?: string
+          security_clearance_required?: boolean
+          is_direct_company_source?: boolean
+          source_name?: string
+          source_company_key?: string | null
+          source_kind?: string | null
+          source_provider?: string | null
           source_url?: string | null
+          swedish_required?: boolean
           ssyk_code?: string | null
           updated_at?: string | null
           working_hours?: string | null
+          years_required_min?: number | null
         }
         Update: {
           application_deadline?: string | null
+          career_stage?: string
+          career_stage_confidence?: number
+          citizenship_required?: boolean
+          company_canonical?: string | null
+          company_tier?: string
+          consultancy_flag?: boolean
           description?: string | null
           employer_id?: string | null
           employer_name?: string | null
@@ -155,6 +191,7 @@ export type Database = {
           ingested_at?: string | null
           is_active?: boolean | null
           is_noise?: boolean
+          is_grad_program?: boolean
           is_relevant?: boolean | null
           is_target_role?: boolean
           lang?: string | null
@@ -171,10 +208,18 @@ export type Database = {
           remote_flag?: boolean | null
           removed_at?: string | null
           role_family?: string
+          security_clearance_required?: boolean
+          is_direct_company_source?: boolean
+          source_name?: string
+          source_company_key?: string | null
+          source_kind?: string | null
+          source_provider?: string | null
           source_url?: string | null
+          swedish_required?: boolean
           ssyk_code?: string | null
           updated_at?: string | null
           working_hours?: string | null
+          years_required_min?: number | null
         }
         Relationships: []
       }

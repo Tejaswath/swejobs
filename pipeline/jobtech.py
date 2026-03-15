@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import requests
@@ -47,6 +48,22 @@ class JobTechClient:
             retriable_exceptions=(requests.RequestException, requests.HTTPError),
         )
 
+    @staticmethod
+    def _format_stream_datetime(value: str | None, *, default_minutes_back: int = 5) -> str:
+        if not value:
+            value = (datetime.now(UTC) - timedelta(minutes=default_minutes_back)).isoformat()
+
+        text = str(value).strip().replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            # Already in API-friendly shape or unparseable; trim to second precision.
+            return text[:19]
+
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(UTC).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
     def iter_snapshot(self, limit: int | None = None) -> Generator[dict[str, Any], None, None]:
         """Yield ads from snapshot endpoint supporting NDJSON and JSON payloads."""
         response = self._get(self.snapshot_url, stream=True)
@@ -54,19 +71,16 @@ class JobTechClient:
 
         emitted = 0
         content_type = (response.headers.get("content-type") or "").lower()
-        if "json" in content_type and "ndjson" not in content_type:
-            payload = response.json()
-            candidates = []
-            if isinstance(payload, list):
-                candidates = payload
-            elif isinstance(payload, dict):
-                for key in ("ads", "items", "hits", "data"):
-                    value = payload.get(key)
-                    if isinstance(value, list):
-                        candidates = value
-                        break
+        if "ndjson" in content_type or "jsonl" in content_type:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse snapshot NDJSON line")
+                    continue
 
-            for item in candidates:
                 if isinstance(item, dict):
                     yield item
                     emitted += 1
@@ -74,35 +88,85 @@ class JobTechClient:
                         return
             return
 
-        for line in response.iter_lines(decode_unicode=True):
-            if not line:
-                continue
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse snapshot NDJSON line")
-                continue
+        # Stream-parse JSON arrays without loading the entire snapshot in memory.
+        decoder = json.JSONDecoder()
+        buffer = ""
+        top_level: str | None = None  # "array" | "object"
 
-            if isinstance(item, dict):
-                yield item
-                emitted += 1
-                if limit is not None and emitted >= limit:
-                    return
+        for chunk in response.iter_content(chunk_size=64 * 1024, decode_unicode=True):
+            if not chunk:
+                continue
+            buffer += chunk
+
+            while True:
+                buffer = buffer.lstrip()
+                if not buffer:
+                    break
+
+                if top_level is None:
+                    if buffer.startswith("["):
+                        top_level = "array"
+                        buffer = buffer[1:]
+                        continue
+                    top_level = "object"
+
+                if top_level == "array":
+                    buffer = buffer.lstrip()
+                    if not buffer:
+                        break
+                    if buffer.startswith("]"):
+                        return
+
+                    try:
+                        item, idx = decoder.raw_decode(buffer)
+                    except json.JSONDecodeError:
+                        break
+
+                    buffer = buffer[idx:].lstrip()
+                    if buffer.startswith(","):
+                        buffer = buffer[1:]
+
+                    if isinstance(item, dict):
+                        yield item
+                        emitted += 1
+                        if limit is not None and emitted >= limit:
+                            return
+                    continue
+
+                # top-level JSON object fallback
+                try:
+                    item, _ = decoder.raw_decode(buffer)
+                except json.JSONDecodeError:
+                    break
+                if isinstance(item, dict):
+                    yield item
+                return
 
     def get_stream_events(self, since: str | None, limit: int | None = None) -> tuple[list[dict[str, Any]], str | None]:
         """Fetch one stream page and return (events, next_cursor)."""
-        params: dict[str, Any] = {}
-        if since:
-            params["since"] = since
+        updated_after = self._format_stream_datetime(since, default_minutes_back=5)
+        updated_before = self._format_stream_datetime(datetime.now(UTC).isoformat(), default_minutes_back=0)
+
+        params: dict[str, Any] = {
+            "updated-after": updated_after,
+            "updated-before": updated_before,
+        }
         if limit:
             params["limit"] = limit
 
-        response = self._get(self.stream_url, params=params)
+        response = self._get(self.stream_url, params=params, headers={"accept": "application/json"})
+        if response.status_code == 400:
+            # Backwards-compatible fallback for older stream API versions.
+            legacy_params: dict[str, Any] = {"date": updated_after}
+            if limit:
+                legacy_params["limit"] = limit
+            response = self._get(self.stream_url, params=legacy_params, headers={"accept": "application/json"})
+
         response.raise_for_status()
         payload = response.json()
 
         events: list[dict[str, Any]] = []
-        next_cursor: str | None = None
+        next_cursor: str | None = updated_before
 
         if isinstance(payload, list):
             events = [x for x in payload if isinstance(x, dict)]

@@ -4,6 +4,7 @@ import { Link, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { pickLatestDigest, type DigestRow } from "@/lib/digest";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,42 +20,45 @@ export default function CompanyWatchlist() {
   const [newCompany, setNewCompany] = useState("");
 
   // Watched companies
-  const { data: watched } = useQuery({
+  const { data: watched, error: watchedError } = useQuery({
     queryKey: ["watched-companies", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("watched_companies")
         .select("*")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
   });
 
   // For each watched company, fetch their active jobs and top skills
-  const { data: companyData } = useQuery({
+  const { data: companyData, error: companyDataError } = useQuery({
     queryKey: ["watched-company-data", watched?.map((w) => w.employer_name)],
     enabled: !!watched && watched.length > 0,
     queryFn: async () => {
       const result: Record<string, { jobs: any[]; skills: Record<string, number> }> = {};
       for (const w of watched!) {
-        const { data: jobs } = await supabase
+        const { data: jobs, error: jobsError } = await supabase
           .from("jobs")
           .select("id, headline, published_at, municipality, remote_flag")
           .eq("employer_name", w.employer_name)
           .eq("is_active", true)
           .order("published_at", { ascending: false })
           .limit(5);
+        if (jobsError) throw jobsError;
 
         // Get tags for those jobs
         const jobIds = (jobs ?? []).map((j) => j.id);
         const skills: Record<string, number> = {};
         if (jobIds.length > 0) {
-          const { data: tags } = await supabase
+          const { data: tags, error: tagsError } = await supabase
             .from("job_tags")
             .select("tag")
             .in("job_id", jobIds);
+          if (tagsError) throw tagsError;
           (tags ?? []).forEach((t) => {
             skills[t.tag] = (skills[t.tag] || 0) + 1;
           });
@@ -96,22 +100,55 @@ export default function CompanyWatchlist() {
   });
 
   // Suggestions from digest
-  const { data: topEmployers } = useQuery({
+  const { data: topEmployers, error: topEmployersError } = useQuery({
     queryKey: ["top-employers-suggest"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("weekly_digests")
-        .select("digest_json")
-        .order("period_end", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (!data) return [];
-      const d = data.digest_json as any;
+        .select("id, period_start, period_end, generated_at, digest_json")
+        .order("generated_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
+      if (!latest) return [];
+      const d = latest.digest_json as any;
       return (d?.top_employers ?? []) as Array<{ name: string; count: number }>;
     },
   });
 
   if (!loading && !user) return <Navigate to="/auth" replace />;
+
+  if (watchedError || companyDataError || topEmployersError) {
+    const message =
+      (watchedError as Error | null)?.message ||
+      (companyDataError as Error | null)?.message ||
+      (topEmployersError as Error | null)?.message ||
+      "Unknown query error";
+    return (
+      <AppLayout>
+        <div className="space-y-3 py-10">
+          <h1 className="font-mono text-xl font-bold tracking-tight">Company Watchlist</h1>
+          <Card className="border-destructive/40">
+            <CardContent className="space-y-3 p-4">
+              <p className="text-sm font-medium text-destructive">Could not load watchlist data.</p>
+              <p className="text-xs text-muted-foreground">{message}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void qc.invalidateQueries({ queryKey: ["watched-companies"] });
+                  void qc.invalidateQueries({ queryKey: ["watched-company-data"] });
+                  void qc.invalidateQueries({ queryKey: ["top-employers-suggest"] });
+                }}
+              >
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   const watchedNames = new Set((watched ?? []).map((w) => w.employer_name));
   const suggestions = (topEmployers ?? []).filter((e) => !watchedNames.has(e.name)).slice(0, 6);

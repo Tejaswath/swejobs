@@ -20,6 +20,7 @@ def run_with_backoff(
     jitter_seconds: float = 0.4,
     retriable_exceptions: tuple[type[BaseException], ...] = (Exception,),
     context: str = "operation",
+    should_retry: Callable[[BaseException], bool] | None = None,
 ) -> T:
     """Run an operation with exponential backoff and jitter."""
     attempt = 0
@@ -27,6 +28,8 @@ def run_with_backoff(
         try:
             return operation()
         except retriable_exceptions as exc:
+            if should_retry is not None and not should_retry(exc):
+                raise
             attempt += 1
             if attempt > retries:
                 logger.error("Retry budget exhausted for %s: %s", context, exc)

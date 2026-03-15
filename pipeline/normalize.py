@@ -6,6 +6,23 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+COUNTY_CODE_TO_NAME: dict[str, str] = {
+    "01": "Stockholm",
+    "03": "Uppsala",
+    "12": "Skane",
+    "13": "Halland",
+    "14": "Vastra Gotaland",
+    "17": "Varmland",
+    "18": "Orebro",
+    "19": "Vastmanland",
+    "20": "Dalarna",
+    "21": "Gavleborg",
+    "22": "Vasternorrland",
+    "23": "Jamtland",
+    "24": "Vasterbotten",
+    "25": "Norrbotten",
+}
+
 
 def _get_path(obj: dict[str, Any], path: str) -> Any:
     current: Any = obj
@@ -142,10 +159,51 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     employer_name = _to_text(_first(raw, "employer.name", "employer_name", "company.name", "organization"))
     employer_id = _to_text(_first(raw, "employer.id", "employer.organization_number", "company.id"))
 
-    municipality = _to_text(_first(raw, "workplace_address.municipality", "municipality"))
-    municipality_code = _to_text(_first(raw, "workplace_address.municipality_code", "municipality_code"))
-    region = _to_text(_first(raw, "workplace_address.region", "region"))
-    region_code = _to_text(_first(raw, "workplace_address.region_code", "region_code"))
+    municipality = _to_text(
+        _first(
+            raw,
+            "workplace_address.municipality",
+            "workplace_address.city",
+            "workplace_address.municipality_name",
+            "municipality",
+            "location.municipality",
+            "location.city",
+        )
+    )
+    municipality_code = _to_text(
+        _first(
+            raw,
+            "workplace_address.municipality_code",
+            "workplace_address.municipality.code",
+            "municipality_code",
+            "location.municipality_code",
+        )
+    )
+    region = _to_text(
+        _first(
+            raw,
+            "workplace_address.region",
+            "workplace_address.region_name",
+            "workplace_address.county",
+            "workplace_address.county_name",
+            "region",
+            "region_name",
+            "location.region",
+        )
+    )
+    region_code = _to_text(
+        _first(
+            raw,
+            "workplace_address.region_code",
+            "workplace_address.county_code",
+            "region_code",
+            "location.region_code",
+        )
+    )
+    if not region_code and municipality_code and len(municipality_code) >= 2:
+        region_code = municipality_code[:2]
+    if not region and region_code:
+        region = COUNTY_CODE_TO_NAME.get(region_code)
 
     occupation_id = _to_text(_first(raw, "occupation.concept_id", "occupation_id"))
     occupation_label = _to_text(_first(raw, "occupation.label", "occupation_label"))
@@ -154,7 +212,19 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     employment_type = _to_text(_first(raw, "employment_type.label", "employment_type"))
     working_hours = _to_text(_first(raw, "working_hours_type.label", "working_hours"))
 
-    source_url = _to_text(_first(raw, "webpage_url", "source_url", "application_details.url"))
+    source_url = _to_text(
+        _first(
+            raw,
+            "webpage_url",
+            "source_url",
+            "application_details.url",
+            "absolute_url",
+            "hosted_url",
+            "url",
+            "external_url",
+            "apply_url",
+        )
+    )
     application_deadline = _to_text(_first(raw, "application_deadline", "last_application_date"))
 
     published_at = _parse_datetime(_first(raw, "publication_date", "published_at", "created"))
@@ -169,8 +239,27 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
     tags = extract_tags(raw, headline, description)
 
+    source_name = _to_text(_first(raw, "source_name", "source.name")) or "jobtech"
+    source_provider = _to_text(_first(raw, "source_provider")) or (
+        source_name if source_name not in {"", "jobtech"} else None
+    )
+    source_kind = _to_text(_first(raw, "source_kind")) or (
+        "jobtech" if source_name == "jobtech" else "direct_company_ats"
+    )
+    source_company_key = _to_text(_first(raw, "source_company_key", "company_canonical"))
+    direct_source_value = _first(raw, "is_direct_company_source")
+    if isinstance(direct_source_value, bool):
+        is_direct_company_source = direct_source_value
+    else:
+        is_direct_company_source = source_kind == "direct_company_ats"
+
     normalized = {
         "id": job_id,
+        "source_name": source_name,
+        "source_provider": source_provider,
+        "source_kind": source_kind,
+        "source_company_key": source_company_key,
+        "is_direct_company_source": is_direct_company_source,
         "headline": headline,
         "description": description,
         "employer_name": employer_name,

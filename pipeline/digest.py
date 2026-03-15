@@ -42,8 +42,16 @@ def _top_role_families(jobs: list[dict[str, Any]], limit: int = 10) -> list[dict
 def _region_breakdown(jobs: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
     counts: Counter[str] = Counter()
     for job in jobs:
-        region = str(job.get("region") or "Unknown")
-        counts[region] += 1
+        region = str(job.get("region") or "").strip()
+        if region:
+            counts[region] += 1
+            continue
+
+        region_code = str(job.get("region_code") or "").strip()
+        if region_code:
+            counts[f"Region {region_code}"] += 1
+        else:
+            counts["Unknown"] += 1
     return [{"region": name, "count": count} for name, count in counts.most_common(limit)]
 
 
@@ -107,10 +115,21 @@ def generate_weekly_digest(
     period_start: datetime,
     period_end: datetime,
     target_only: bool = True,
+    window_type: str | None = None,
+    window_days: int | None = None,
 ) -> dict[str, Any]:
     period_start = period_start.astimezone(UTC)
     period_end = period_end.astimezone(UTC)
     duration = period_end - period_start
+    inferred_days = max(1, int(round(duration.total_seconds() / 86400)))
+
+    if window_type is None:
+        window_type = f"rolling_{window_days or inferred_days}d"
+    if window_days is None:
+        if window_type == "calendar_week":
+            window_days = 7
+        else:
+            window_days = inferred_days
 
     prev_start = period_start - duration
     prev_end = period_start
@@ -138,6 +157,8 @@ def generate_weekly_digest(
         "generated_at": datetime.now(UTC).isoformat(),
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
+        "window_type": window_type,
+        "window_days": window_days,
         "total_new_jobs": total_new_jobs,
         "total_removed_jobs": total_removed_jobs,
         "new_jobs_delta_pct": _delta_pct(total_new_jobs, prev_total_new_jobs),

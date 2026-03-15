@@ -7,9 +7,24 @@ from typing import Any
 import yaml
 
 
+def _normalize_company_name(value: str) -> str:
+    text = "".join(ch.lower() if ch.isalnum() else " " for ch in value).strip()
+    tokens = [token for token in text.split() if token]
+    return " ".join(tokens)
+
+
+def _load_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return raw if isinstance(raw, dict) else {}
+
+
 @dataclass(frozen=True)
 class TargetProfile:
     data: dict[str, Any]
+    company_tier_map: dict[str, str]
+    company_alias_map: dict[str, str]
 
     @property
     def include_role_families(self) -> set[str]:
@@ -44,33 +59,134 @@ class TargetProfile:
         return {str(v).lower() for v in self.data.get("remote", {}).get("remote_keywords", [])}
 
     @property
-    def watched_companies(self) -> set[str]:
-        return {str(v).lower() for v in self.data.get("watched_companies", [])}
-
-    @property
     def stretch_skills(self) -> set[str]:
         return {str(v).lower() for v in self.data.get("skills", {}).get("stretch", [])}
+
+    def resolve_company(self, employer_name: str | None) -> tuple[str, str]:
+        if not employer_name:
+            return "", "unknown"
+        normalized = _normalize_company_name(employer_name)
+        canonical = self.company_alias_map.get(normalized, normalized)
+        tier = self.company_tier_map.get(canonical, "unknown")
+        return canonical, tier
+
+    @property
+    def main_companies(self) -> set[str]:
+        return {
+            name
+            for name, tier in self.company_tier_map.items()
+            if tier in {"A", "B"}
+        }
+
+    @property
+    def watched_companies(self) -> set[str]:
+        values = self.data.get("watched_companies", [])
+        if not isinstance(values, list):
+            return set()
+        result: set[str] = set()
+        for value in values:
+            normalized = _normalize_company_name(str(value))
+            if normalized:
+                result.add(normalized)
+        return result
 
     @property
     def scoring(self) -> dict[str, int]:
         defaults = {
-            "minimum_target_score": 25,
-            "noise_threshold": 0,
-            "title_allowlist_weight": 35,
-            "role_family_weight": 25,
+            "minimum_target_score": 18,
+            "noise_threshold": -20,
+            "title_allowlist_weight": 18,
+            "role_family_weight": 14,
+            "soft_role_family_weight": 6,
             "company_watch_weight": 20,
-            "region_weight": 10,
-            "language_weight": 10,
-            "remote_weight": 10,
-            "stretch_weight": 5,
+            "main_company_tier_a_weight": 25,
+            "main_company_tier_b_weight": 15,
+            "main_company_tier_c_weight": 6,
+            "entry_graduate_weight": 20,
+            "entry_trainee_weight": 20,
+            "entry_junior_weight": 15,
+            "region_weight": 0,
+            "language_weight": 8,
+            "remote_weight": 6,
+            "fresh_weight": 8,
+            "stretch_weight": 4,
+            "senior_penalty": 20,
+            "years_3plus_penalty": 22,
+            "swedish_required_penalty": 22,
+            "consultancy_penalty": 12,
             "exclusion_penalty": 60,
         }
         incoming = self.data.get("scoring", {})
-        return {**defaults, **{k: int(v) for k, v in incoming.items()}}
+        if not isinstance(incoming, dict):
+            incoming = {}
+
+        parsed: dict[str, int] = dict(defaults)
+        for key, value in incoming.items():
+            if key in {"tie_break"}:
+                continue
+            try:
+                parsed[key] = int(value)
+            except (TypeError, ValueError):
+                continue
+        return parsed
+
+
+def _load_company_tiers(path: Path) -> dict[str, str]:
+    payload = _load_yaml(path)
+    tiers = payload.get("tiers", {})
+    if not isinstance(tiers, dict):
+        return {}
+
+    result: dict[str, str] = {}
+    for tier, companies in tiers.items():
+        tier_name = str(tier).strip().upper()
+        if tier_name not in {"A", "B", "C"}:
+            continue
+        if not isinstance(companies, list):
+            continue
+        for company in companies:
+            normalized = _normalize_company_name(str(company))
+            if normalized:
+                result[normalized] = tier_name
+    return result
+
+
+def _load_company_aliases(path: Path) -> dict[str, str]:
+    payload = _load_yaml(path)
+    aliases = payload.get("aliases", {})
+    if not isinstance(aliases, dict):
+        return {}
+    result: dict[str, str] = {}
+    for alias, canonical in aliases.items():
+        normalized_alias = _normalize_company_name(str(alias))
+        normalized_canonical = _normalize_company_name(str(canonical))
+        if normalized_alias and normalized_canonical:
+            result[normalized_alias] = normalized_canonical
+    return result
 
 
 def load_target_profile(path: str) -> TargetProfile:
-    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    profile_path = Path(path)
+    raw = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise RuntimeError(f"Target profile must be a mapping, got {type(raw)}")
-    return TargetProfile(data=raw)
+
+    company_config = raw.get("company_maps", {})
+    if not isinstance(company_config, dict):
+        company_config = {}
+
+    tiers_path = profile_path.parent / str(company_config.get("tiers_file", "company_tiers.yaml"))
+    aliases_path = profile_path.parent / str(company_config.get("aliases_file", "company_aliases.yaml"))
+
+    company_tier_map = _load_company_tiers(tiers_path)
+    company_alias_map = _load_company_aliases(aliases_path)
+
+    # Ensure canonical names also resolve to themselves.
+    for company in list(company_tier_map.keys()):
+        company_alias_map.setdefault(company, company)
+
+    return TargetProfile(
+        data=raw,
+        company_tier_map=company_tier_map,
+        company_alias_map=company_alias_map,
+    )

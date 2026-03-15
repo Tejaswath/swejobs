@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
+import { useEffect } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Jobs from "./pages/Jobs";
@@ -20,6 +21,10 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function App() {
+  useEffect(() => {
+    document.title = "SweJobs";
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>

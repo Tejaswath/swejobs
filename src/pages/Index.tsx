@@ -4,6 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { pickLatestDigest, type DigestRow } from "@/lib/digest";
+import {
+  companyCoverageStatusCounts,
+  connectedCompanyRegistryEntries,
+  connectedCompanySourceCount,
+  plannedCompanyRegistryEntries,
+  providerLabel,
+} from "@/lib/companyRegistry";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FadeUp, AnimatedNumber } from "@/components/motion";
@@ -33,7 +41,7 @@ function WelcomeBanner({ onDismiss }: { onDismiss: () => void }) {
         </Button>
         <h2 className="text-sm font-semibold">Welcome to SweJobs</h2>
         <p className="mt-1 text-sm text-muted-foreground max-w-lg">
-          SweJobs monitors the Swedish tech job market for you. Browse jobs in <strong>Explore</strong>, save ones you like, and track your applications in <strong>Tracker</strong>. Data updates automatically from official sources.
+          SweJobs tracks Swedish tech jobs from connected public sources, ranked for early-career relevance. Browse jobs in <strong>Explore</strong>, save ones you like, and track your applications in <strong>Tracker</strong>.
         </p>
       </div>
     </FadeUp>
@@ -42,6 +50,11 @@ function WelcomeBanner({ onDismiss }: { onDismiss: () => void }) {
 
 export default function Index() {
   const { user } = useAuth();
+  const REFRESH_MS = 60_000;
+  const connectedSources = connectedCompanySourceCount();
+  const connectedCompanies = connectedCompanyRegistryEntries();
+  const plannedCompanies = plannedCompanyRegistryEntries();
+  const coverageCounts = companyCoverageStatusCounts();
   const [showWelcome, setShowWelcome] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("swejobs-welcome-dismissed") !== "true";
@@ -56,6 +69,8 @@ export default function Index() {
 
   const { data: jobCount } = useQuery({
     queryKey: ["job-count"],
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { count } = await supabase
         .from("jobs")
@@ -67,21 +82,24 @@ export default function Index() {
   });
 
   const { data: latestDigest } = useQuery({
-    queryKey: ["latest-digest"],
+    queryKey: ["latest-digest", "rolling_30d"],
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data } = await supabase
         .from("weekly_digests")
-        .select("digest_json, period_end")
-        .order("period_end", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return data;
+        .select("id, digest_json, period_start, period_end, generated_at")
+        .order("generated_at", { ascending: false })
+        .limit(100);
+      return pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
     },
   });
 
   const { data: trackedJobs } = useQuery({
     queryKey: ["tracked-summary", user?.id],
     enabled: !!user,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data } = await supabase
         .from("tracked_jobs")
@@ -95,6 +113,8 @@ export default function Index() {
 
   const { data: upcomingDeadlines } = useQuery({
     queryKey: ["upcoming-deadlines"],
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data } = await supabase
         .from("jobs")
@@ -112,6 +132,8 @@ export default function Index() {
   const { data: watchedCompanyData } = useQuery({
     queryKey: ["watched-overview", user?.id],
     enabled: !!user,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data: watched } = await supabase
         .from("watched_companies")
@@ -129,6 +151,31 @@ export default function Index() {
         results.push({ name, count: count ?? 0 });
       }
       return results;
+    },
+  });
+
+  const { data: freshnessState } = useQuery({
+    queryKey: ["pipeline-freshness"],
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
+    queryFn: async () => {
+      const [{ data: pollState, error: pollError }, { data: atsState, error: atsError }] = await Promise.all([
+        supabase.from("ingestion_state").select("key, value").eq("key", "last_poll_at"),
+        supabase.from("ingestion_state").select("key, value").like("key", "feed:%:last_success_at"),
+      ]);
+      if (pollError) throw pollError;
+      if (atsError) throw atsError;
+
+      const lastPollAt =
+        pollState?.find((item) => item.key === "last_poll_at")?.value ?? null;
+      const lastAtsSync =
+        atsState
+          ?.map((item) => item.value)
+          .filter(Boolean)
+          .sort()
+          .at(-1) ?? null;
+
+      return { lastPollAt, lastAtsSync };
     },
   });
 
@@ -191,6 +238,87 @@ export default function Index() {
         </FadeUp>
 
         <div className="space-y-8">
+          <FadeUp>
+            <section className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Last sync</p>
+                <p className="mt-1 text-sm font-medium">
+                  {freshnessState?.lastPollAt
+                    ? new Date(freshnessState.lastPollAt).toLocaleString("sv-SE")
+                    : "Unknown"}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Connected company sources</p>
+                <p className="mt-1 text-sm font-medium">{connectedSources}</p>
+              </div>
+              <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Last ATS sync</p>
+                <p className="mt-1 text-sm font-medium">
+                  {freshnessState?.lastAtsSync
+                    ? new Date(freshnessState.lastAtsSync).toLocaleString("sv-SE")
+                    : "Not synced yet"}
+                </p>
+              </div>
+            </section>
+          </FadeUp>
+
+          <FadeUp>
+            <section className="rounded-lg border border-border/40 bg-card/60 px-4 py-4">
+              <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Coverage status</p>
+                  <h2 className="mt-1 text-base font-medium">Connected company sources</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    SweJobs is currently connected to {coverageCounts.connected} company sources. Another{" "}
+                    {coverageCounts.planned} target companies are planned but not integrated yet.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="outline" className="font-normal">
+                    Connected {coverageCounts.connected}
+                  </Badge>
+                  <Badge variant="outline" className="font-normal">
+                    Planned {coverageCounts.planned}
+                  </Badge>
+                  <Badge variant="outline" className="font-normal">
+                    Blocked {coverageCounts.blocked}
+                  </Badge>
+                  <Badge variant="outline" className="font-normal">
+                    HTML fallback {coverageCounts.html_fallback_candidate}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Live now</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {connectedCompanies.map((company) => (
+                      <Badge key={company.company_canonical} variant="secondary" className="gap-1 font-normal">
+                        {company.display_name}
+                        <span className="text-[10px] text-muted-foreground">
+                          {providerLabel(company.provider)}
+                        </span>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Next planned targets</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {plannedCompanies.slice(0, 12).map((company) => (
+                      <Badge key={company.company_canonical} variant="outline" className="font-normal">
+                        {company.display_name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </FadeUp>
+
           {/* Upcoming Deadlines */}
           {upcomingDeadlines && upcomingDeadlines.length > 0 && (
             <FadeUp>

@@ -39,12 +39,147 @@ class SupabaseStorage:
         response = self._execute(lambda: query.execute(), context="select ingestion_state")
         return {row["key"]: row["value"] for row in (response.data or [])}
 
+    def count_jobs_with_raw_json_before(self, cutoff_iso: str) -> int:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id", count="exact")
+            .not_.is_("raw_json", "null")
+            .lt("published_at", cutoff_iso)
+            .limit(1)
+            .execute(),
+            context="count jobs with raw_json before cutoff",
+        )
+        return int(response.count or 0)
+
+    def count_inactive_jobs_before(self, cutoff_iso: str) -> int:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id", count="exact")
+            .eq("is_active", False)
+            .lt("published_at", cutoff_iso)
+            .limit(1)
+            .execute(),
+            context="count inactive jobs before cutoff",
+        )
+        return int(response.count or 0)
+
+    def count_job_events_before(self, cutoff_iso: str) -> int:
+        response = self._execute(
+            lambda: self.client.table("job_events")
+            .select("id", count="exact")
+            .lt("event_time", cutoff_iso)
+            .limit(1)
+            .execute(),
+            context="count job events before cutoff",
+        )
+        return int(response.count or 0)
+
+    def count_weekly_digests_before(self, cutoff_iso: str) -> int:
+        response = self._execute(
+            lambda: self.client.table("weekly_digests")
+            .select("id", count="exact")
+            .lt("generated_at", cutoff_iso)
+            .limit(1)
+            .execute(),
+            context="count digests before cutoff",
+        )
+        return int(response.count or 0)
+
     def upsert_ingestion_state(self, values: dict[str, str]) -> None:
         rows = [{"key": k, "value": v, "updated_at": datetime.now(UTC).isoformat()} for k, v in values.items()]
         self._execute(
             lambda: self.client.table("ingestion_state").upsert(rows, on_conflict="key").execute(),
             context="upsert ingestion_state",
         )
+
+    def fetch_job_ids_with_raw_json_before(self, *, cutoff_iso: str, limit: int = 500) -> list[int]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id")
+            .not_.is_("raw_json", "null")
+            .lt("published_at", cutoff_iso)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch job ids with raw_json before cutoff",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
+    def fetch_inactive_job_ids_before(self, *, cutoff_iso: str, limit: int = 500) -> list[int]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id")
+            .eq("is_active", False)
+            .lt("published_at", cutoff_iso)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch inactive job ids before cutoff",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
+    def fetch_job_event_ids_before(self, *, cutoff_iso: str, limit: int = 500) -> list[int]:
+        response = self._execute(
+            lambda: self.client.table("job_events")
+            .select("id")
+            .lt("event_time", cutoff_iso)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch job_event ids before cutoff",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
+    def fetch_weekly_digest_ids_before(self, *, cutoff_iso: str, limit: int = 500) -> list[int]:
+        response = self._execute(
+            lambda: self.client.table("weekly_digests")
+            .select("id")
+            .lt("generated_at", cutoff_iso)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch digest ids before cutoff",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
+    def clear_raw_json_for_job_ids(self, job_ids: list[int]) -> int:
+        if not job_ids:
+            return 0
+        self._execute(
+            lambda job_ids=job_ids: self.client.table("jobs")
+            .update({"raw_json": None})
+            .in_("id", job_ids)
+            .execute(),
+            context="clear raw_json for jobs",
+        )
+        return len(job_ids)
+
+    def delete_jobs_by_ids(self, job_ids: list[int]) -> int:
+        if not job_ids:
+            return 0
+        self._execute(
+            lambda job_ids=job_ids: self.client.table("jobs").delete().in_("id", job_ids).execute(),
+            context="delete jobs by ids",
+        )
+        return len(job_ids)
+
+    def delete_job_events_by_ids(self, event_ids: list[int]) -> int:
+        if not event_ids:
+            return 0
+        self._execute(
+            lambda event_ids=event_ids: self.client.table("job_events").delete().in_("id", event_ids).execute(),
+            context="delete job_events by ids",
+        )
+        return len(event_ids)
+
+    def delete_weekly_digests_by_ids(self, digest_ids: list[int]) -> int:
+        if not digest_ids:
+            return 0
+        self._execute(
+            lambda digest_ids=digest_ids: self.client.table("weekly_digests").delete().in_("id", digest_ids).execute(),
+            context="delete weekly_digests by ids",
+        )
+        return len(digest_ids)
 
     def fetch_existing_jobs(self, job_ids: list[int]) -> dict[int, dict[str, Any]]:
         if not job_ids:
@@ -55,6 +190,27 @@ class SupabaseStorage:
             context="select existing jobs",
         )
         return {int(row["id"]): row for row in (response.data or [])}
+
+    def fetch_jobs_by_source_urls(self, urls: list[str]) -> dict[str, dict[str, Any]]:
+        normalized = [str(url).strip() for url in urls if str(url).strip()]
+        if not normalized:
+            return {}
+
+        by_url: dict[str, dict[str, Any]] = {}
+        for chunk in self._chunked([{"source_url": value} for value in normalized], chunk_size=200):
+            values = [row["source_url"] for row in chunk]
+            response = self._execute(
+                lambda values=values: self.client.table("jobs")
+                .select("id,source_url,raw_json,is_active")
+                .in_("source_url", values)
+                .execute(),
+                context="select jobs by source_url",
+            )
+            for row in response.data or []:
+                source_url = str(row.get("source_url") or "").strip()
+                if source_url:
+                    by_url[source_url] = row
+        return by_url
 
     def upsert_jobs(self, rows: list[dict[str, Any]]) -> None:
         if not rows:
@@ -114,9 +270,18 @@ class SupabaseStorage:
 
         rows: list[dict[str, Any]] = []
         for concept in concepts:
-            concept_id = concept.get("id") or concept.get("concept_id")
-            concept_type = concept.get("type") or concept.get("concept_type") or "unknown"
-            label = concept.get("preferred_label") or concept.get("label")
+            concept_id = concept.get("id") or concept.get("concept_id") or concept.get("taxonomy/id")
+            concept_type = (
+                concept.get("type")
+                or concept.get("concept_type")
+                or concept.get("taxonomy/type")
+                or "unknown"
+            )
+            label = (
+                concept.get("preferred_label")
+                or concept.get("label")
+                or concept.get("taxonomy/preferred-label")
+            )
             if not concept_id or not label:
                 continue
             rows.append(
@@ -124,8 +289,8 @@ class SupabaseStorage:
                     "concept_id": str(concept_id),
                     "concept_type": str(concept_type),
                     "preferred_label": str(label),
-                    "ssyk_code": concept.get("ssyk_code"),
-                    "parent_id": concept.get("parent_id"),
+                    "ssyk_code": concept.get("ssyk_code") or concept.get("taxonomy/ssyk-code"),
+                    "parent_id": concept.get("parent_id") or concept.get("taxonomy/parent-id"),
                     "cached_at": datetime.now(UTC).isoformat(),
                 }
             )
@@ -163,10 +328,11 @@ class SupabaseStorage:
     def fetch_event_counts(self, event_type: str, period_start: str, period_end: str) -> int:
         response = self._execute(
             lambda: self.client.table("job_events")
-            .select("id", count="exact", head=True)
+            .select("id", count="exact")
             .eq("event_type", event_type)
             .gte("event_time", period_start)
             .lt("event_time", period_end)
+            .limit(1)
             .execute(),
             context=f"fetch {event_type} event count",
         )
@@ -187,13 +353,62 @@ class SupabaseStorage:
     def sample_target_jobs(self, *, limit: int = 50) -> list[dict[str, Any]]:
         response = self._execute(
             lambda: self.client.table("jobs")
-            .select("id,headline,employer_name,role_family,is_target_role,is_noise,relevance_score,reason_codes,published_at")
+            .select(
+                "id,headline,employer_name,company_canonical,company_tier,role_family,"
+                "career_stage,is_grad_program,years_required_min,swedish_required,consultancy_flag,"
+                "is_target_role,is_noise,relevance_score,reason_codes,published_at"
+            )
             .eq("is_active", True)
             .eq("is_target_role", True)
+            .order("relevance_score", desc=True)
             .order("published_at", desc=True)
             .limit(limit)
             .execute(),
             context="sample target jobs",
+        )
+        return response.data or []
+
+    def fetch_jobs_raw_batch(
+        self,
+        *,
+        after_id: int = 0,
+        limit: int = 200,
+        active_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        query = (
+            self.client.table("jobs")
+            .select("id,raw_json,is_active")
+            .gt("id", int(after_id))
+            .order("id")
+            .limit(int(limit))
+        )
+        if active_only:
+            query = query.eq("is_active", True)
+
+        response = self._execute(lambda: query.execute(), context="fetch jobs raw batch")
+        return response.data or []
+
+    def fetch_jobs_for_companies(
+        self,
+        *,
+        company_names: list[str],
+        period_start: str,
+        period_end: str,
+    ) -> list[dict[str, Any]]:
+        if not company_names:
+            return []
+
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id,headline,employer_name,company_canonical,company_tier,published_at,is_target_role,relevance_score")
+            .eq("is_active", True)
+            .gte("published_at", period_start)
+            .lt("published_at", period_end)
+            .in_("company_canonical", company_names)
+            .order("published_at", desc=True)
+            .limit(10000)
+            .execute(),
+            context="fetch jobs for companies",
         )
         return response.data or []
 

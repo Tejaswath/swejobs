@@ -1,10 +1,12 @@
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { pickLatestDigest, type DigestRow } from "@/lib/digest";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { Download, FileSpreadsheet, FileJson } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
 
 function downloadCSV(filename: string, headers: string[], rows: any[][]) {
   const BOM = "\uFEFF";
@@ -31,6 +33,19 @@ function downloadJSON(filename: string, data: any) {
 export default function Export() {
   const { user } = useAuth();
   const { toast } = useToast();
+
+  const { data: latestDigest, error: latestDigestError } = useQuery({
+    queryKey: ["latest-digest-export"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("weekly_digests")
+        .select("id, period_start, period_end, generated_at, digest_json")
+        .order("generated_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
+    },
+  });
 
   const exportActiveJobs = async () => {
     const { data, error } = await supabase
@@ -69,13 +84,14 @@ export default function Export() {
   const exportDigest = async () => {
     const { data, error } = await supabase
       .from("weekly_digests")
-      .select("*")
-      .order("period_end", { ascending: false })
-      .limit(1)
-      .single();
+      .select("id, period_start, period_end, generated_at, digest_json")
+      .order("generated_at", { ascending: false })
+      .limit(100);
 
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-    downloadJSON("weekly_digest.json", data?.digest_json);
+    const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
+    if (!latest) { toast({ title: "Error", description: "No digest found", variant: "destructive" }); return; }
+    downloadJSON("weekly_digest.json", latest.digest_json);
     toast({ title: "Digest exported" });
   };
 
@@ -112,6 +128,33 @@ export default function Export() {
           <h1 className="font-mono text-2xl font-bold tracking-tight">Export Data</h1>
           <p className="text-sm text-muted-foreground">Download clean data for your own analysis</p>
         </div>
+
+        {latestDigestError ? (
+          <Card className="border-destructive/40">
+            <CardContent className="space-y-1 p-4">
+              <p className="text-sm font-medium text-destructive">Digest status unavailable</p>
+              <p className="text-xs text-muted-foreground">
+                {(latestDigestError as Error).message}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-border/40">
+            <CardContent className="space-y-1 p-4">
+              <p className="text-sm font-medium">Digest source</p>
+              {latestDigest ? (
+                <p className="text-xs text-muted-foreground">
+                  Rolling 30d digest available. Generated at{" "}
+                  {new Date(latestDigest.generated_at ?? latestDigest.period_end).toLocaleString("sv-SE")}.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No rolling 30d digest found yet. Run the digest command, then retry export.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2">
           {EXPORTS.map((exp) => (

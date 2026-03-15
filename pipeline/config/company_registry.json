@@ -1,0 +1,1103 @@
+{
+  "version": 1,
+  "updated_at": "2026-03-13",
+  "companies": [
+    {
+      "company_canonical": "spotify",
+      "display_name": "Spotify",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "connected",
+      "provider": "lever",
+      "provider_identifier": "spotify",
+      "provider_order": [
+        "lever",
+        "greenhouse",
+        "teamtailor",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via Lever"
+    },
+    {
+      "company_canonical": "kambi",
+      "display_name": "Kambi",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "connected",
+      "provider": "greenhouse",
+      "provider_identifier": "kambi",
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via Greenhouse"
+    },
+    {
+      "company_canonical": "infosys",
+      "display_name": "Infosys",
+      "priority_tier": "A",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "smartrecruiters",
+        "lever",
+        "greenhouse",
+        "teamtailor",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "User-named gap to close",
+      "career_page_url": "https://www.infosys.com/careers/location.html"
+    },
+    {
+      "company_canonical": "paypal",
+      "display_name": "PayPal",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "lever",
+        "greenhouse",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "High-value enterprise target",
+      "career_page_url": "https://careers.pypl.com/locations/"
+    },
+    {
+      "company_canonical": "amazon",
+      "display_name": "Amazon / AWS",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "aws",
+        "amazon web services"
+      ],
+      "notes": "Search should match both AWS and Amazon",
+      "career_page_url": "https://www.amazon.jobs/location/stockholm-sweden"
+    },
+    {
+      "company_canonical": "zalando",
+      "display_name": "Zalando",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "workday",
+        "lever",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Common missing platform employer",
+      "career_page_url": "https://jobs.zalando.com/en/what-we-do/software-engineering"
+    },
+    {
+      "company_canonical": "cisco",
+      "display_name": "Cisco",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "lever",
+        "greenhouse",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "High-value enterprise target",
+      "career_page_url": "https://jobs.cisco.com/jobs/SearchJobs/sweden"
+    },
+    {
+      "company_canonical": "klarna",
+      "display_name": "Klarna",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "workday",
+        "teamtailor",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Swedish Tier A target",
+      "career_page_url": "https://www.klarna.com/careers/"
+    },
+    {
+      "company_canonical": "volvo cars",
+      "display_name": "Volvo Cars",
+      "priority_tier": "A",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "jobs2web",
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "volvo"
+      ],
+      "notes": "User-relevant major employer",
+      "career_page_url": "https://jobs.volvocars.com/"
+    },
+    {
+      "company_canonical": "volvo group",
+      "display_name": "Volvo Group",
+      "priority_tier": "A",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Distinct from Volvo Cars",
+      "career_page_url": "https://www.volvogroup.com/en/careers.html"
+    },
+    {
+      "company_canonical": "seb",
+      "display_name": "SEB",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Tier A Swedish finance employer",
+      "career_page_url": "https://sebgroup.com/career"
+    },
+    {
+      "company_canonical": "scania",
+      "display_name": "Scania",
+      "priority_tier": "A",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Tier A Swedish industrial employer",
+      "career_page_url": "https://jobs.scania.com/"
+    },
+    {
+      "company_canonical": "nordnet",
+      "display_name": "Nordnet",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "connected",
+      "provider": "teamtailor",
+      "provider_identifier": "https://career.nordnetab.com/",
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via custom Teamtailor site",
+      "career_page_url": "https://career.nordnetab.com/"
+    },
+    {
+      "company_canonical": "avanza",
+      "display_name": "Avanza",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "connected",
+      "provider": "teamtailor",
+      "provider_identifier": "https://career.avanza.se/",
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "avanza bank"
+      ],
+      "notes": "Connected via custom Teamtailor site",
+      "career_page_url": "https://career.avanza.se/"
+    },
+    {
+      "company_canonical": "saab",
+      "display_name": "Saab",
+      "priority_tier": "A",
+      "category": "defense",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Strong relevance, especially security/system roles",
+      "career_page_url": "https://www.saab.com/career/job-opportunities"
+    },
+    {
+      "company_canonical": "ericsson",
+      "display_name": "Ericsson",
+      "priority_tier": "A",
+      "category": "telecom",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Tier A Swedish telecom employer",
+      "career_page_url": "https://www.ericsson.com/en/careers/global-locations/sweden"
+    },
+    {
+      "company_canonical": "wolt",
+      "display_name": "Wolt",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "connected",
+      "provider": "greenhouse",
+      "provider_identifier": "wolt",
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via Greenhouse",
+      "career_page_url": "https://careers.wolt.com/en"
+    },
+    {
+      "company_canonical": "electronic arts",
+      "display_name": "Electronic Arts",
+      "priority_tier": "A",
+      "category": "gaming",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "workday",
+        "lever",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "ea"
+      ],
+      "notes": "Gaming employer users compare against LinkedIn"
+    },
+    {
+      "company_canonical": "frostbite",
+      "display_name": "Frostbite",
+      "priority_tier": "A",
+      "category": "gaming",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "User-visible missing employer brand"
+    },
+    {
+      "company_canonical": "storytel",
+      "display_name": "Storytel",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "connected",
+      "provider": "teamtailor",
+      "provider_identifier": "https://jobs.storytel.com/",
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via Teamtailor custom careers site",
+      "career_page_url": "https://jobs.storytel.com/"
+    },
+    {
+      "company_canonical": "warner bros discovery",
+      "display_name": "Warner Bros. Discovery",
+      "priority_tier": "A",
+      "category": "media",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "workday",
+        "lever",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "warner bros",
+        "wbd"
+      ],
+      "notes": "Known missing engineering employer"
+    },
+    {
+      "company_canonical": "qliro",
+      "display_name": "Qliro",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "connected",
+      "provider": "teamtailor",
+      "provider_identifier": "https://career.qliro.com/",
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via Teamtailor custom careers site",
+      "career_page_url": "https://career.qliro.com/"
+    },
+    {
+      "company_canonical": "fortnox",
+      "display_name": "Fortnox",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "connected",
+      "provider": "teamtailor",
+      "provider_identifier": "https://fortnoxab.teamtailor.com/",
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Connected via Teamtailor custom careers site",
+      "career_page_url": "https://www.fortnox.se/karriar"
+    },
+    {
+      "company_canonical": "tv4",
+      "display_name": "TV4",
+      "priority_tier": "A",
+      "category": "media",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Media employer seen in comparative searches"
+    },
+    {
+      "company_canonical": "king",
+      "display_name": "King",
+      "priority_tier": "A",
+      "category": "gaming",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Gaming employer relevant to user profile"
+    },
+    {
+      "company_canonical": "epidemic sound",
+      "display_name": "Epidemic Sound",
+      "priority_tier": "A",
+      "category": "media",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Tier A Stockholm product/media employer",
+      "career_page_url": "https://careers.epidemicsound.com/"
+    },
+    {
+      "company_canonical": "nordea",
+      "display_name": "Nordea",
+      "priority_tier": "B",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Major Nordic finance employer"
+    },
+    {
+      "company_canonical": "hm",
+      "display_name": "H&M",
+      "priority_tier": "B",
+      "category": "retail",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "h&m",
+        "hm group"
+      ],
+      "notes": "Large Stockholm employer"
+    },
+    {
+      "company_canonical": "tink",
+      "display_name": "Tink",
+      "priority_tier": "B",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Stockholm fintech employer"
+    },
+    {
+      "company_canonical": "schibsted",
+      "display_name": "Schibsted",
+      "priority_tier": "B",
+      "category": "media",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Platform/media employer"
+    },
+    {
+      "company_canonical": "aftonbladet",
+      "display_name": "Aftonbladet",
+      "priority_tier": "B",
+      "category": "media",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Stockholm media employer"
+    },
+    {
+      "company_canonical": "platform24",
+      "display_name": "Platform24",
+      "priority_tier": "B",
+      "category": "healthtech",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Relevant Stockholm healthtech employer"
+    },
+    {
+      "company_canonical": "raysearch laboratories",
+      "display_name": "RaySearch Laboratories",
+      "priority_tier": "B",
+      "category": "healthtech",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "raysearch"
+      ],
+      "notes": "Relevant Stockholm healthtech employer"
+    },
+    {
+      "company_canonical": "svea solar",
+      "display_name": "Svea Solar",
+      "priority_tier": "B",
+      "category": "climate",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Climate/product employer"
+    },
+    {
+      "company_canonical": "ssc space",
+      "display_name": "SSC Space",
+      "priority_tier": "B",
+      "category": "space",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "ssc"
+      ],
+      "notes": "Space employer seen in Stockholm results"
+    },
+    {
+      "company_canonical": "delaval",
+      "display_name": "DeLaval",
+      "priority_tier": "B",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Industrial product employer"
+    },
+    {
+      "company_canonical": "cgi",
+      "display_name": "CGI",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "smartrecruiters",
+        "workday",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "capgemini",
+      "display_name": "Capgemini",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "nexer",
+      "display_name": "Nexer",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "knowit",
+      "display_name": "Knowit",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "hiq",
+      "display_name": "HiQ",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "sopra steria",
+      "display_name": "Sopra Steria",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "afry",
+      "display_name": "AFRY",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "combitech",
+      "display_name": "Combitech",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "teamtailor",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "sigma",
+      "display_name": "Sigma",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "redpill linpro",
+      "display_name": "Redpill Linpro",
+      "priority_tier": "C",
+      "category": "services",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "workday",
+        "greenhouse",
+        "lever",
+        "smartrecruiters",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Consultancy/integrator batch"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+updated_at: "2026-03-09"
+
+minimum_target_score: 18
+noise_threshold: -20
+
+title_allowlist_weight: 18
+role_family_weight: 14
+soft_role_family_weight: 6
+
+main_company_tier_a_weight: 25
+main_company_tier_b_weight: 15
+main_company_tier_c_weight: 6
+
+entry_graduate_weight: 20
+entry_trainee_weight: 20
+entry_junior_weight: 15
+
+region_weight: 0
+language_weight: 8
+remote_weight: 6
+fresh_weight: 8
+stretch_weight: 4
+
+senior_penalty: 20
+years_3plus_penalty: 22
+swedish_required_penalty: 22
+consultancy_penalty: 12
+exclusion_penalty: 60
+
+tie_break:
+  - watched_company
+  - company_tier
+  - lower_years_required
+  - language_preference
+  - fresher_post
+  - direct_employer

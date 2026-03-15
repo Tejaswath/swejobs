@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { formatDigestLabel, isWindowType, pickLatestDigest, sortDigestsByGeneratedAtDesc, type DigestRow } from "@/lib/digest";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { TrendingUp, TrendingDown, Building, MapPin } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const CHART_COLORS = [
   "hsl(217, 91%, 55%)",
@@ -28,20 +30,45 @@ function safePct(val: unknown): string {
 }
 
 export default function Digest() {
-  const { data: digests } = useQuery({
+  const queryClient = useQueryClient();
+  const WINDOW_TYPE = "rolling_30d";
+  const REFRESH_MS = 60_000;
+
+  const { data: digests, isFetching, error } = useQuery({
     queryKey: ["digests"],
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data } = await supabase
         .from("weekly_digests")
-        .select("*")
-        .order("period_end", { ascending: false })
-        .limit(20);
-      return data ?? [];
+        .select("id, period_start, period_end, generated_at, digest_json")
+        .order("generated_at", { ascending: false })
+        .limit(100);
+      return (data ?? []) as DigestRow[];
     },
   });
 
-  const [selectedIdx, setSelectedIdx] = useState("0");
-  const digest = digests?.[Number(selectedIdx)];
+  const [selectedDigestId, setSelectedDigestId] = useState("");
+  const sortedDigests = useMemo(() => sortDigestsByGeneratedAtDesc(digests), [digests]);
+  const rollingDigests = useMemo(
+    () => sortedDigests.filter((row) => isWindowType(row.digest_json, WINDOW_TYPE)),
+    [sortedDigests],
+  );
+  const displayDigests = rollingDigests.length > 0 ? rollingDigests : sortedDigests;
+
+  useEffect(() => {
+    if (displayDigests.length === 0) {
+      setSelectedDigestId("");
+      return;
+    }
+    const hasSelected = displayDigests.some((row) => String(row.id) === selectedDigestId);
+    if (!hasSelected) {
+      const fallback = pickLatestDigest(displayDigests, WINDOW_TYPE) ?? displayDigests[0];
+      setSelectedDigestId(String(fallback.id));
+    }
+  }, [displayDigests, selectedDigestId]);
+
+  const digest = displayDigests.find((row) => String(row.id) === selectedDigestId) ?? null;
   const d = digest?.digest_json as any;
 
   return (
@@ -50,28 +77,48 @@ export default function Digest() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Market Digest</h1>
-            <p className="text-xs text-muted-foreground">Weekly insights & skill trends</p>
+            <p className="text-xs text-muted-foreground">Rolling insights & skill trends</p>
           </div>
-          {digests && digests.length > 0 && (
-            <Select value={selectedIdx} onValueChange={setSelectedIdx}>
-              <SelectTrigger className="w-48 h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {digests.map((d, i) => (
-                  <SelectItem key={d.id} value={String(i)}>
-                    Week of {new Date(d.period_start).toLocaleDateString("sv-SE")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={isFetching}
+              onClick={() => {
+                void queryClient.invalidateQueries({ queryKey: ["digests"] });
+              }}
+            >
+              {isFetching ? "Refreshing..." : "Refresh data"}
+            </Button>
+            {displayDigests.length > 0 && (
+              <Select value={selectedDigestId} onValueChange={setSelectedDigestId}>
+                <SelectTrigger className="w-60 h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {displayDigests.map((row) => (
+                    <SelectItem key={row.id} value={String(row.id)}>
+                      {formatDigestLabel(row)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
-        {!digest ? (
+        {error ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4">
+            <p className="text-sm font-medium text-destructive">Could not load digest data.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {error instanceof Error ? error.message : "Unknown digest query error"}
+            </p>
+          </div>
+        ) : !digest ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <TrendingUp className="h-12 w-12 text-muted-foreground/30 mb-4" />
             <h2 className="text-lg font-medium">No digests yet</h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-              Market digests are generated weekly. Check back soon for skill trends, employer rankings, and regional breakdowns.
+              Market digests refresh automatically. Check back soon for skill trends, employer rankings, and regional breakdowns.
             </p>
           </div>
         ) : (

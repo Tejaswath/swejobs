@@ -1,0 +1,25 @@
+updated_at: "2026-03-09"
+
+aliases:
+  # Volvo
+  "volvo personvagnar": "volvo cars"
+  "volvo personvagnar ab": "volvo cars"
+  "volvo cars ab": "volvo cars"
+  "volvo car corporation": "volvo cars"
+  # Nordea
+  "nordea bank abp": "nordea"
+  "nordea bank abp filial i sverige": "nordea"
+  "nordea bank": "nordea"
+  # PayPal / Zettle
+  "izettle": "paypal"
+  "izettle ab": "paypal"
+  "zettle by paypal": "paypal"
+  # Amazon / AWS
+  "amazon web services": "amazon"
+  "aws": "amazon"
+  "aws sweden": "amazon"
+  # Microsoft / Google localized names
+  "microsoft sverige": "microsoft sweden"
+  "google sverige": "google sweden"
+  # Saab
+  "saab ab": "saab"

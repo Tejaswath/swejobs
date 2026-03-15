@@ -1,0 +1,23 @@
+updated_at: "2026-03-09"
+
+tiers:
+  A:
+    - paypal
+    - cisco
+    - nordea
+    - ericsson
+    - volvo cars
+    - saab
+    - klarna
+    - spotify
+    - seb
+    - scania
+    - axis
+    - zenseact
+    - astrazeneca
+  B:
+    - microsoft sweden
+    - google sweden
+    - amazon
+    - aws sweden
+  C: []
