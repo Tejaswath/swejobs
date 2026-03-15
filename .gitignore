@@ -36,3 +36,7 @@ pipeline/reports/
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary docs freeze: ignore markdown files
+*.md
+**/*.md
