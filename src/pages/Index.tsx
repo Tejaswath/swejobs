@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +39,63 @@ function WelcomeBanner({ onDismiss }: { onDismiss: () => void }) {
       </div>
     </FadeUp>
   );
+}
+
+type UpcomingDeadlineJob = {
+  id: number;
+  headline: string;
+  employer_name: string | null;
+  application_deadline: string | null;
+};
+
+type DeadlineGroups = {
+  today: UpcomingDeadlineJob[];
+  thisWeek: UpcomingDeadlineJob[];
+  later: UpcomingDeadlineJob[];
+};
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function parseDeadlineDate(deadlineDate: string | null): Date | null {
+  if (!deadlineDate) return null;
+  const parsed = new Date(`${deadlineDate}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isSameLocalDay(left: Date, right: Date): boolean {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function endOfCurrentWeek(date: Date): Date {
+  const dayIndexMondayZero = (date.getDay() + 6) % 7;
+  const end = startOfLocalDay(date);
+  end.setDate(end.getDate() + (6 - dayIndexMondayZero));
+  return end;
+}
+
+function deadlineBucket(deadlineDate: string | null): keyof DeadlineGroups {
+  const parsed = parseDeadlineDate(deadlineDate);
+  if (!parsed) return "later";
+
+  const today = startOfLocalDay(new Date());
+  if (isSameLocalDay(parsed, today)) return "today";
+
+  const weekEnd = endOfCurrentWeek(today);
+  if (parsed <= weekEnd) return "thisWeek";
+  return "later";
+}
+
+function formatDeadline(deadlineDate: string | null, bucket: keyof DeadlineGroups): string {
+  const parsed = parseDeadlineDate(deadlineDate);
+  if (!parsed) return "—";
+  if (bucket === "today") return "Today";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
 }
 
 export default function Index() {
@@ -117,8 +174,8 @@ export default function Index() {
         .not("application_deadline", "is", null)
         .gte("application_deadline", new Date().toISOString().slice(0, 10))
         .order("application_deadline", { ascending: true })
-        .limit(5);
-      return data ?? [];
+        .limit(12);
+      return (data ?? []) as UpcomingDeadlineJob[];
     },
   });
 
@@ -161,6 +218,19 @@ export default function Index() {
 
   const heroRising = hasRealRising ? risingSkills?.[0] : undefined;
   const heroJobCount = jobCount ?? 0;
+  const groupedDeadlines = useMemo<DeadlineGroups>(() => {
+    const groups: DeadlineGroups = {
+      today: [],
+      thisWeek: [],
+      later: [],
+    };
+
+    for (const job of upcomingDeadlines ?? []) {
+      groups[deadlineBucket(job.application_deadline)].push(job);
+    }
+
+    return groups;
+  }, [upcomingDeadlines]);
 
   // Empty state: no data ingested yet
   if (jobCount === 0) {
@@ -216,22 +286,81 @@ export default function Index() {
                     <CalendarClock className="h-3.5 w-3.5" /> Upcoming deadlines
                   </h2>
                 </div>
-                <div className="space-y-0.5">
-                  {upcomingDeadlines.map((job) => (
-                    <Link
-                      key={job.id}
-                      to={`/jobs/${job.id}`}
-                      className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{job.headline}</p>
-                        <p className="text-xs text-muted-foreground">{job.employer_name}</p>
+                <div className="space-y-3">
+                  {groupedDeadlines.today.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-destructive/80">
+                        Today
+                      </p>
+                      <div className="space-y-0.5">
+                        {groupedDeadlines.today.map((job) => (
+                          <Link
+                            key={job.id}
+                            to={`/jobs/${job.id}`}
+                            className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{job.headline}</p>
+                              <p className="text-xs text-muted-foreground">{job.employer_name}</p>
+                            </div>
+                            <span className="ml-3 shrink-0 font-mono text-xs font-medium text-destructive/80">
+                              {formatDeadline(job.application_deadline, "today")}
+                            </span>
+                          </Link>
+                        ))}
                       </div>
-                      <span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">
-                        {job.application_deadline?.slice(0, 10)}
-                      </span>
-                    </Link>
-                  ))}
+                    </div>
+                  )}
+
+                  {groupedDeadlines.thisWeek.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                        This week
+                      </p>
+                      <div className="space-y-0.5">
+                        {groupedDeadlines.thisWeek.map((job) => (
+                          <Link
+                            key={job.id}
+                            to={`/jobs/${job.id}`}
+                            className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{job.headline}</p>
+                              <p className="text-xs text-muted-foreground">{job.employer_name}</p>
+                            </div>
+                            <span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">
+                              {formatDeadline(job.application_deadline, "thisWeek")}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {groupedDeadlines.later.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                        Later
+                      </p>
+                      <div className="space-y-0.5">
+                        {groupedDeadlines.later.map((job) => (
+                          <Link
+                            key={job.id}
+                            to={`/jobs/${job.id}`}
+                            className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{job.headline}</p>
+                              <p className="text-xs text-muted-foreground">{job.employer_name}</p>
+                            </div>
+                            <span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">
+                              {formatDeadline(job.application_deadline, "later")}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             </FadeUp>

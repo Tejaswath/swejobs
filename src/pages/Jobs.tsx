@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { AppLayout } from "@/components/AppLayout";
+import { AdvancedFiltersPopover } from "@/components/jobs/AdvancedFiltersPopover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -127,6 +129,8 @@ export default function Jobs() {
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const debouncedSearch = useDebouncedValue(search, 275);
+  const isSearchPending = search.trim() !== debouncedSearch.trim();
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -148,11 +152,12 @@ export default function Jobs() {
     return new Set(names.filter(Boolean));
   }, [watchedCompanies]);
 
-  const { data: rawJobsData, isLoading, error: jobsError } = useQuery({
-    queryKey: ["jobs-v3", search, lang, remoteOnly],
+  const { data: rawJobsData, isLoading, isFetching, error: jobsError } = useQuery({
+    queryKey: ["jobs-v3", debouncedSearch, lang, remoteOnly],
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
+      const normalizedSearchTerm = debouncedSearch.trim();
       let query = supabase
         .from("jobs")
         .select(
@@ -173,8 +178,8 @@ export default function Jobs() {
       if (remoteOnly) {
         query = query.eq("remote_flag", true);
       }
-      if (search.trim()) {
-        const term = search.trim().replace(/[(),]/g, " ");
+      if (normalizedSearchTerm) {
+        const term = normalizedSearchTerm.replace(/[(),]/g, " ");
         query = query.or(`headline.ilike.%${term}%,employer_name.ilike.%${term}%,company_canonical.ilike.%${term}%`);
       }
 
@@ -185,10 +190,10 @@ export default function Jobs() {
   });
 
   const { data: searchCoverage } = useQuery({
-    queryKey: ["jobs-search-coverage", search],
-    enabled: search.trim().length > 0,
+    queryKey: ["jobs-search-coverage", debouncedSearch],
+    enabled: debouncedSearch.trim().length > 0,
     queryFn: async () => {
-      const term = search.trim().replace(/[(),]/g, " ");
+      const term = debouncedSearch.trim().replace(/[(),]/g, " ");
 
       const activeQuery = supabase
         .from("jobs")
@@ -216,16 +221,17 @@ export default function Jobs() {
     },
   });
 
-  const companyCoverageEntry = useMemo(() => findCompanyRegistryEntry(search), [search]);
+  const companyCoverageEntry = useMemo(() => findCompanyRegistryEntry(debouncedSearch), [debouncedSearch]);
 
   const rankedJobsView = useMemo(() => {
     const sourceJobs = [...(rawJobsData ?? [])];
+    const normalizedSearchTerm = debouncedSearch.trim();
 
     const applyFilters = (
       jobs: typeof sourceJobs,
       options: { currentLens: Lens; hideSwedish: boolean; hideCitizenship: boolean; hideYears: boolean },
     ) => {
-      const hasSearch = search.trim().length > 0;
+      const hasSearch = normalizedSearchTerm.length > 0;
       let rows = jobs.filter((job) => {
         const isTarget = boolValue((job as { is_target_role?: unknown }).is_target_role);
         const isNoise = boolValue((job as { is_noise?: unknown }).is_noise);
@@ -279,7 +285,7 @@ export default function Jobs() {
     });
     let fallbackMode: SearchFallbackMode = "none";
 
-    if (search.trim() && rows.length === 0) {
+    if (normalizedSearchTerm && rows.length === 0) {
       const fallbacks: Array<{
         mode: SearchFallbackMode;
         options: { currentLens: Lens; hideSwedish: boolean; hideCitizenship: boolean; hideYears: boolean };
@@ -339,7 +345,7 @@ export default function Jobs() {
       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
       return watchedSet.has(canonical);
     };
-    const normalizedSearch = normalizeCompanyName(search);
+    const normalizedSearch = normalizeCompanyName(normalizedSearchTerm);
     const companySearchBoost = (job: any) => {
       if (!normalizedSearch) return 0;
       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
@@ -397,7 +403,7 @@ export default function Jobs() {
     });
 
     return { rows, fallbackMode };
-  }, [rawJobsData, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, lens, watchedSet, search]);
+  }, [rawJobsData, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, lens, watchedSet, debouncedSearch]);
 
   const rankAndFilterJobs = rankedJobsView.rows;
   const searchFallbackMode = rankedJobsView.fallbackMode;
@@ -454,7 +460,7 @@ export default function Jobs() {
   };
 
   const coverageBanner = useMemo(() => {
-    if (!search.trim() || !companyCoverageEntry) return null;
+    if (!debouncedSearch.trim() || !companyCoverageEntry) return null;
 
     const provider = providerLabel(companyCoverageEntry.provider);
     const displayName = companyCoverageEntry.display_name;
@@ -496,7 +502,7 @@ export default function Jobs() {
       title: `${displayName} is a fallback candidate`,
       body: `${displayName} is high priority, but only an HTML fallback path is currently plausible. Structured source support has not been verified yet.`,
     };
-  }, [companyCoverageEntry, search, total]);
+  }, [companyCoverageEntry, debouncedSearch, total]);
 
   const jobIds = jobs.map((j) => j.id);
   const { data: allJobTags } = useQuery({
@@ -705,6 +711,9 @@ export default function Jobs() {
             className="h-10 pl-10 text-base"
           />
         </div>
+        {isSearchPending && (
+          <p className="text-[11px] text-muted-foreground">Updating search results…</p>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <Select value={lang} onValueChange={setLang}>
@@ -724,28 +733,18 @@ export default function Jobs() {
             <span className="text-xs text-muted-foreground">Remote</span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Switch
-              checked={hideSwedishRequired}
-              onCheckedChange={setHideSwedishRequired}
-              className="scale-75"
-            />
-            <span className="text-xs text-muted-foreground">Hide Swedish-required</span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Switch
-              checked={hideCitizenshipRestricted}
-              onCheckedChange={setHideCitizenshipRestricted}
-              className="scale-75"
-            />
-            <span className="text-xs text-muted-foreground">Hide citizenship-restricted</span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} className="scale-75" />
-            <span className="text-xs text-muted-foreground">Hide 3+ years</span>
-          </div>
+          <AdvancedFiltersPopover
+            values={{
+              hideSwedishRequired,
+              hideCitizenshipRestricted,
+              hideThreePlusYears,
+            }}
+            onChange={(nextValues) => {
+              setHideSwedishRequired(nextValues.hideSwedishRequired);
+              setHideCitizenshipRestricted(nextValues.hideCitizenshipRestricted);
+              setHideThreePlusYears(nextValues.hideThreePlusYears);
+            }}
+          />
 
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="h-7 px-2 text-xs">
@@ -773,6 +772,11 @@ export default function Jobs() {
                 {fallbackDescription(searchFallbackMode)}
               </div>
             )}
+            {!isLoading && isFetching && (
+              <div className="mb-2 rounded-md border border-border/40 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+                Refreshing results…
+              </div>
+            )}
             {isLoading ? (
               <div className="space-y-2 p-1">
                 {[...Array(8)].map((_, i) => (
@@ -789,7 +793,7 @@ export default function Jobs() {
                 <p className="text-xs text-muted-foreground/80">
                   {coverageBanner
                     ? coverageBanner.body
-                    : search.trim()
+                    : debouncedSearch.trim()
                     ? searchCoverage?.activeCount === 0
                       ? "No active jobs were found for this search in the current source data."
                       : searchCoverage?.visibleCount === 0
