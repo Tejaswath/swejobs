@@ -7,37 +7,144 @@ import { AppLayout } from "@/components/AppLayout";
 import { pickLatestDigest, type DigestRow } from "@/lib/digest";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FadeUp, AnimatedNumber } from "@/components/motion";
+import { Card, CardContent } from "@/components/ui/card";
+import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
+import { cn } from "@/lib/utils";
 import {
   ArrowRight,
+  ArrowUpRight,
   Compass,
   CalendarClock,
   Kanban,
   TrendingUp,
   BookOpen,
   Building,
+  BriefcaseBusiness,
+  BellRing,
+  Sparkles,
+  GraduationCap,
+  Target,
   Activity,
   X,
+  type LucideIcon,
 } from "lucide-react";
 
 function WelcomeBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
     <FadeUp>
-      <div className="relative rounded-lg border border-primary/20 bg-primary/5 px-5 py-4 mb-8">
+      <div className="relative overflow-hidden rounded-2xl border border-primary/15 bg-card/80 px-5 py-4">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-90"
+          style={{
+            background:
+              "radial-gradient(circle at left top, rgba(88, 128, 255, 0.2), transparent 30%), radial-gradient(circle at 75% 0%, rgba(56, 189, 248, 0.12), transparent 26%)",
+          }}
+        />
         <Button
           variant="ghost"
           size="icon"
-          className="absolute right-2 top-2 h-6 w-6 text-muted-foreground hover:text-foreground"
+          className="absolute right-2 top-2 z-10 h-6 w-6 text-muted-foreground hover:text-foreground"
           onClick={onDismiss}
         >
           <X className="h-3.5 w-3.5" />
         </Button>
-        <h2 className="text-sm font-semibold">Welcome to SweJobs</h2>
-        <p className="mt-1 text-sm text-muted-foreground max-w-lg">
-          SweJobs tracks Swedish tech jobs from connected public sources, ranked for early-career relevance. Browse jobs in <strong>Explore</strong>, save ones you like, and track your applications in <strong>Tracker</strong>.
-        </p>
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <Badge variant="secondary" className="border border-primary/20 bg-primary/10 text-primary">
+              Quick start
+            </Badge>
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold">Run your search from one screen.</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Track the market, spot deadlines, and move promising roles forward without digging through flat lists.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/60 bg-background/60 px-3 py-1">Ranked matches</span>
+              <span className="rounded-full border border-border/60 bg-background/60 px-3 py-1">Deadline radar</span>
+              <span className="rounded-full border border-border/60 bg-background/60 px-3 py-1">Skill momentum</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" className="gap-1.5">
+              <Link to="/jobs">
+                Explore jobs <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="gap-1.5">
+              <Link to="/skills">
+                Open skill gap <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
+        </div>
       </div>
     </FadeUp>
+  );
+}
+
+function OverviewPanelHeader({
+  icon: Icon,
+  label,
+  actionLabel,
+  to,
+}: {
+  icon: LucideIcon;
+  label: string;
+  actionLabel?: string;
+  to?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </h2>
+      {actionLabel && to && (
+        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
+          <Link to={to}>
+            {actionLabel} <ArrowRight className="h-3 w-3" />
+          </Link>
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function MetricLinkCard({
+  to,
+  icon: Icon,
+  label,
+  value,
+  helper,
+  accentClassName,
+}: {
+  to: string;
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  helper: string;
+  accentClassName?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group rounded-2xl border border-border/60 bg-background/55 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background/80"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+          <p className={cn("text-2xl font-semibold tracking-tight", accentClassName)}>{value}</p>
+        </div>
+        <div className="rounded-xl border border-border/60 bg-card/70 p-2 text-muted-foreground transition-colors group-hover:text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">{helper}</p>
+        <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+      </div>
+    </Link>
   );
 }
 
@@ -218,6 +325,16 @@ export default function Index() {
 
   const heroRising = hasRealRising ? risingSkills?.[0] : undefined;
   const heroJobCount = jobCount ?? 0;
+  const demandHighlights = topSkills?.slice(0, 6) ?? [];
+  const risingHighlights = (risingSkills ?? [])
+    .filter((skill) => isFinite(skill.pct_change) && skill.pct_change !== 0)
+    .slice(0, 4);
+  const savedCount = trackedCounts.saved ?? 0;
+  const appliedCount = trackedCounts.applied ?? 0;
+  const interviewingCount = trackedCounts.interviewing ?? 0;
+  const trackedTotal = Object.values(trackedCounts).reduce((sum, value) => sum + value, 0);
+  const watchlistHighlights = watchedCompanyData?.slice(0, 4) ?? [];
+  const watchlistOpenings = (watchedCompanyData ?? []).reduce((sum, company) => sum + company.count, 0);
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
       today: [],
@@ -231,6 +348,121 @@ export default function Index() {
 
     return groups;
   }, [upcomingDeadlines]);
+  const priorityDeadlineCount = groupedDeadlines.today.length + groupedDeadlines.thisWeek.length;
+  const primaryFocusSkill = heroRising?.skill ?? demandHighlights[0]?.skill ?? "software_engineering";
+  const secondaryFocusSkill =
+    demandHighlights.find((skill) => skill.skill !== primaryFocusSkill)?.skill ?? "backend";
+  const focusQueue = Array.from(
+    new Set([
+      primaryFocusSkill,
+      secondaryFocusSkill,
+      ...risingHighlights.map((skill) => skill.skill),
+      ...demandHighlights.map((skill) => skill.skill),
+    ]),
+  ).slice(0, 5);
+  const risingBySkill = new Map(risingHighlights.map((skill) => [skill.skill, skill.pct_change]));
+  const deadlinePanels = [
+    {
+      key: "today" as const,
+      label: "Today",
+      hint: "Needs attention",
+      emptyLabel: "Nothing due right now.",
+      items: groupedDeadlines.today.slice(0, 2),
+      panelClass: "border-rose-500/20 bg-rose-500/5",
+      labelClass: "text-rose-200",
+      badgeClass: "border-rose-500/20 bg-rose-500/10 text-rose-200",
+    },
+    {
+      key: "thisWeek" as const,
+      label: "This week",
+      hint: "Worth planning",
+      emptyLabel: "No near-term closers.",
+      items: groupedDeadlines.thisWeek.slice(0, 3),
+      panelClass: "border-amber-500/20 bg-amber-500/5",
+      labelClass: "text-amber-200",
+      badgeClass: "border-amber-500/20 bg-amber-500/10 text-amber-100",
+    },
+    {
+      key: "later" as const,
+      label: "Later",
+      hint: "Good shortlist fuel",
+      emptyLabel: "Nothing queued yet.",
+      items: groupedDeadlines.later.slice(0, 2),
+      panelClass: "border-sky-500/20 bg-sky-500/5",
+      labelClass: "text-sky-200",
+      badgeClass: "border-sky-500/20 bg-sky-500/10 text-sky-100",
+    },
+  ];
+  const metricCards = [
+    {
+      to: "/jobs",
+      icon: Compass,
+      label: "Live market",
+      value: heroJobCount.toLocaleString(),
+      helper: heroRising
+        ? `${heroRising.skill} is rising +${Math.round(heroRising.pct_change)}%`
+        : "Fresh ranked roles ready to browse",
+      accentClassName: "text-foreground",
+    },
+    {
+      to: "/tracked",
+      icon: BellRing,
+      label: "Deadline pressure",
+      value: priorityDeadlineCount.toString(),
+      helper:
+        groupedDeadlines.today.length > 0
+          ? `${groupedDeadlines.today.length} due today`
+          : groupedDeadlines.thisWeek.length > 0
+            ? `${groupedDeadlines.thisWeek.length} closing this week`
+            : "No urgent closing dates right now",
+      accentClassName: groupedDeadlines.today.length > 0 ? "text-rose-200" : "text-foreground",
+    },
+    {
+      to: "/tracked",
+      icon: Kanban,
+      label: "Pipeline",
+      value: trackedTotal.toString(),
+      helper: user
+        ? `${savedCount} saved, ${appliedCount} applied`
+        : "Sign in to keep roles and notes together",
+      accentClassName: "text-foreground",
+    },
+  ];
+  const nextMoveRows = [
+    {
+      to: "/tracked",
+      icon: BellRing,
+      label:
+        groupedDeadlines.today.length > 0
+          ? `Apply to ${groupedDeadlines.today.length} role${groupedDeadlines.today.length === 1 ? "" : "s"} due today`
+          : groupedDeadlines.thisWeek.length > 0
+            ? `Review ${groupedDeadlines.thisWeek.length} deadlines landing this week`
+            : "Deadline board is clear for now",
+      helper:
+        groupedDeadlines.today.length > 0
+          ? "Urgent roles should be handled first."
+          : "Use the breathing room to improve your shortlist.",
+    },
+    {
+      to: user ? "/tracked" : "/auth",
+      icon: BriefcaseBusiness,
+      label:
+        trackedTotal > 0
+          ? `${trackedTotal} role${trackedTotal === 1 ? "" : "s"} already in motion`
+          : "Start building a shortlist",
+      helper: user
+        ? `${savedCount} saved, ${appliedCount} applied, ${interviewingCount} interviewing`
+        : "Sign in to save roles, notes, and outcomes.",
+    },
+    {
+      to: "/skills",
+      icon: GraduationCap,
+      label: `Study ${primaryFocusSkill}`,
+      helper: heroRising
+        ? `Momentum is ${Math.round(heroRising.pct_change)}% this week`
+        : "This is the strongest skill signal in the digest right now.",
+    },
+  ];
 
   // Empty state: no data ingested yet
   if (jobCount === 0) {
@@ -252,232 +484,365 @@ export default function Index() {
 
   return (
     <AppLayout>
-      <div className="space-y-10">
-        {/* Welcome banner */}
-        {showWelcome && <WelcomeBanner onDismiss={dismissWelcome} />}
+      <div className="relative">
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-[440px] opacity-95"
+          style={{
+            background:
+              "radial-gradient(circle at 12% 10%, rgba(88, 128, 255, 0.22), transparent 26%), radial-gradient(circle at 84% 12%, rgba(56, 189, 248, 0.12), transparent 22%), linear-gradient(180deg, rgba(17, 24, 39, 0.12), transparent 70%)",
+          }}
+        />
 
-        {/* Hero insight */}
-        <FadeUp>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-              What to focus on this week
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              <AnimatedNumber value={heroJobCount} className="font-medium text-foreground" /> active jobs
-              {heroRising && (
-                <> · <span className="text-primary font-medium">{heroRising.skill}</span> is rising{" "}
-                  <span className="font-mono text-xs text-primary">
-                    +{Math.round(heroRising.pct_change)}%
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-        </FadeUp>
+        <StaggerContainer className="relative space-y-8">
+          {showWelcome && <WelcomeBanner onDismiss={dismissWelcome} />}
 
-        <div className="space-y-8">
+          <FadeUp>
+            <section className="relative overflow-hidden rounded-[30px] border border-border/60 bg-card/80 px-6 py-6 shadow-[0_18px_60px_rgba(2,8,23,0.18)] sm:px-8 sm:py-8">
+              <div className="pointer-events-none absolute -left-10 top-0 h-44 w-44 rounded-full bg-primary/20 blur-3xl" />
+              <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-sky-500/10 blur-3xl" />
+              <div className="relative grid gap-8 xl:grid-cols-[1.35fr,0.95fr]">
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="gap-1.5 border border-primary/20 bg-primary/10 text-primary hover:bg-primary/10">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Weekly brief
+                    </Badge>
+                    {heroRising && (
+                      <Badge variant="secondary" className="border border-primary/20 bg-background/70 text-foreground">
+                        Momentum +{Math.round(heroRising.pct_change)}%
+                      </Badge>
+                    )}
+                  </div>
 
-          {/* Upcoming Deadlines */}
-          {upcomingDeadlines && upcomingDeadlines.length > 0 && (
-            <FadeUp>
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <CalendarClock className="h-3.5 w-3.5" /> Upcoming deadlines
-                  </h2>
-                </div>
-                <div className="space-y-3">
-                  {groupedDeadlines.today.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-destructive/80">
-                        Today
-                      </p>
-                      <div className="space-y-0.5">
-                        {groupedDeadlines.today.map((job) => (
-                          <Link
-                            key={job.id}
-                            to={`/jobs/${job.id}`}
-                            className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">{job.headline}</p>
-                              <p className="text-xs text-muted-foreground">{job.employer_name}</p>
-                            </div>
-                            <span className="ml-3 shrink-0 font-mono text-xs font-medium text-destructive/80">
-                              {formatDeadline(job.application_deadline, "today")}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <div className="max-w-3xl space-y-3">
+                    <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-[3.7rem]">
+                      Make your next application from signal, not noise.
+                    </h1>
+                    <p className="max-w-2xl text-base text-muted-foreground sm:text-lg">
+                      <AnimatedNumber value={heroJobCount} className="font-semibold text-foreground" /> active roles are live right
+                      now
+                      {heroRising && (
+                        <>
+                          {" "}and <span className="font-semibold text-primary">{heroRising.skill}</span> is climbing{" "}
+                          <span className="font-mono text-primary">+{Math.round(heroRising.pct_change)}%</span>
+                        </>
+                      )}
+                      . The screen below is tuned to show what deserves action first.
+                    </p>
+                  </div>
 
-                  {groupedDeadlines.thisWeek.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-                        This week
-                      </p>
-                      <div className="space-y-0.5">
-                        {groupedDeadlines.thisWeek.map((job) => (
-                          <Link
-                            key={job.id}
-                            to={`/jobs/${job.id}`}
-                            className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">{job.headline}</p>
-                              <p className="text-xs text-muted-foreground">{job.employer_name}</p>
-                            </div>
-                            <span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">
-                              {formatDeadline(job.application_deadline, "thisWeek")}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {groupedDeadlines.later.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-                        Later
-                      </p>
-                      <div className="space-y-0.5">
-                        {groupedDeadlines.later.map((job) => (
-                          <Link
-                            key={job.id}
-                            to={`/jobs/${job.id}`}
-                            className="flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted/50"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">{job.headline}</p>
-                              <p className="text-xs text-muted-foreground">{job.employer_name}</p>
-                            </div>
-                            <span className="ml-3 shrink-0 font-mono text-xs text-muted-foreground">
-                              {formatDeadline(job.application_deadline, "later")}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-            </FadeUp>
-          )}
-
-          {/* Tracking pipeline */}
-          {user && trackedJobs && trackedJobs.length > 0 && (
-            <FadeUp>
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <Kanban className="h-3.5 w-3.5" /> Your pipeline
-                  </h2>
-                  <Link to="/tracked">
-                    <Button variant="ghost" size="sm" className="gap-1 text-xs h-7 px-2 text-muted-foreground hover:text-foreground">
-                      View all <ArrowRight className="h-3 w-3" />
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild size="lg" className="h-11 rounded-xl px-5">
+                      <Link to="/jobs">
+                        <Compass className="h-4 w-4" /> Explore best matches
+                      </Link>
                     </Button>
-                  </Link>
-                </div>
-                <div className="flex gap-3">
-                  {["saved", "applied", "interviewing"].map((s) => (
-                    <div key={s} className="flex-1 rounded-lg bg-muted/40 p-3 text-center">
-                      <p className="font-mono text-lg font-semibold">{trackedCounts[s] ?? 0}</p>
-                      <p className="text-xs capitalize text-muted-foreground">{s}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </FadeUp>
-          )}
-
-          {/* Watched companies */}
-          {user && watchedCompanyData && watchedCompanyData.length > 0 && (
-            <FadeUp>
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <Building className="h-3.5 w-3.5" /> Watched companies
-                  </h2>
-                  <Link to="/watchlist">
-                    <Button variant="ghost" size="sm" className="gap-1 text-xs h-7 px-2 text-muted-foreground hover:text-foreground">
-                      Manage <ArrowRight className="h-3 w-3" />
+                    <Button
+                      asChild
+                      variant="secondary"
+                      size="lg"
+                      className="h-11 rounded-xl border border-border/60 bg-background/60 px-5 text-foreground hover:bg-background/80"
+                    >
+                      <Link to="/skills">
+                        <Target className="h-4 w-4" /> Review skill gap
+                      </Link>
                     </Button>
-                  </Link>
-                </div>
-                <div className="space-y-0.5">
-                  {watchedCompanyData.map((c) => (
-                    <div key={c.name} className="flex items-center justify-between rounded-md px-3 py-2 text-sm">
-                      <span className="font-medium">{c.name}</span>
-                      <span className="font-mono text-xs text-muted-foreground">{c.count} opening{c.count !== 1 ? "s" : ""}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </FadeUp>
-          )}
-
-          {/* Study focus */}
-          {topSkills && topSkills.length > 0 && (
-            <FadeUp>
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <BookOpen className="h-3.5 w-3.5" /> Study focus
-                  </h2>
-                  <Link to="/skills">
-                    <Button variant="ghost" size="sm" className="gap-1 text-xs h-7 px-2 text-muted-foreground hover:text-foreground">
-                      Full analysis <ArrowRight className="h-3 w-3" />
+                    <Button asChild variant="ghost" size="lg" className="h-11 rounded-xl px-4 text-muted-foreground hover:text-foreground">
+                      <Link to={user ? "/tracked" : "/auth"}>
+                        <Kanban className="h-4 w-4" /> Open tracker
+                      </Link>
                     </Button>
-                  </Link>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {metricCards.map((metric) => (
+                      <MetricLinkCard key={metric.label} {...metric} />
+                    ))}
+                  </div>
                 </div>
-                <div className={`grid gap-4 ${hasRealRising ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">High demand</p>
-                    {topSkills.slice(0, 3).map((s) => (
-                      <div key={s.skill} className="flex items-center justify-between text-sm">
-                        <span>{s.skill}</span>
-                        <span className="font-mono text-xs text-muted-foreground">{s.count} jobs</span>
+
+                <Card className="relative overflow-hidden border-primary/20 bg-background/55 backdrop-blur-sm">
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent" />
+                  <CardContent className="relative p-5 sm:p-6">
+                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Next move</p>
+                    <div className="mt-4 rounded-3xl border border-primary/20 bg-primary/10 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-primary/70">Market pulse</p>
+                          <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{primaryFocusSkill}</h2>
+                        </div>
+                        {heroRising && (
+                          <Badge className="bg-primary text-primary-foreground hover:bg-primary">+{Math.round(heroRising.pct_change)}%</Badge>
+                        )}
+                      </div>
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {heroRising
+                          ? `${primaryFocusSkill} keeps appearing in relevant roles and is accelerating this week.`
+                          : "This is the clearest skill signal in your current market digest."}
+                      </p>
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      {nextMoveRows.map((row) => {
+                        const Icon = row.icon;
+                        return (
+                          <Link
+                            key={row.label}
+                            to={row.to}
+                            className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card/65 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-card"
+                          >
+                            <div className="rounded-xl border border-border/60 bg-background/70 p-2 text-muted-foreground transition-colors group-hover:text-primary">
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{row.label}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{row.helper}</p>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+          </FadeUp>
+
+          <div className="grid gap-4 xl:grid-cols-[1.3fr,0.92fr]">
+            <FadeUp>
+              <Card className="h-full overflow-hidden border-border/60 bg-card/80">
+                <CardContent className="p-5 sm:p-6">
+                  <OverviewPanelHeader icon={CalendarClock} label="Deadline radar" actionLabel="Open tracker" to="/tracked" />
+                  <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                    {deadlinePanels.map((panel) => (
+                      <div key={panel.key} className={cn("rounded-3xl border p-4", panel.panelClass)}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className={cn("font-mono text-[11px] uppercase tracking-[0.22em]", panel.labelClass)}>
+                              {panel.label}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">{panel.hint}</p>
+                          </div>
+                          <span className={cn("rounded-full border px-2.5 py-1 font-mono text-[11px]", panel.badgeClass)}>
+                            {panel.items.length}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                          {panel.items.length > 0 ? (
+                            panel.items.map((job) => (
+                              <Link
+                                key={job.id}
+                                to={`/jobs/${job.id}`}
+                                className="group block rounded-2xl border border-border/60 bg-background/60 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-background/80"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">{job.headline}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">{job.employer_name}</p>
+                                  </div>
+                                  <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                                    {formatDeadline(job.application_deadline, panel.key)}
+                                  </span>
+                                </div>
+                              </Link>
+                            ))
+                          ) : (
+                            <div className="rounded-2xl border border-dashed border-border/60 bg-background/35 p-4 text-sm text-muted-foreground">
+                              {panel.emptyLabel}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
-                  {hasRealRising && risingSkills && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Rising fast</p>
-                      {risingSkills.filter((s) => isFinite(s.pct_change) && s.pct_change !== 0).slice(0, 3).map((s) => (
-                        <div key={s.skill} className="flex items-center justify-between text-sm">
-                          <span>{s.skill}</span>
-                          <span className="font-mono text-xs text-primary">
-                            +{Math.round(s.pct_change)}%
-                          </span>
+                </CardContent>
+              </Card>
+            </FadeUp>
+
+            <div className="grid gap-4">
+              <FadeUp>
+                <Card className="overflow-hidden border-border/60 bg-card/80">
+                  <CardContent className="p-5 sm:p-6">
+                    <OverviewPanelHeader icon={Kanban} label="Pipeline pulse" actionLabel="Open tracker" to="/tracked" />
+                    <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                      {[
+                        { label: "Saved", value: savedCount },
+                        { label: "Applied", value: appliedCount },
+                        { label: "Interviewing", value: interviewingCount },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-2xl border border-border/60 bg-background/55 p-4 text-center">
+                          <p className="font-mono text-2xl font-semibold">{item.value}</p>
+                          <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.label}</p>
                         </div>
                       ))}
                     </div>
-                  )}
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Always needed</p>
-                    {topSkills.slice(3, 6).map((s) => (
-                      <div key={s.skill} className="flex items-center justify-between text-sm">
-                        <span>{s.skill}</span>
-                        <span className="font-mono text-xs text-muted-foreground">{s.count}</span>
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      {trackedTotal > 0
+                        ? "Keep momentum up by moving one saved role into applied before the week ends."
+                        : "Start a shortlist so the market signal turns into concrete opportunities."}
+                    </p>
+                  </CardContent>
+                </Card>
+              </FadeUp>
+
+              <FadeUp>
+                <Card className="overflow-hidden border-border/60 bg-card/80">
+                  <CardContent className="p-5 sm:p-6">
+                    <OverviewPanelHeader
+                      icon={Building}
+                      label="Watchlist pulse"
+                      actionLabel={user ? "Manage" : "Sign in"}
+                      to={user ? "/watchlist" : "/auth"}
+                    />
+                    <div className="mt-4 flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-3xl font-semibold tracking-tight">{watchlistOpenings}</p>
+                        <p className="text-sm text-muted-foreground">openings across watched companies</p>
                       </div>
-                    ))}
+                      {user && watchlistHighlights.length > 0 && (
+                        <Badge variant="secondary" className="border border-border/60 bg-background/70 text-foreground">
+                          {watchlistHighlights.length} tracked
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="mt-5 space-y-2">
+                      {user && watchlistHighlights.length > 0 ? (
+                        watchlistHighlights.map((company) => (
+                          <Link
+                            key={company.name}
+                            to="/watchlist"
+                            className="group flex items-center justify-between rounded-2xl border border-border/60 bg-background/55 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-background/80"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 font-mono text-sm text-primary">
+                                {company.name.slice(0, 1).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{company.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {company.count} opening{company.count === 1 ? "" : "s"}
+                                </p>
+                              </div>
+                            </div>
+                            <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+                          </Link>
+                        ))
+                      ) : (
+                        <div className="rounded-3xl border border-dashed border-border/60 bg-background/35 p-5 text-sm text-muted-foreground">
+                          {user
+                            ? "Add a few target companies and this panel will turn into a live employer pulse."
+                            : "Sign in to watch specific employers and see openings without searching manually."}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </FadeUp>
+            </div>
+          </div>
+
+          <FadeUp>
+            <Card className="relative overflow-hidden border-border/60 bg-card/80">
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 h-40 opacity-90"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(88, 128, 255, 0.14), transparent 42%), linear-gradient(225deg, rgba(16, 185, 129, 0.08), transparent 38%)",
+                }}
+              />
+              <CardContent className="relative p-5 sm:p-6">
+                <OverviewPanelHeader icon={BookOpen} label="Study focus" actionLabel="Full analysis" to="/skills" />
+                <div className="mt-5 grid gap-6 xl:grid-cols-[1.15fr,0.85fr]">
+                  <div className="space-y-5">
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Skills in demand</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {demandHighlights.length > 0 ? (
+                          demandHighlights.map((skill) => (
+                            <div
+                              key={skill.skill}
+                              className="rounded-full border border-border/60 bg-background/65 px-3 py-2 text-sm transition-colors hover:border-primary/25 hover:bg-background"
+                            >
+                              <span className="font-medium">{skill.skill}</span>
+                              <span className="ml-2 font-mono text-xs text-muted-foreground">{skill.count}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-border/60 bg-background/35 p-4 text-sm text-muted-foreground">
+                            Market digest data is still warming up.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {risingHighlights.length > 0 && (
+                      <div>
+                        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Rising this week</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {risingHighlights.map((skill) => (
+                            <div
+                              key={skill.skill}
+                              className="rounded-full border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary"
+                            >
+                              <span className="font-medium">{skill.skill}</span>
+                              <span className="ml-2 font-mono text-xs">+{Math.round(skill.pct_change)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-[28px] border border-primary/20 bg-primary/10 p-5">
+                    <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary/70">Learn next</p>
+                    <div className="mt-3">
+                      <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">{primaryFocusSkill}</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Pair <span className="font-medium text-foreground">{primaryFocusSkill}</span> with{" "}
+                        <span className="font-medium text-foreground">{secondaryFocusSkill}</span> to close a visible market gap fast.
+                      </p>
+                    </div>
+
+                    <div className="mt-5 space-y-2">
+                      {focusQueue.map((skill, index) => (
+                        <div key={skill} className="flex items-center justify-between rounded-2xl border border-border/50 bg-background/60 px-3 py-2.5">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 font-mono text-xs text-primary">
+                              {index + 1}
+                            </div>
+                            <span className="text-sm font-medium">{skill}</span>
+                          </div>
+                          {risingBySkill.has(skill) ? (
+                            <span className="font-mono text-xs text-primary">
+                              +{Math.round(risingBySkill.get(skill) ?? 0)}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">steady</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <Button asChild size="sm" className="gap-1.5">
+                        <Link to="/skills">
+                          <GraduationCap className="h-3.5 w-3.5" /> Build the plan
+                        </Link>
+                      </Button>
+                      <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+                        <Link to="/digest">
+                          <TrendingUp className="h-3.5 w-3.5" /> Open digest
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </section>
-            </FadeUp>
-          )}
-
-          {/* CTA */}
-          <FadeUp>
-            <Link to="/jobs">
-              <Button className="gap-2 h-10" size="lg">
-                <Compass className="h-4 w-4" /> Explore jobs <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
-            </Link>
+              </CardContent>
+            </Card>
           </FadeUp>
-        </div>
+        </StaggerContainer>
       </div>
     </AppLayout>
   );
