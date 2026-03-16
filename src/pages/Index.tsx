@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import {
   ArrowRight,
   ArrowUpRight,
+  ChevronRight,
   Compass,
   CalendarClock,
   Kanban,
@@ -361,12 +362,27 @@ export default function Index() {
     ]),
   ).slice(0, 5);
   const risingBySkill = new Map(risingHighlights.map((skill) => [skill.skill, skill.pct_change]));
+  const topSignalDelta = heroRising ? Math.round(heroRising.pct_change) : null;
+  const studyFocusSkills = [
+    ...demandHighlights.map((skill) => ({
+      name: skill.skill,
+      jobCount: skill.count,
+      weeklyDelta: risingBySkill.get(skill.skill),
+    })),
+    ...risingHighlights
+      .filter((skill) => !demandHighlights.some((item) => item.skill === skill.skill))
+      .map((skill) => ({
+        name: skill.skill,
+        jobCount: 0,
+        weeklyDelta: skill.pct_change,
+      })),
+  ].slice(0, 8);
   const deadlinePanels = [
     {
       key: "today" as const,
       label: "Today",
       hint: "Needs attention",
-      emptyLabel: "Nothing due right now.",
+      emptyLabel: "No deadlines today.",
       items: groupedDeadlines.today.slice(0, 2),
       panelClass: "border-rose-500/20 bg-rose-500/5",
       labelClass: "text-rose-200",
@@ -376,7 +392,7 @@ export default function Index() {
       key: "thisWeek" as const,
       label: "This week",
       hint: "Worth planning",
-      emptyLabel: "No near-term closers.",
+      emptyLabel: "No urgent closers.",
       items: groupedDeadlines.thisWeek.slice(0, 3),
       panelClass: "border-amber-500/20 bg-amber-500/5",
       labelClass: "text-amber-200",
@@ -437,11 +453,7 @@ export default function Index() {
           ? `Apply to ${groupedDeadlines.today.length} role${groupedDeadlines.today.length === 1 ? "" : "s"} due today`
           : groupedDeadlines.thisWeek.length > 0
             ? `Review ${groupedDeadlines.thisWeek.length} deadlines landing this week`
-            : "Deadline board is clear for now",
-      helper:
-        groupedDeadlines.today.length > 0
-          ? "Urgent roles should be handled first."
-          : "Use the breathing room to improve your shortlist.",
+            : "No urgent closers",
     },
     {
       to: user ? "/tracked" : "/auth",
@@ -449,18 +461,12 @@ export default function Index() {
       label:
         trackedTotal > 0
           ? `${trackedTotal} role${trackedTotal === 1 ? "" : "s"} already in motion`
-          : "Start building a shortlist",
-      helper: user
-        ? `${savedCount} saved, ${appliedCount} applied, ${interviewingCount} interviewing`
-        : "Sign in to save roles, notes, and outcomes.",
+          : "Build your pipeline",
     },
     {
       to: "/skills",
       icon: GraduationCap,
       label: `Study ${primaryFocusSkill}`,
-      helper: heroRising
-        ? `Momentum is ${Math.round(heroRising.pct_change)}% this week`
-        : "This is the strongest skill signal in the digest right now.",
     },
   ];
 
@@ -518,17 +524,23 @@ export default function Index() {
                     <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-[3.7rem]">
                       Make your next application from signal, not noise.
                     </h1>
-                    <p className="max-w-2xl text-base text-muted-foreground sm:text-lg">
-                      <AnimatedNumber value={heroJobCount} className="font-semibold text-foreground" /> active roles are live right
-                      now
-                      {heroRising && (
-                        <>
-                          {" "}and <span className="font-semibold text-primary">{heroRising.skill}</span> is climbing{" "}
-                          <span className="font-mono text-primary">+{Math.round(heroRising.pct_change)}%</span>
-                        </>
-                      )}
-                      . The screen below is tuned to show what deserves action first.
-                    </p>
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="font-medium text-foreground tabular-nums">
+                          <AnimatedNumber value={heroJobCount} />
+                        </span>
+                        live roles
+                      </span>
+                      <span className="text-border">·</span>
+                      <span className="inline-flex items-center gap-1 text-sm">
+                        <span className="text-muted-foreground">top signal:</span>
+                        <span className="font-medium text-primary">{primaryFocusSkill}</span>
+                        {topSignalDelta != null && (
+                          <span className="font-medium text-emerald-400">+{topSignalDelta}%</span>
+                        )}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap gap-3">
@@ -570,16 +582,15 @@ export default function Index() {
                         <div>
                           <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-primary/70">Market pulse</p>
                           <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{primaryFocusSkill}</h2>
+                          <span className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground/70">
+                            <TrendingUp className="h-3 w-3" />
+                            {topSignalDelta != null ? "accelerating this week" : "market lead"}
+                          </span>
                         </div>
                         {heroRising && (
                           <Badge className="bg-primary text-primary-foreground hover:bg-primary">+{Math.round(heroRising.pct_change)}%</Badge>
                         )}
                       </div>
-                      <p className="mt-3 text-sm text-muted-foreground">
-                        {heroRising
-                          ? `${primaryFocusSkill} keeps appearing in relevant roles and is accelerating this week.`
-                          : "This is the clearest skill signal in your current market digest."}
-                      </p>
                     </div>
 
                     <div className="mt-5 space-y-3">
@@ -589,15 +600,15 @@ export default function Index() {
                           <Link
                             key={row.label}
                             to={row.to}
-                            className="group flex items-start gap-3 rounded-2xl border border-border/60 bg-card/65 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-card"
+                            className="group flex items-center gap-3 rounded-2xl border border-border/60 bg-card/65 px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-card"
                           >
                             <div className="rounded-xl border border-border/60 bg-background/70 p-2 text-muted-foreground transition-colors group-hover:text-primary">
                               <Icon className="h-4 w-4" />
                             </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium">{row.label}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">{row.helper}</p>
-                            </div>
+                            <span className="text-sm font-medium transition-colors group-hover:text-foreground">
+                              {row.label}
+                            </span>
+                            <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
                           </Link>
                         );
                       })}
@@ -677,11 +688,24 @@ export default function Index() {
                         </div>
                       ))}
                     </div>
-                    <p className="mt-4 text-sm text-muted-foreground">
-                      {trackedTotal > 0
-                        ? "Keep momentum up by moving one saved role into applied before the week ends."
-                        : "Start a shortlist so the market signal turns into concrete opportunities."}
-                    </p>
+                    {trackedTotal === 0 ? (
+                      <div className="mt-4 flex flex-col items-center gap-3 py-2 text-center">
+                        <p className="text-sm text-muted-foreground">Save jobs to build your pipeline.</p>
+                        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-primary hover:text-primary">
+                          <Link to="/jobs">
+                            Browse jobs <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-4 flex justify-end">
+                        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
+                          <Link to="/tracked">
+                            Open pipeline <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </FadeUp>
@@ -730,10 +754,15 @@ export default function Index() {
                           </Link>
                         ))
                       ) : (
-                        <div className="rounded-3xl border border-dashed border-border/60 bg-background/35 p-5 text-sm text-muted-foreground">
-                          {user
-                            ? "Add a few target companies and this panel will turn into a live employer pulse."
-                            : "Sign in to watch specific employers and see openings without searching manually."}
+                        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border/60 bg-background/35 p-5 text-center">
+                          <p className="text-sm text-muted-foreground">
+                            {user ? "Add companies to watch." : "Sign in to watch companies."}
+                          </p>
+                          <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-primary hover:text-primary">
+                            <Link to={user ? "/watchlist" : "/auth"}>
+                              {user ? "Manage watchlist" : "Sign in"} <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -757,18 +786,29 @@ export default function Index() {
                 <div className="mt-5 grid gap-6 xl:grid-cols-[1.15fr,0.85fr]">
                   <div className="space-y-5">
                     <div>
-                      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Skills in demand</p>
+                      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Skill signals</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {demandHighlights.length > 0 ? (
-                          demandHighlights.map((skill) => (
+                        {studyFocusSkills.length > 0 ? (
+                          studyFocusSkills.map((skill) => {
+                            const isRising = typeof skill.weeklyDelta === "number" && skill.weeklyDelta > 0;
+                            return (
                             <div
-                              key={skill.skill}
-                              className="rounded-full border border-border/60 bg-background/65 px-3 py-2 text-sm transition-colors hover:border-primary/25 hover:bg-background"
+                              key={skill.name}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition-colors hover:border-primary/25 hover:bg-background",
+                                isRising
+                                  ? "border-emerald-500/25 bg-emerald-500/5 text-foreground"
+                                  : "border-border/60 bg-background/65 text-foreground",
+                              )}
                             >
-                              <span className="font-medium">{skill.skill}</span>
-                              <span className="ml-2 font-mono text-xs text-muted-foreground">{skill.count}</span>
+                              {isRising && <TrendingUp className="h-3 w-3 shrink-0 text-emerald-400" />}
+                              <span className="font-medium">{skill.name}</span>
+                              <span className={cn("font-mono text-xs", isRising ? "text-emerald-400" : "text-muted-foreground")}>
+                                {isRising ? `+${Math.round(skill.weeklyDelta ?? 0)}%` : skill.jobCount}
+                              </span>
                             </div>
-                          ))
+                          );
+                          })
                         ) : (
                           <div className="rounded-2xl border border-dashed border-border/60 bg-background/35 p-4 text-sm text-muted-foreground">
                             Market digest data is still warming up.
@@ -776,33 +816,22 @@ export default function Index() {
                         )}
                       </div>
                     </div>
-
-                    {risingHighlights.length > 0 && (
-                      <div>
-                        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Rising this week</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {risingHighlights.map((skill) => (
-                            <div
-                              key={skill.skill}
-                              className="rounded-full border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary"
-                            >
-                              <span className="font-medium">{skill.skill}</span>
-                              <span className="ml-2 font-mono text-xs">+{Math.round(skill.pct_change)}%</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="rounded-[28px] border border-primary/20 bg-primary/10 p-5">
                     <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary/70">Learn next</p>
                     <div className="mt-3">
                       <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">{primaryFocusSkill}</h3>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Pair <span className="font-medium text-foreground">{primaryFocusSkill}</span> with{" "}
-                        <span className="font-medium text-foreground">{secondaryFocusSkill}</span> to close a visible market gap fast.
-                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
+                          {primaryFocusSkill}
+                        </span>
+                        <span className="text-xs text-muted-foreground/50">pairs with</span>
+                        <span className="rounded-full bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                          {secondaryFocusSkill}
+                        </span>
+                        <span className="text-xs text-emerald-400">closes gap</span>
+                      </div>
                     </div>
 
                     <div className="mt-5 space-y-2">
