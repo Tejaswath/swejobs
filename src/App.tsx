@@ -16,6 +16,7 @@ import Digest from "./pages/Digest";
 import Export from "./pages/Export";
 import SkillGap from "./pages/SkillGap";
 import CompanyWatchlist from "./pages/CompanyWatchlist";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ function App() {
               <Route path="/export" element={<Export />} />
               <Route path="/skills" element={<SkillGap />} />
               <Route path="/watchlist" element={<CompanyWatchlist />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

@@ -34,6 +34,10 @@ export default function Digest() {
   const WINDOW_TYPE = "rolling_30d";
   const REFRESH_MS = 60_000;
 
+  useEffect(() => {
+    document.title = "Market Digest | SweJobs";
+  }, []);
+
   const { data: digests, isFetching, error } = useQuery({
     queryKey: ["digests"],
     refetchInterval: REFRESH_MS,
@@ -126,11 +130,11 @@ export default function Digest() {
             {/* Summary */}
             <div className="grid gap-6 sm:grid-cols-4">
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">New jobs</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">New jobs</p>
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-2xl font-semibold">{safeNum(d?.total_new_jobs)}</span>
                   {d?.new_jobs_delta_pct != null && isFinite(Number(d.new_jobs_delta_pct)) && (
-                    <Badge variant={Number(d.new_jobs_delta_pct) >= 0 ? "default" : "destructive"} className="text-[10px] font-normal">
+                    <Badge variant={Number(d.new_jobs_delta_pct) >= 0 ? "default" : "destructive"} className="text-xs font-normal">
                       {Number(d.new_jobs_delta_pct) >= 0 ? <TrendingUp className="mr-0.5 h-2.5 w-2.5" /> : <TrendingDown className="mr-0.5 h-2.5 w-2.5" />}
                       {safePct(d.new_jobs_delta_pct)}
                     </Badge>
@@ -138,15 +142,15 @@ export default function Digest() {
                 </div>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Removed</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Removed</p>
                 <span className="font-mono text-2xl font-semibold">{safeNum(d?.total_removed_jobs)}</span>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Remote share</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Remote share</p>
                 <span className="font-mono text-2xl font-semibold">{safeNum(d?.remote_share_pct)}%</span>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">English listings</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">English listings</p>
                 <span className="font-mono text-2xl font-semibold">{safeNum(d?.english_pct)}%</span>
               </div>
             </div>
@@ -177,7 +181,7 @@ export default function Digest() {
                     {d.rising_skills.map((s: any, i: number) => (
                       <div key={s.skill} className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-muted-foreground w-4">{i + 1}</span>
+                          <span className="font-mono text-xs text-muted-foreground w-4">{i + 1}</span>
                           <span>{s.skill}</span>
                         </div>
                         <span className="font-mono text-xs text-primary">

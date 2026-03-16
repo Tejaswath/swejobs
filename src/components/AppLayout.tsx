@@ -14,6 +14,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -31,6 +33,7 @@ import {
   Sun,
   LogOut,
   LogIn,
+  ChevronDown,
   Search,
   BarChart3,
   Download,
@@ -39,6 +42,7 @@ import {
   Bookmark,
   MoreHorizontal,
   Menu,
+  Settings,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -54,6 +58,7 @@ const MORE_ITEMS = [
   { path: "/digest", label: "Market Digest", icon: BarChart3 },
   { path: "/searches", label: "Saved Searches", icon: Bookmark },
   { path: "/export", label: "Export Data", icon: Download },
+  { path: "/admin", label: "Admin", icon: Settings },
 ];
 
 const COMMAND_ITEMS = [
@@ -68,6 +73,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const userEmail = user?.email ?? "";
+  const userInitial = userEmail.charAt(0).toUpperCase() || "U";
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -81,7 +88,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-50 border-b border-border/40 glass">
         <div className="mx-auto flex h-12 max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-2">
@@ -121,7 +128,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     );
                   })}
                   <div className="my-2 h-px bg-border/40" />
-                  <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">More</p>
+                  <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">More</p>
                   {MORE_ITEMS.map((item) => (
                     <Link
                       key={item.path}
@@ -191,7 +198,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               variant="ghost"
               size="sm"
               onClick={() => setCmdOpen(true)}
-              className="hidden md:flex h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+              className="hidden md:flex h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
             >
               <Search className="h-3 w-3" />
               <kbd className="pointer-events-none rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px]">⌘K</kbd>
@@ -206,13 +213,34 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
             </Button>
             {user ? (
-              <Button variant="ghost" size="sm" onClick={signOut} className="gap-1 text-[11px] h-7 px-2 text-muted-foreground hover:text-foreground">
-                <LogOut className="h-3 w-3" />
-                <span className="hidden sm:inline">Sign out</span>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
+                    <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                      {userInitial}
+                    </span>
+                    <span className="hidden max-w-[140px] truncate lg:inline">{userEmail}</span>
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Signed in as</DropdownMenuLabel>
+                  <DropdownMenuLabel className="truncate text-xs font-normal">{userEmail}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="gap-2 text-xs"
+                    onClick={() => {
+                      void signOut();
+                    }}
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <Link to="/auth">
-                <Button variant="ghost" size="sm" className="gap-1 text-[11px] h-7 px-2 text-muted-foreground hover:text-foreground">
+                <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
                   <LogIn className="h-3 w-3" /> Sign in
                 </Button>
               </Link>
@@ -221,7 +249,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 lg:px-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 lg:px-6">{children}</main>
+
+      <footer className="border-t border-border/40 bg-background/80">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 lg:px-6">
+          <p className="text-xs text-muted-foreground">SweJobs</p>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <Link to="/jobs" className="hover:text-foreground">Explore</Link>
+            <Link to="/tracked" className="hover:text-foreground">Tracker</Link>
+            <Link to="/digest" className="hover:text-foreground">Digest</Link>
+          </div>
+        </div>
+      </footer>
 
       <CommandDialog open={cmdOpen} onOpenChange={setCmdOpen}>
         <CommandInput placeholder="Go to..." />

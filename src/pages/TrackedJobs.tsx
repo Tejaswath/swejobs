@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Link, Navigate } from "react-router-dom";
 import { Trash2, Bookmark, Compass } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useEffect } from "react";
 
 const COLUMNS = [
   { key: "saved", label: "Saved" },
@@ -20,6 +21,10 @@ export default function TrackedJobs() {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  useEffect(() => {
+    document.title = "Tracker | SweJobs";
+  }, []);
 
   const { data: trackedJobs } = useQuery({
     queryKey: ["all-tracked"],
@@ -75,7 +80,7 @@ export default function TrackedJobs() {
                 <div key={col.key}>
                   <div className="mb-2 flex items-center gap-2">
                     <h3 className="text-xs font-medium text-muted-foreground">{col.label}</h3>
-                    <Badge variant="secondary" className="text-[10px] font-normal">{items.length}</Badge>
+                    <Badge variant="secondary" className="text-xs font-normal">{items.length}</Badge>
                   </div>
                   <div className="min-h-[200px] space-y-1.5 rounded-lg bg-muted/30 p-2">
                     {items.map((item) => {
@@ -89,7 +94,7 @@ export default function TrackedJobs() {
                             <p className="mt-0.5 text-xs text-muted-foreground">{job?.employer_name}</p>
                           </Link>
                           {item.notes && (
-                            <p className="mt-1 text-[11px] text-muted-foreground italic line-clamp-2">{item.notes}</p>
+                            <p className="mt-1 text-xs text-muted-foreground italic line-clamp-2">{item.notes}</p>
                           )}
                           <Button
                             variant="ghost"

@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Download, FileSpreadsheet, FileJson } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 function downloadCSV(filename: string, headers: string[], rows: any[][]) {
   const BOM = "\uFEFF";
@@ -33,6 +34,10 @@ function downloadJSON(filename: string, data: any) {
 export default function Export() {
   const { user } = useAuth();
   const { toast } = useToast();
+
+  useEffect(() => {
+    document.title = "Export | SweJobs";
+  }, []);
 
   const { data: latestDigest, error: latestDigestError } = useQuery({
     queryKey: ["latest-digest-export"],

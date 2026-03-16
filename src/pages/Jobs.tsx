@@ -113,6 +113,10 @@ export default function Jobs() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
+  useEffect(() => {
+    document.title = "Explore Jobs | SweJobs";
+  }, []);
+
   const [lens, setLens] = useState<Lens>("best_matches");
   const [search, setSearch] = useState("");
   const [lang, setLang] = useState("all");
@@ -717,7 +721,7 @@ export default function Jobs() {
 
           <div className="flex items-center gap-1.5">
             <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} className="scale-75" />
-            <span className="text-[11px] text-muted-foreground">Remote</span>
+            <span className="text-xs text-muted-foreground">Remote</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -726,7 +730,7 @@ export default function Jobs() {
               onCheckedChange={setHideSwedishRequired}
               className="scale-75"
             />
-            <span className="text-[11px] text-muted-foreground">Hide Swedish-required</span>
+            <span className="text-xs text-muted-foreground">Hide Swedish-required</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -735,12 +739,12 @@ export default function Jobs() {
               onCheckedChange={setHideCitizenshipRestricted}
               className="scale-75"
             />
-            <span className="text-[11px] text-muted-foreground">Hide citizenship-restricted</span>
+            <span className="text-xs text-muted-foreground">Hide citizenship-restricted</span>
           </div>
 
           <div className="flex items-center gap-1.5">
             <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} className="scale-75" />
-            <span className="text-[11px] text-muted-foreground">Hide 3+ years</span>
+            <span className="text-xs text-muted-foreground">Hide 3+ years</span>
           </div>
 
           {hasActiveFilters && (
@@ -847,7 +851,7 @@ export default function Jobs() {
                           </div>
 
                           <p className="mt-0.5 text-xs text-muted-foreground">{displayEmployer}</p>
-                          <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
                             {job.lang && <span>{job.lang.toUpperCase()}</span>}
                             {stage !== "unknown" && (
@@ -902,7 +906,7 @@ export default function Jobs() {
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="font-mono text-[11px] text-muted-foreground">
+                    <span className="font-mono text-xs text-muted-foreground">
                       {page + 1}/{totalPages}
                     </span>
                     <Button
@@ -990,52 +994,52 @@ export default function Jobs() {
                     <div className="flex flex-wrap gap-1.5">
                       {detail.remote_flag && <Badge>Remote</Badge>}
                       {detail.is_direct_company_source && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           {detailProviderLabel}
                         </Badge>
                       )}
                       {detail.company_tier && detail.company_tier !== "unknown" && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           Tier {detail.company_tier}
                         </Badge>
                       )}
                       {effectiveConsultancyFlag(detail) && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           Consultancy
                         </Badge>
                       )}
                       {detail.swedish_required && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           Swedish required
                         </Badge>
                       )}
                       {detail.citizenship_required && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           Citizenship required
                         </Badge>
                       )}
                       {detail.security_clearance_required && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           Security clearance
                         </Badge>
                       )}
                       {detail.years_required_min != null && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           {detail.years_required_min}+ years requested
                         </Badge>
                       )}
                       {detail.employment_type && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           {detail.employment_type}
                         </Badge>
                       )}
                       {detail.working_hours && (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                        <Badge variant="outline" className="text-xs font-normal">
                           {detail.working_hours}
                         </Badge>
                       )}
                       {detail.application_deadline && (
-                        <Badge variant="outline" className="font-mono text-[10px] font-normal">
+                        <Badge variant="outline" className="font-mono text-xs font-normal">
                           Due {detail.application_deadline.slice(0, 10)}
                         </Badge>
                       )}
@@ -1043,26 +1047,26 @@ export default function Jobs() {
 
                     {user && detailTags && detailTags.length > 0 && userSkills && userSkills.size > 0 && (
                       <div className="space-y-2">
-                        <h3 className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                           <TrendingUp className="h-3 w-3" /> Skill match
                         </h3>
                         <div className="flex flex-wrap gap-1">
                           {matchingTags.map((tag) => (
                             <Badge
                               key={tag}
-                              className="border-primary/20 bg-primary/10 text-[10px] font-normal text-primary"
+                              className="border-primary/20 bg-primary/10 text-xs font-normal text-primary"
                             >
                               {tag}
                             </Badge>
                           ))}
                           {missingTags.slice(0, 6).map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                            <Badge key={tag} variant="outline" className="text-xs font-normal text-muted-foreground">
                               {tag}
                             </Badge>
                           ))}
                         </div>
                         {matchingTags.length > 0 && (
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {matchingTags.length} of {detailTags.length} skills match your profile
                           </p>
                         )}
@@ -1071,12 +1075,12 @@ export default function Jobs() {
 
                     {detailTags && detailTags.length > 0 && (!user || !userSkills || userSkills.size === 0) && (
                       <div>
-                        <h3 className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                           Skills
                         </h3>
                         <div className="flex flex-wrap gap-1">
                           {detailTags.map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-[10px] font-normal">
+                            <Badge key={tag} variant="outline" className="text-xs font-normal">
                               {tag}
                             </Badge>
                           ))}
@@ -1086,7 +1090,7 @@ export default function Jobs() {
 
                     {user && (
                       <div className="space-y-3 border-t border-border/40 pt-4">
-                        <h3 className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                           <Bookmark className="h-3 w-3" /> Track
                         </h3>
                         <div className="flex items-center gap-2">
@@ -1122,7 +1126,7 @@ export default function Jobs() {
                     )}
 
                     <div>
-                      <h3 className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Description
                       </h3>
                       <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">

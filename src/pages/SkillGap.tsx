@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StaggerContainer, FadeUp } from "@/components/motion";
 import { Plus, X, Zap, Target, BookOpen, TrendingUp, Check, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -27,8 +28,12 @@ export default function SkillGap() {
   const [newSkill, setNewSkill] = useState("");
   const [newProf, setNewProf] = useState<string>("learning");
 
+  useEffect(() => {
+    document.title = "Skill Gap | SweJobs";
+  }, []);
+
   // Fetch user skills
-  const { data: userSkills, error: userSkillsError } = useQuery({
+  const { data: userSkills, error: userSkillsError, isLoading: userSkillsLoading } = useQuery({
     queryKey: ["user-skills", user?.id],
     enabled: !!user,
     queryFn: async () => {
@@ -43,7 +48,7 @@ export default function SkillGap() {
   });
 
   // Fetch market skills from latest digest
-  const { data: marketSkills, error: marketSkillsError } = useQuery({
+  const { data: marketSkills, error: marketSkillsError, isLoading: marketSkillsLoading } = useQuery({
     queryKey: ["market-skills"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -109,6 +114,34 @@ export default function SkillGap() {
     );
   }
 
+  const queryLoading = marketSkillsLoading || (Boolean(user) && userSkillsLoading);
+
+  if (queryLoading) {
+    return (
+      <AppLayout>
+        <div className="space-y-6">
+          <div>
+            <h1 className="font-mono text-xl font-bold tracking-tight">Skill Gap Tracker</h1>
+            <p className="text-xs text-muted-foreground">Loading market comparison...</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Card key={index} className="border-border/40">
+                <CardContent className="space-y-3 p-4">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-5/6" />
+                  <Skeleton className="h-3 w-2/3" />
+                  <Skeleton className="h-3 w-3/4" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   if (userSkillsError || marketSkillsError) {
     const message =
       (userSkillsError as Error | null)?.message ||
@@ -167,7 +200,7 @@ export default function SkillGap() {
         <FadeUp>
           <div>
             <h1 className="font-mono text-xl font-bold tracking-tight">Skill Gap Tracker</h1>
-            <p className="text-[11px] text-muted-foreground">Compare your skills against market demand</p>
+            <p className="text-xs text-muted-foreground">Compare your skills against market demand</p>
           </div>
         </FadeUp>
 
@@ -226,7 +259,7 @@ export default function SkillGap() {
                     <Badge
                       key={s.id}
                       variant="outline"
-                      className={`gap-1 text-[10px] cursor-pointer ${PROFICIENCY_COLORS[s.proficiency]}`}
+                      className={`gap-1 text-xs cursor-pointer ${PROFICIENCY_COLORS[s.proficiency]}`}
                       onClick={() => {
                         const next = PROFICIENCY_OPTIONS[(PROFICIENCY_OPTIONS.indexOf(s.proficiency as any) + 1) % 3];
                         updateProficiency.mutate({ id: s.id, proficiency: next });
@@ -242,7 +275,7 @@ export default function SkillGap() {
                     </Badge>
                   ))}
                 </div>
-                <p className="mt-2 text-[10px] text-muted-foreground">Click a skill to cycle proficiency: strong → learning → interested</p>
+                <p className="mt-2 text-xs text-muted-foreground">Click a skill to cycle proficiency: strong → learning → interested</p>
               </CardContent>
             </Card>
           </FadeUp>
@@ -256,14 +289,14 @@ export default function SkillGap() {
                 <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold text-accent">
                   <Check className="h-3.5 w-3.5" /> Strong Match
                 </h3>
-                <p className="mb-2 text-[10px] text-muted-foreground">Skills you're strong in that the market wants</p>
+                <p className="mb-2 text-xs text-muted-foreground">Skills you're strong in that the market wants</p>
                 <div className="space-y-1">
                   {strongSkills.length === 0 ? (
-                    <p className="text-[10px] text-muted-foreground italic">Add skills above to see matches</p>
+                    <p className="text-xs text-muted-foreground italic">Add skills above to see matches</p>
                   ) : strongSkills.map((s) => (
                     <div key={s.skill} className="flex items-center justify-between">
                       <span className="text-xs">{s.skill}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground">{s.count} jobs</span>
+                      <span className="font-mono text-xs text-muted-foreground">{s.count} jobs</span>
                     </div>
                   ))}
                 </div>
@@ -277,14 +310,14 @@ export default function SkillGap() {
                 <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold text-destructive">
                   <AlertCircle className="h-3.5 w-3.5" /> Missing
                 </h3>
-                <p className="mb-2 text-[10px] text-muted-foreground">In-demand skills you haven't added</p>
+                <p className="mb-2 text-xs text-muted-foreground">In-demand skills you haven't added</p>
                 <div className="space-y-1">
                   {missingSkills.length === 0 ? (
-                    <p className="text-[10px] text-muted-foreground italic">Great coverage!</p>
+                    <p className="text-xs text-muted-foreground italic">Great coverage!</p>
                   ) : missingSkills.map((s) => (
                     <div key={s.skill} className="flex items-center justify-between">
                       <span className="text-xs">{s.skill}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground">{s.count} jobs</span>
+                      <span className="font-mono text-xs text-muted-foreground">{s.count} jobs</span>
                     </div>
                   ))}
                 </div>
@@ -298,14 +331,14 @@ export default function SkillGap() {
                 <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold text-primary">
                   <TrendingUp className="h-3.5 w-3.5" /> Rising
                 </h3>
-                <p className="mb-2 text-[10px] text-muted-foreground">Trending skills you don't have yet</p>
+                <p className="mb-2 text-xs text-muted-foreground">Trending skills you don't have yet</p>
                 <div className="space-y-1">
                   {risingIMiss.length === 0 ? (
-                    <p className="text-[10px] text-muted-foreground italic">You're ahead of trends!</p>
+                    <p className="text-xs text-muted-foreground italic">You're ahead of trends!</p>
                   ) : risingIMiss.map((s) => (
                     <div key={s.skill} className="flex items-center justify-between">
                       <span className="text-xs">{s.skill}</span>
-                      <span className="font-mono text-[10px] text-accent">+{isFinite(s.pct_change) ? Math.round(s.pct_change) : 0}%</span>
+                      <span className="font-mono text-xs text-accent">+{isFinite(s.pct_change) ? Math.round(s.pct_change) : 0}%</span>
                     </div>
                   ))}
                 </div>
@@ -319,10 +352,10 @@ export default function SkillGap() {
                 <h3 className="mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold">
                   <BookOpen className="h-3.5 w-3.5" /> Learn Next
                 </h3>
-                <p className="mb-2 text-[10px] text-muted-foreground">Top recommendations based on gaps + trends</p>
+                <p className="mb-2 text-xs text-muted-foreground">Top recommendations based on gaps + trends</p>
                 <div className="space-y-1.5">
                   {learnNext.length === 0 ? (
-                    <p className="text-[10px] text-muted-foreground italic">Add your skills to get recommendations</p>
+                    <p className="text-xs text-muted-foreground italic">Add your skills to get recommendations</p>
                   ) : learnNext.map((s, i) => (
                     <div key={s.skill} className="flex items-center gap-2">
                       <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 font-mono text-[9px] text-primary">{i + 1}</span>

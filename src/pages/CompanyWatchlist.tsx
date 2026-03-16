@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +18,10 @@ export default function CompanyWatchlist() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [newCompany, setNewCompany] = useState("");
+
+  useEffect(() => {
+    document.title = "Watchlist | SweJobs";
+  }, []);
 
   // Watched companies
   const { data: watched, error: watchedError } = useQuery({
@@ -159,7 +163,7 @@ export default function CompanyWatchlist() {
         <FadeUp>
           <div>
             <h1 className="font-mono text-xl font-bold tracking-tight">Company Watchlist</h1>
-            <p className="text-[11px] text-muted-foreground">Track companies and their openings</p>
+            <p className="text-xs text-muted-foreground">Track companies and their openings</p>
           </div>
         </FadeUp>
 
@@ -183,13 +187,13 @@ export default function CompanyWatchlist() {
         {suggestions.length > 0 && (
           <FadeUp>
             <div>
-              <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">Suggested from market data</p>
+              <p className="mb-1.5 text-xs uppercase tracking-wider text-muted-foreground">Suggested from market data</p>
               <div className="flex flex-wrap gap-1.5">
                 {suggestions.map((s) => (
                   <Badge
                     key={s.name}
                     variant="outline"
-                    className="cursor-pointer text-[10px] hover:bg-primary/5 transition-colors"
+                    className="cursor-pointer text-xs hover:bg-primary/5 transition-colors"
                     onClick={() => { setNewCompany(s.name); }}
                   >
                     <Star className="mr-1 h-2.5 w-2.5" /> {s.name} ({s.count})
@@ -233,7 +237,7 @@ export default function CompanyWatchlist() {
                           </div>
                           <div>
                             <h3 className="font-mono text-sm font-semibold">{w.employer_name}</h3>
-                            <p className="text-[10px] text-muted-foreground">
+                            <p className="text-xs text-muted-foreground">
                               {jobs.length} active opening{jobs.length !== 1 ? "s" : ""}
                             </p>
                           </div>
@@ -251,7 +255,7 @@ export default function CompanyWatchlist() {
                       {/* Skills */}
                       {sortedSkills.length > 0 && (
                         <div className="mt-3">
-                          <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">Repeated Skills</p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Repeated Skills</p>
                           <div className="flex flex-wrap gap-1">
                             {sortedSkills.map(([skill, count]) => (
                               <Badge key={skill} variant="secondary" className="text-[9px] gap-1 font-mono">
@@ -265,7 +269,7 @@ export default function CompanyWatchlist() {
                       {/* Recent openings */}
                       {jobs.length > 0 && (
                         <div className="mt-3 space-y-1">
-                          <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">Recent Openings</p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Recent Openings</p>
                           {jobs.map((job) => (
                             <Link
                               key={job.id}
@@ -278,7 +282,7 @@ export default function CompanyWatchlist() {
                                 {job.remote_flag && <Badge variant="secondary" className="text-[8px] h-3 px-1 shrink-0">Remote</Badge>}
                               </div>
                               {job.published_at && (
-                                <span className="ml-2 shrink-0 font-mono text-[10px] text-muted-foreground">
+                                <span className="ml-2 shrink-0 font-mono text-xs text-muted-foreground">
                                   {new Date(job.published_at).toLocaleDateString("sv-SE")}
                                 </span>
                               )}

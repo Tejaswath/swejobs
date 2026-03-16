@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +22,10 @@ export default function SavedSearches() {
   const [keywords, setKeywords] = useState("");
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [englishOnly, setEnglishOnly] = useState(false);
+
+  useEffect(() => {
+    document.title = "Saved Searches | SweJobs";
+  }, []);
 
   const { data: searches } = useQuery({
     queryKey: ["saved-searches"],
@@ -176,15 +180,15 @@ export default function SavedSearches() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">{s.name}</h3>
                         {newCount > 0 && (
-                          <Badge className="text-[10px]">{newCount} new</Badge>
+                          <Badge className="text-xs">{newCount} new</Badge>
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         {s.keywords?.map((kw) => (
-                          <Badge key={kw} variant="outline" className="text-[10px]">{kw}</Badge>
+                          <Badge key={kw} variant="outline" className="text-xs">{kw}</Badge>
                         ))}
-                        {s.remote_only && <Badge variant="outline" className="text-[10px]">Remote</Badge>}
-                        {s.english_only && <Badge variant="outline" className="text-[10px]">EN</Badge>}
+                        {s.remote_only && <Badge variant="outline" className="text-xs">Remote</Badge>}
+                        {s.english_only && <Badge variant="outline" className="text-xs">EN</Badge>}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           Checked {s.last_checked_at ? new Date(s.last_checked_at).toLocaleDateString("sv-SE") : "never"}
