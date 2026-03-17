@@ -409,6 +409,8 @@ export default function Index() {
       badgeClass: "border-sky-500/20 bg-sky-500/10 text-sky-100",
     },
   ];
+  const deadlineFocusLink =
+    groupedDeadlines.today.length > 0 ? "/jobs?deadline=today" : "/jobs?deadline=week";
   const metricCards = [
     {
       to: "/jobs",
@@ -421,7 +423,7 @@ export default function Index() {
       accentClassName: "text-foreground",
     },
     {
-      to: "/tracked",
+      to: deadlineFocusLink,
       icon: BellRing,
       label: "Deadline pressure",
       value: priorityDeadlineCount.toString(),
@@ -446,7 +448,7 @@ export default function Index() {
   ];
   const nextMoveRows = [
     {
-      to: "/tracked",
+      to: deadlineFocusLink,
       icon: BellRing,
       label:
         groupedDeadlines.today.length > 0
@@ -620,10 +622,15 @@ export default function Index() {
           </FadeUp>
 
           <div className="grid gap-4 xl:grid-cols-[1.3fr,0.92fr]">
-            <FadeUp>
+              <FadeUp>
               <Card className="h-full overflow-hidden border-border/60 bg-card/80">
                 <CardContent className="p-5 sm:p-6">
-                  <OverviewPanelHeader icon={CalendarClock} label="Deadline radar" actionLabel="Open tracker" to="/tracked" />
+                  <OverviewPanelHeader
+                    icon={CalendarClock}
+                    label="Deadline radar"
+                    actionLabel="View all deadlines"
+                    to={deadlineFocusLink}
+                  />
                   <div className="mt-5 grid gap-3 lg:grid-cols-3">
                     {deadlinePanels.map((panel) => (
                       <div key={panel.key} className={cn("rounded-3xl border p-4", panel.panelClass)}>

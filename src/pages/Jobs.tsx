@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
 import {
   companyDisplayName,
   findCompanyRegistryEntry,
@@ -42,6 +43,7 @@ const STATUSES = ["saved", "applied", "interviewing", "rejected", "ignored"] as 
 
 type Lens = "best_matches" | "graduate_trainee" | "main_companies" | "hidden_gems" | "consultancies";
 type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_both" | "show_both_best_matches";
+type DeadlineFocus = "none" | "today" | "week";
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
   { id: "best_matches", label: "Best Matches", description: "Top ranked roles for your profile" },
@@ -110,10 +112,29 @@ function fallbackDescription(mode: SearchFallbackMode): string {
   return "";
 }
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function endOfCurrentWeek(date: Date): Date {
+  const dayIndexMondayZero = (date.getDay() + 6) % 7;
+  const end = startOfLocalDay(date);
+  end.setDate(end.getDate() + (6 - dayIndexMondayZero));
+  return end;
+}
+
 export default function Jobs() {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     document.title = "Explore Jobs | SweJobs";
@@ -131,6 +152,11 @@ export default function Jobs() {
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const debouncedSearch = useDebouncedValue(search, 275);
   const isSearchPending = search.trim() !== debouncedSearch.trim();
+  const deadlineFocus: DeadlineFocus = searchParams.get("deadline") === "today"
+    ? "today"
+    : searchParams.get("deadline") === "week"
+      ? "week"
+      : "none";
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -153,11 +179,14 @@ export default function Jobs() {
   }, [watchedCompanies]);
 
   const { data: rawJobsData, isLoading, isFetching, error: jobsError } = useQuery({
-    queryKey: ["jobs-v3", debouncedSearch, lang, remoteOnly],
+    queryKey: ["jobs-v3", debouncedSearch, lang, remoteOnly, deadlineFocus],
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
       const normalizedSearchTerm = debouncedSearch.trim();
+      const today = new Date();
+      const todayIso = formatLocalDate(today);
+      const weekEndIso = formatLocalDate(endOfCurrentWeek(today));
       let query = supabase
         .from("jobs")
         .select(
@@ -168,8 +197,6 @@ export default function Jobs() {
             "source_provider, source_kind, is_direct_company_source, is_target_role, is_noise",
         )
         .eq("is_active", true)
-        .order("relevance_score", { ascending: false })
-        .order("published_at", { ascending: false })
         .limit(1000);
 
       if (lang !== "all") {
@@ -181,6 +208,25 @@ export default function Jobs() {
       if (normalizedSearchTerm) {
         const term = normalizedSearchTerm.replace(/[(),]/g, " ");
         query = query.or(`headline.ilike.%${term}%,employer_name.ilike.%${term}%,company_canonical.ilike.%${term}%`);
+      }
+
+      if (deadlineFocus !== "none") {
+        query = query
+          .not("application_deadline", "is", null)
+          .gte("application_deadline", todayIso)
+          .order("application_deadline", { ascending: true })
+          .order("relevance_score", { ascending: false })
+          .order("published_at", { ascending: false });
+
+        if (deadlineFocus === "today") {
+          query = query.eq("application_deadline", todayIso);
+        } else {
+          query = query.lte("application_deadline", weekEndIso);
+        }
+      } else {
+        query = query
+          .order("relevance_score", { ascending: false })
+          .order("published_at", { ascending: false });
       }
 
       const { data, error } = await query;
@@ -418,7 +464,7 @@ export default function Jobs() {
 
   useEffect(() => {
     setPage(0);
-  }, [lens, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, search, lang, remoteOnly]);
+  }, [lens, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, search, lang, remoteOnly, deadlineFocus]);
 
   useEffect(() => {
     if (page >= totalPages) {
@@ -440,6 +486,7 @@ export default function Jobs() {
   }, [jobs, selectedId]);
 
   const hasActiveFilters =
+    deadlineFocus !== "none" ||
     lens !== "best_matches" ||
     lang !== "all" ||
     remoteOnly ||
@@ -457,6 +504,11 @@ export default function Jobs() {
     setHideCitizenshipRestricted(true);
     setHideThreePlusYears(true);
     setPage(0);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("deadline");
+      return next;
+    });
   };
 
   const coverageBanner = useMemo(() => {
@@ -684,8 +736,25 @@ export default function Jobs() {
       <div className="space-y-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-          <p className="text-xs text-muted-foreground">{total.toLocaleString()} jobs in current lens</p>
+          <p className="text-xs text-muted-foreground">
+            {deadlineFocus === "today"
+              ? `${total.toLocaleString()} roles due today`
+              : deadlineFocus === "week"
+                ? `${total.toLocaleString()} roles closing this week`
+                : `${total.toLocaleString()} jobs in current lens`}
+          </p>
         </div>
+
+        {deadlineFocus !== "none" && (
+          <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+            <p className="font-medium text-foreground">
+              {deadlineFocus === "today" ? "Deadline focus: due today" : "Deadline focus: closing this week"}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              This view is opened from the homepage deadline widgets and is sorted by closing date first.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {LENSES.map((item) => (
