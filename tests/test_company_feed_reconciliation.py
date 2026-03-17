@@ -61,6 +61,7 @@ class StaticFeedPipeline(IngestionPipeline):
             poll_seconds=60,
             digest_window_days=30,
             digest_refresh_minutes=60,
+            timezone="Europe/Stockholm",
             request_timeout_seconds=30,
             enable_company_feeds=True,
             company_feed_config_path=config_path,

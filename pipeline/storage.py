@@ -63,6 +63,18 @@ class SupabaseStorage:
         )
         return int(response.count or 0)
 
+    def count_active_jobs_past_deadline(self, deadline_before: str) -> int:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id", count="exact")
+            .eq("is_active", True)
+            .lt("application_deadline_date", deadline_before)
+            .limit(1)
+            .execute(),
+            context="count active jobs past deadline",
+        )
+        return int(response.count or 0)
+
     def count_job_events_before(self, cutoff_iso: str) -> int:
         response = self._execute(
             lambda: self.client.table("job_events")
@@ -117,6 +129,19 @@ class SupabaseStorage:
             context="fetch inactive job ids before cutoff",
         )
         return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
+    def fetch_active_jobs_past_deadline(self, *, deadline_before: str, limit: int = 500) -> list[dict[str, Any]]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id,raw_json,application_deadline_date")
+            .eq("is_active", True)
+            .lt("application_deadline_date", deadline_before)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch active jobs past deadline",
+        )
+        return response.data or []
 
     def fetch_job_event_ids_before(self, *, cutoff_iso: str, limit: int = 500) -> list[int]:
         response = self._execute(

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .classify import classify_job
 from .digest import generate_weekly_digest
@@ -36,6 +37,7 @@ class IngestionPipeline:
         poll_seconds: int,
         digest_window_days: int,
         digest_refresh_minutes: int,
+        timezone: str,
         request_timeout_seconds: int,
         enable_company_feeds: bool,
         company_feed_config_path: str,
@@ -57,6 +59,7 @@ class IngestionPipeline:
         self.poll_seconds = poll_seconds
         self.digest_window_days = digest_window_days
         self.digest_refresh_minutes = digest_refresh_minutes
+        self.local_timezone = ZoneInfo(timezone)
         self.request_timeout_seconds = request_timeout_seconds
         self.enable_company_feeds = enable_company_feeds
         self.company_feed_config_path = company_feed_config_path
@@ -487,6 +490,47 @@ class IngestionPipeline:
             report.get("summary", {}).get("weekly_digests_deleted", 0),
         )
         return True
+
+    def expire_jobs_past_deadline(self, *, today_local: date | None = None, batch_size: int = 500) -> dict[str, Any]:
+        local_day = today_local or datetime.now(self.local_timezone).date()
+        deadline_before = local_day.isoformat()
+        generated_at = datetime.now(UTC).isoformat()
+        expired_rows = 0
+
+        while True:
+            rows = self.storage.fetch_active_jobs_past_deadline(deadline_before=deadline_before, limit=batch_size)
+            if not rows:
+                break
+
+            expired_ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+            if not expired_ids:
+                break
+
+            removed_at = datetime.now(UTC).isoformat()
+            self.storage.deactivate_jobs(expired_ids, removed_at=removed_at)
+            self.storage.insert_job_events(self._build_removed_events_from_existing(rows=rows, event_time=removed_at))
+            expired_rows += len(expired_ids)
+
+            if len(expired_ids) < batch_size:
+                break
+
+        report = {
+            "generated_at": generated_at,
+            "deadline_before": deadline_before,
+            "expired_rows": expired_rows,
+            "status": "ok",
+        }
+        self.storage.upsert_ingestion_state(
+            {
+                "last_deadline_expiration_at": datetime.now(UTC).isoformat(),
+                "last_deadline_expiration_date": deadline_before,
+            }
+        )
+        return report
+
+    def maybe_expire_jobs_past_deadline(self, *, today_local: date | None = None, batch_size: int = 500) -> dict[str, Any]:
+        local_day = today_local or datetime.now(self.local_timezone).date()
+        return self.expire_jobs_past_deadline(today_local=local_day, batch_size=batch_size)
 
     @staticmethod
     def _feed_state_key(feed_key: str, suffix: str) -> str:
@@ -1011,6 +1055,16 @@ class IngestionPipeline:
         except Exception as exc:  # noqa: BLE001
             logger.exception("Startup digest refresh unexpectedly failed: %s", exc)
         try:
+            report = self.maybe_expire_jobs_past_deadline()
+            logger.info(
+                "Deadline expiry check complete. status=%s expired_rows=%s deadline_before=%s",
+                report.get("status"),
+                report.get("expired_rows", 0),
+                report.get("deadline_before"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Startup deadline expiry unexpectedly failed: %s", exc)
+        try:
             self.maybe_run_compaction()
         except Exception as exc:  # noqa: BLE001
             logger.exception("Startup compaction unexpectedly failed: %s", exc)
@@ -1045,6 +1099,16 @@ class IngestionPipeline:
                     self.maybe_refresh_digest()
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Post-poll digest refresh unexpectedly failed: %s", exc)
+                try:
+                    report = self.maybe_expire_jobs_past_deadline()
+                    logger.info(
+                        "Deadline expiry check complete. status=%s expired_rows=%s deadline_before=%s",
+                        report.get("status"),
+                        report.get("expired_rows", 0),
+                        report.get("deadline_before"),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Post-poll deadline expiry unexpectedly failed: %s", exc)
                 try:
                     self.maybe_run_compaction()
                 except Exception as exc:  # noqa: BLE001

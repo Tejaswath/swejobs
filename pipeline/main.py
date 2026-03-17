@@ -41,6 +41,7 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
         poll_seconds=settings.poll_seconds,
         digest_window_days=settings.digest_window_days,
         digest_refresh_minutes=settings.digest_refresh_minutes,
+        timezone=settings.timezone,
         request_timeout_seconds=settings.request_timeout_seconds,
         enable_company_feeds=settings.enable_company_feeds,
         company_feed_config_path=settings.company_feed_config_path,
@@ -139,6 +140,9 @@ def parse_args() -> argparse.Namespace:
     compact = sub.add_parser("compact-storage", help="Bound table growth by clearing/deleting old rows")
     compact.add_argument("--confirm", action="store_true", help="Apply compaction changes; default is dry-run")
     compact.add_argument("--batch-size", type=int, default=500)
+
+    expire = sub.add_parser("expire-deadlines", help="Deactivate active jobs whose application deadline has passed")
+    expire.add_argument("--batch-size", type=int, default=500)
 
     sub.add_parser("state", help="Print ingestion state")
 
@@ -334,6 +338,11 @@ def main() -> None:
 
     if args.command == "compact-storage":
         report = pipeline.compact_storage(confirm=bool(args.confirm), batch_size=int(args.batch_size))
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "expire-deadlines":
+        report = pipeline.expire_jobs_past_deadline(batch_size=int(args.batch_size))
         print(json.dumps(report, indent=2))
         return
 

@@ -6,6 +6,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from dateutil import parser as date_parser
+
 COUNTY_CODE_TO_NAME: dict[str, str] = {
     "01": "Stockholm",
     "03": "Uppsala",
@@ -93,6 +95,19 @@ def _parse_datetime(value: Any) -> str | None:
         return dt.astimezone(UTC).isoformat()
     except ValueError:
         return None
+
+
+def _parse_deadline_date(value: Any) -> str | None:
+    text = _to_text(value)
+    if not text:
+        return None
+
+    try:
+        parsed = date_parser.parse(text)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+    return parsed.date().isoformat()
 
 
 def _detect_language(raw: dict[str, Any], headline: str, description: str) -> str:
@@ -230,7 +245,7 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "apply_url",
         )
     )
-    application_deadline = _to_text(_first(raw, "application_deadline", "last_application_date"))
+    application_deadline = _parse_deadline_date(_first(raw, "application_deadline", "last_application_date"))
 
     published_at = _parse_datetime(_first(raw, "publication_date", "published_at", "created"))
     updated_at = _parse_datetime(_first(raw, "updated_at", "modified")) or now
@@ -279,6 +294,7 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         "employment_type": employment_type,
         "working_hours": working_hours,
         "application_deadline": application_deadline,
+        "application_deadline_date": application_deadline,
         "source_url": source_url,
         "lang": lang,
         "remote_flag": remote_flag,
