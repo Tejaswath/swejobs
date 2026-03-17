@@ -1,153 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+
+import { AppLayout } from "@/components/AppLayout";
+import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
+import { DeadlineRadarPanel } from "@/components/overview/DeadlineRadarPanel";
+import { PipelinePulsePanel } from "@/components/overview/PipelinePulsePanel";
+import { WatchlistPulsePanel } from "@/components/overview/WatchlistPulsePanel";
+import { StudyFocusPanel } from "@/components/overview/StudyFocusPanel";
+import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { AppLayout } from "@/components/AppLayout";
+import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { pickLatestDigest, type DigestRow } from "@/lib/digest";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
-import { cn } from "@/lib/utils";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  ChevronRight,
-  Compass,
-  CalendarClock,
-  Kanban,
-  TrendingUp,
-  BookOpen,
-  Building,
-  BriefcaseBusiness,
-  BellRing,
-  Sparkles,
-  GraduationCap,
-  Target,
-  Activity,
-  X,
-  type LucideIcon,
-} from "lucide-react";
 
-function WelcomeBanner({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <FadeUp>
-      <div className="relative overflow-hidden rounded-2xl border border-primary/15 bg-card/80 px-5 py-4">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-90"
-          style={{
-            background:
-              "radial-gradient(circle at left top, rgba(88, 128, 255, 0.2), transparent 30%), radial-gradient(circle at 75% 0%, rgba(56, 189, 248, 0.12), transparent 26%)",
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute right-2 top-2 z-10 h-6 w-6 text-muted-foreground hover:text-foreground"
-          onClick={onDismiss}
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <Badge variant="secondary" className="border border-primary/20 bg-primary/10 text-primary">
-              Quick start
-            </Badge>
-            <div className="space-y-1">
-              <h2 className="text-base font-semibold">Run your search from one screen.</h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Track the market, spot deadlines, and move promising roles forward without digging through flat lists.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border/60 bg-background/60 px-3 py-1">Ranked matches</span>
-              <span className="rounded-full border border-border/60 bg-background/60 px-3 py-1">Deadline radar</span>
-              <span className="rounded-full border border-border/60 bg-background/60 px-3 py-1">Skill momentum</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm" className="gap-1.5">
-              <Link to="/jobs">
-                Explore jobs <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="gap-1.5">
-              <Link to="/skills">
-                Open skill gap <ArrowUpRight className="h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </div>
-    </FadeUp>
-  );
-}
+import type {
+  DeadlineBucketViewModel,
+  OverviewSignalStripItem,
+  PipelineMetric,
+  StudySkillChip,
+} from "@/components/overview/types";
 
-function OverviewPanelHeader({
-  icon: Icon,
-  label,
-  actionLabel,
-  to,
-}: {
-  icon: LucideIcon;
-  label: string;
-  actionLabel?: string;
-  to?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        {label}
-      </h2>
-      {actionLabel && to && (
-        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
-          <Link to={to}>
-            {actionLabel} <ArrowRight className="h-3 w-3" />
-          </Link>
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function MetricLinkCard({
-  to,
-  icon: Icon,
-  label,
-  value,
-  helper,
-  accentClassName,
-}: {
-  to: string;
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  helper: string;
-  accentClassName?: string;
-}) {
-  return (
-    <Link
-      to={to}
-      className="group rounded-2xl border border-border/60 bg-background/55 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background/80"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-2">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-          <p className={cn("text-2xl font-semibold tracking-tight", accentClassName)}>{value}</p>
-        </div>
-        <div className="rounded-xl border border-border/60 bg-card/70 p-2 text-muted-foreground transition-colors group-hover:text-primary">
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{helper}</p>
-        <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
-      </div>
-    </Link>
-  );
-}
+const REFRESH_MS = 60_000;
 
 type UpcomingDeadlineJob = {
   id: number;
@@ -161,6 +36,21 @@ type DeadlineGroups = {
   thisWeek: UpcomingDeadlineJob[];
   later: UpcomingDeadlineJob[];
 };
+
+type ParsedTopSkill = {
+  skill: string;
+  count: number;
+};
+
+type ParsedRisingSkill = {
+  skill: string;
+  pctChange: number;
+};
+
+function safeNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -206,136 +96,164 @@ function formatDeadline(deadlineDate: string | null, bucket: keyof DeadlineGroup
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
 }
 
-export default function Index() {
-  const { user } = useAuth();
-  const REFRESH_MS = 60_000;
-  const [showWelcome, setShowWelcome] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("swejobs-welcome-dismissed") !== "true";
-    }
+function parseTopSkills(raw: unknown): ParsedTopSkill[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      const skill = String(row.skill ?? "").trim();
+      if (!skill) return null;
+      return {
+        skill,
+        count: safeNumber(row.count),
+      };
+    })
+    .filter((value): value is ParsedTopSkill => value !== null);
+}
+
+function parseRisingSkills(raw: unknown): ParsedRisingSkill[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      const skill = String(row.skill ?? "").trim();
+      if (!skill) return null;
+      return {
+        skill,
+        pctChange: safeNumber(row.pct_change ?? row.delta_pct),
+      };
+    })
+    .filter((value): value is ParsedRisingSkill => value !== null)
+    .filter((value) => value.pctChange !== 0);
+}
+
+function uniqueByName(skills: StudySkillChip[]): StudySkillChip[] {
+  const seen = new Set<string>();
+  return skills.filter((skill) => {
+    const key = skill.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
+}
+
+export default function Index() {
+  const { user } = useAuth();
 
   useEffect(() => {
     document.title = "SweJobs — Swedish Tech Job Tracker";
   }, []);
 
-  const dismissWelcome = () => {
-    setShowWelcome(false);
-    localStorage.setItem("swejobs-welcome-dismissed", "true");
-  };
-
-  const { data: jobCount } = useQuery({
+  const jobCountQuery = useQuery({
     queryKey: ["job-count"],
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("jobs")
         .select("id", { count: "exact", head: true })
         .eq("is_active", true)
         .eq("is_target_role", true);
+      if (error) throw error;
       return count ?? 0;
     },
   });
 
-  const { data: latestDigest } = useQuery({
+  const latestDigestQuery = useQuery({
     queryKey: ["latest-digest", "rolling_30d"],
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("weekly_digests")
         .select("id, digest_json, period_start, period_end, generated_at")
         .order("generated_at", { ascending: false })
         .limit(100);
+      if (error) throw error;
       return pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
     },
   });
 
-  const { data: trackedJobs } = useQuery({
+  const trackedJobsQuery = useQuery({
     queryKey: ["tracked-summary", user?.id],
     enabled: !!user,
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("tracked_jobs")
         .select("status, job_id, jobs(headline, employer_name, application_deadline)")
         .eq("user_id", user!.id)
         .order("updated_at", { ascending: false })
         .limit(20);
+      if (error) throw error;
       return data ?? [];
     },
   });
 
-  const { data: upcomingDeadlines } = useQuery({
+  const upcomingDeadlinesQuery = useQuery({
     queryKey: ["upcoming-deadlines"],
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("jobs")
         .select("id, headline, employer_name, application_deadline")
         .eq("is_active", true)
         .eq("is_target_role", true)
         .not("application_deadline", "is", null)
         .gte("application_deadline", new Date().toISOString().slice(0, 10))
-        .order("application_deadline", { ascending: true })
-        .limit(12);
+        .order("application_deadline", { ascending: true });
+      if (error) throw error;
       return (data ?? []) as UpcomingDeadlineJob[];
     },
   });
 
-  const { data: watchedCompanyData } = useQuery({
+  const watchedCompanyDataQuery = useQuery({
     queryKey: ["watched-overview", user?.id],
     enabled: !!user,
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: true,
     queryFn: async () => {
-      const { data: watched } = await supabase
+      const { data: watched, error: watchedError } = await supabase
         .from("watched_companies")
         .select("employer_name")
         .eq("user_id", user!.id);
+      if (watchedError) throw watchedError;
       if (!watched || watched.length === 0) return [];
-      const names = watched.map((w) => w.employer_name);
+
       const results: Array<{ name: string; count: number }> = [];
-      for (const name of names.slice(0, 5)) {
-        const { count } = await supabase
+      for (const item of watched) {
+        const { count, error } = await supabase
           .from("jobs")
           .select("id", { count: "exact", head: true })
-          .eq("employer_name", name)
+          .eq("employer_name", item.employer_name)
           .eq("is_active", true);
-        results.push({ name, count: count ?? 0 });
+        if (error) throw error;
+        results.push({ name: item.employer_name, count: count ?? 0 });
       }
+
       return results;
     },
   });
 
-  const digest = latestDigest?.digest_json as Record<string, unknown> | null;
-  const topSkills = digest?.top_skills as Array<{ skill: string; count: number }> | undefined;
-  const risingSkills = digest?.rising_skills as Array<{ skill: string; pct_change: number }> | undefined;
+  const digest = latestDigestQuery.data?.digest_json as Record<string, unknown> | null;
+  const topSkills = parseTopSkills(digest?.top_skills);
+  const risingSkills = parseRisingSkills(digest?.rising_skills);
+  const studyFocus = (digest?.study_focus as Record<string, unknown> | undefined) ?? undefined;
 
-  // Only show rising skills if at least one has a real non-zero change
-  const hasRealRising = risingSkills?.some((s) => isFinite(s.pct_change) && s.pct_change !== 0) ?? false;
-
-  const trackedCounts = trackedJobs?.reduce((acc, t) => {
-    acc[t.status] = (acc[t.status] || 0) + 1;
+  const trackedCounts = trackedJobsQuery.data?.reduce((acc, tracked) => {
+    acc[tracked.status] = (acc[tracked.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>) ?? {};
 
-  const heroRising = hasRealRising ? risingSkills?.[0] : undefined;
-  const heroJobCount = jobCount ?? 0;
-  const demandHighlights = topSkills?.slice(0, 6) ?? [];
-  const risingHighlights = (risingSkills ?? [])
-    .filter((skill) => isFinite(skill.pct_change) && skill.pct_change !== 0)
-    .slice(0, 4);
+  const trackedTotal = Object.values(trackedCounts).reduce((sum, value) => sum + value, 0);
   const savedCount = trackedCounts.saved ?? 0;
   const appliedCount = trackedCounts.applied ?? 0;
   const interviewingCount = trackedCounts.interviewing ?? 0;
-  const trackedTotal = Object.values(trackedCounts).reduce((sum, value) => sum + value, 0);
-  const watchlistHighlights = watchedCompanyData?.slice(0, 4) ?? [];
-  const watchlistOpenings = (watchedCompanyData ?? []).reduce((sum, company) => sum + company.count, 0);
+
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
       today: [],
@@ -343,150 +261,176 @@ export default function Index() {
       later: [],
     };
 
-    for (const job of upcomingDeadlines ?? []) {
+    for (const job of upcomingDeadlinesQuery.data ?? []) {
       groups[deadlineBucket(job.application_deadline)].push(job);
     }
 
     return groups;
-  }, [upcomingDeadlines]);
-  const priorityDeadlineCount = groupedDeadlines.today.length + groupedDeadlines.thisWeek.length;
-  const primaryFocusSkill = heroRising?.skill ?? demandHighlights[0]?.skill ?? "software_engineering";
-  const secondaryFocusSkill =
-    demandHighlights.find((skill) => skill.skill !== primaryFocusSkill)?.skill ?? "backend";
-  const focusQueue = Array.from(
-    new Set([
-      primaryFocusSkill,
-      secondaryFocusSkill,
-      ...risingHighlights.map((skill) => skill.skill),
-      ...demandHighlights.map((skill) => skill.skill),
-    ]),
-  ).slice(0, 5);
-  const risingBySkill = new Map(risingHighlights.map((skill) => [skill.skill, skill.pct_change]));
-  const topSignalDelta = heroRising ? Math.round(heroRising.pct_change) : null;
-  const studyFocusSkills = [
-    ...demandHighlights.map((skill) => ({
-      name: skill.skill,
-      jobCount: skill.count,
-      weeklyDelta: risingBySkill.get(skill.skill),
-    })),
-    ...risingHighlights
-      .filter((skill) => !demandHighlights.some((item) => item.skill === skill.skill))
-      .map((skill) => ({
+  }, [upcomingDeadlinesQuery.data]);
+
+  const heroRising = risingSkills[0];
+  const studyPrimarySkill = String(studyFocus?.primary_skill ?? "").trim();
+  const studySecondarySkill = String(studyFocus?.secondary_skill ?? "").trim();
+  const topSkillName =
+    heroRising?.skill ??
+    (studyPrimarySkill || topSkills[0]?.skill || "software_engineering");
+  const secondarySkillName =
+    studySecondarySkill ||
+    topSkills.find((skill) => skill.skill !== topSkillName)?.skill ||
+    "python";
+
+  const risingBySkill = new Map(risingSkills.map((skill) => [skill.skill, skill.pctChange]));
+  const studyFocusSkills = uniqueByName(
+    [
+      ...topSkills.map((skill) => ({
         name: skill.skill,
-        jobCount: 0,
-        weeklyDelta: skill.pct_change,
+        count: skill.count,
+        delta: risingBySkill.get(skill.skill) ?? null,
+        isRising: risingBySkill.has(skill.skill),
       })),
-  ].slice(0, 8);
-  const deadlinePanels = [
+      ...risingSkills.map((skill) => ({
+        name: skill.skill,
+        count: topSkills.find((topSkill) => topSkill.skill === skill.skill)?.count ?? 0,
+        delta: skill.pctChange,
+        isRising: true,
+      })),
+    ].slice(0, 8),
+  );
+  const studyFocusChips = studyFocusSkills.slice(0, 6);
+
+  const rankedStudySkills = Array.from(
+    new Set([
+      topSkillName,
+      secondarySkillName,
+      ...studyFocusSkills.map((skill) => skill.name),
+    ]),
+  )
+    .map((name) => studyFocusSkills.find((skill) => skill.name === name) ?? {
+      name,
+      count: 0,
+      delta: risingBySkill.get(name) ?? null,
+      isRising: risingBySkill.has(name),
+    })
+    .slice(0, 5);
+
+  const watchlistHighlights = watchedCompanyDataQuery.data ?? [];
+  const watchlistOpenings = watchlistHighlights.reduce((sum, company) => sum + company.count, 0);
+
+  const deadlineBuckets: DeadlineBucketViewModel[] = [
     {
-      key: "today" as const,
+      id: "today",
       label: "Today",
       hint: "Needs attention",
-      emptyLabel: "No deadlines today.",
-      items: groupedDeadlines.today.slice(0, 2),
-      panelClass: "border-rose-500/20 bg-rose-500/5",
-      labelClass: "text-rose-200",
-      badgeClass: "border-rose-500/20 bg-rose-500/10 text-rose-200",
+      count: groupedDeadlines.today.length,
+      href: "/jobs?deadline=today",
+      accentClassName: "border-rose-500/20 bg-rose-500/5",
+      badgeClassName: "border-rose-500/20 bg-rose-500/10 text-rose-100",
+      jobs: groupedDeadlines.today.slice(0, 2).map((job) => ({
+        id: job.id,
+        headline: job.headline,
+        employerName: job.employer_name,
+        deadlineLabel: formatDeadline(job.application_deadline, "today"),
+        href: `/jobs/${job.id}`,
+      })),
     },
     {
-      key: "thisWeek" as const,
+      id: "thisWeek",
       label: "This week",
       hint: "Worth planning",
-      emptyLabel: "No urgent closers.",
-      items: groupedDeadlines.thisWeek.slice(0, 3),
-      panelClass: "border-amber-500/20 bg-amber-500/5",
-      labelClass: "text-amber-200",
-      badgeClass: "border-amber-500/20 bg-amber-500/10 text-amber-100",
+      count: groupedDeadlines.thisWeek.length,
+      href: "/jobs?deadline=week",
+      accentClassName: "border-amber-500/20 bg-amber-500/5",
+      badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-100",
+      jobs: groupedDeadlines.thisWeek.slice(0, 2).map((job) => ({
+        id: job.id,
+        headline: job.headline,
+        employerName: job.employer_name,
+        deadlineLabel: formatDeadline(job.application_deadline, "thisWeek"),
+        href: `/jobs/${job.id}`,
+      })),
     },
     {
-      key: "later" as const,
+      id: "later",
       label: "Later",
       hint: "Good shortlist fuel",
-      emptyLabel: "Nothing queued yet.",
-      items: groupedDeadlines.later.slice(0, 2),
-      panelClass: "border-sky-500/20 bg-sky-500/5",
-      labelClass: "text-sky-200",
-      badgeClass: "border-sky-500/20 bg-sky-500/10 text-sky-100",
+      count: groupedDeadlines.later.length,
+      href: "/jobs?deadline=upcoming",
+      accentClassName: "border-sky-500/20 bg-sky-500/5",
+      badgeClassName: "border-sky-500/20 bg-sky-500/10 text-sky-100",
+      jobs: groupedDeadlines.later.slice(0, 2).map((job) => ({
+        id: job.id,
+        headline: job.headline,
+        employerName: job.employer_name,
+        deadlineLabel: formatDeadline(job.application_deadline, "later"),
+        href: `/jobs/${job.id}`,
+      })),
     },
-  ];
-  const visibleDeadlinePanels = deadlinePanels.filter((panel) => panel.items.length > 0);
-  const deadlineFocusLink =
-    groupedDeadlines.today.length > 0 ? "/jobs?deadline=today" : "/jobs?deadline=week";
-  const deadlineRadarLink = visibleDeadlinePanels.length > 0 ? "/jobs?deadline=upcoming" : "/jobs";
-  const metricCards = [
+  ].filter((bucket) => bucket.count > 0);
+
+  const signalItems: OverviewSignalStripItem[] = [
     {
-      to: "/jobs",
-      icon: Compass,
-      label: "Live market",
-      value: heroJobCount.toLocaleString(),
-      helper: heroRising
-        ? `${heroRising.skill} is rising +${Math.round(heroRising.pct_change)}%`
-        : "Fresh ranked roles ready to browse",
+      label: "Live roles",
+      value: <AnimatedNumber value={jobCountQuery.data ?? 0} />,
+      href: "/jobs",
       accentClassName: "text-foreground",
     },
     {
-      to: deadlineFocusLink,
-      icon: BellRing,
-      label: "Deadline pressure",
-      value: priorityDeadlineCount.toString(),
-      helper:
-        groupedDeadlines.today.length > 0
-          ? `${groupedDeadlines.today.length} due today`
-          : groupedDeadlines.thisWeek.length > 0
-            ? `${groupedDeadlines.thisWeek.length} closing this week`
-            : "No urgent closing dates right now",
+      label: "Due today",
+      value: <AnimatedNumber value={groupedDeadlines.today.length} />,
+      href: "/jobs?deadline=today",
       accentClassName: groupedDeadlines.today.length > 0 ? "text-rose-200" : "text-foreground",
     },
     {
-      to: "/tracked",
-      icon: Kanban,
-      label: "Pipeline",
-      value: trackedTotal.toString(),
-      helper: user
-        ? `${savedCount} saved, ${appliedCount} applied`
-        : "Sign in to keep roles and notes together",
-      accentClassName: "text-foreground",
-    },
-  ];
-  const nextMoveRows = [
-    {
-      to: deadlineFocusLink,
-      icon: BellRing,
-      label:
-        groupedDeadlines.today.length > 0
-          ? `Apply to ${groupedDeadlines.today.length} role${groupedDeadlines.today.length === 1 ? "" : "s"} due today`
-          : groupedDeadlines.thisWeek.length > 0
-            ? `Review ${groupedDeadlines.thisWeek.length} deadlines landing this week`
-            : "No urgent closers",
-    },
-    {
-      to: user ? "/tracked" : "/auth",
-      icon: BriefcaseBusiness,
-      label:
-        trackedTotal > 0
-          ? `${trackedTotal} role${trackedTotal === 1 ? "" : "s"} already in motion`
-          : "Build your pipeline",
-    },
-    {
-      to: "/skills",
-      icon: GraduationCap,
-      label: `Study ${primaryFocusSkill}`,
+      label: "Top signal",
+      value: (
+        <div className="flex min-w-0 items-center gap-2">
+          <span title={topSkillName} className="max-w-[18ch] truncate sm:max-w-[22ch] lg:max-w-[26ch]">
+            {topSkillName}
+          </span>
+        </div>
+      ),
+      href: "/digest",
+      fullLabel: topSkillName,
+      accentClassName: "text-[1.65rem]",
+      badge:
+        typeof heroRising?.pctChange === "number" ? (
+          <Badge className="border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300 hover:bg-emerald-500/10">
+            +{Math.round(heroRising.pctChange)}%
+          </Badge>
+        ) : null,
     },
   ];
 
-  // Empty state: no data ingested yet
-  if (jobCount === 0) {
+  const pipelineHref = user ? "/tracked" : "/auth";
+
+  const pipelineMetrics: PipelineMetric[] = [
+    { label: "Saved", count: savedCount, href: pipelineHref },
+    { label: "Applied", count: appliedCount, href: pipelineHref, accentClassName: appliedCount > 0 ? "text-primary" : undefined },
+    { label: "Interviewing", count: interviewingCount, href: pipelineHref, accentClassName: interviewingCount > 0 ? "text-amber-300" : undefined },
+  ];
+
+  const showHeroSignalsLoading = useDelayedVisibility(
+    jobCountQuery.isLoading || latestDigestQuery.isLoading || upcomingDeadlinesQuery.isLoading,
+  );
+  const showUpcomingDeadlineLoading = useDelayedVisibility(upcomingDeadlinesQuery.isLoading);
+  const showTrackedLoading = useDelayedVisibility(!!user && trackedJobsQuery.isLoading);
+  const showWatchlistLoading = useDelayedVisibility(!!user && watchedCompanyDataQuery.isLoading);
+  const showStudyLoading = useDelayedVisibility(latestDigestQuery.isLoading);
+  const heroSignalsUnavailable = jobCountQuery.isError || upcomingDeadlinesQuery.isError;
+
+  if (!jobCountQuery.isLoading && !jobCountQuery.isError && (jobCountQuery.data ?? 0) === 0) {
     return (
       <AppLayout>
-        <div className="flex flex-col items-center justify-center py-32 text-center">
-          <Activity className="h-12 w-12 text-muted-foreground/30 mb-4" />
-          <h1 className="text-xl font-semibold tracking-tight">Waiting for data</h1>
-          <p className="mt-2 text-sm text-muted-foreground max-w-md">
-            Your job pipeline hasn't started yet. Once connected, this page will show upcoming deadlines, skill trends, and study focus recommendations.
-          </p>
-          <p className="mt-4 font-mono text-xs text-muted-foreground/60">
-            Pipeline status: Not connected
-          </p>
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Card className="w-full max-w-2xl rounded-[30px] border-border/60 bg-card/80">
+            <CardContent className="p-8 text-center">
+              <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Overview</p>
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">Waiting for market data</h1>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Once the pipeline is connected, this page will show live roles, urgent deadlines, and study signals.
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </AppLayout>
     );
@@ -496,419 +440,65 @@ export default function Index() {
     <AppLayout>
       <div className="relative">
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-[440px] opacity-95"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[420px] opacity-95"
           style={{
             background:
               "radial-gradient(circle at 12% 10%, rgba(88, 128, 255, 0.22), transparent 26%), radial-gradient(circle at 84% 12%, rgba(56, 189, 248, 0.12), transparent 22%), linear-gradient(180deg, rgba(17, 24, 39, 0.12), transparent 70%)",
           }}
         />
 
-        <StaggerContainer className="relative space-y-8">
-          {showWelcome && <WelcomeBanner onDismiss={dismissWelcome} />}
-
+        <StaggerContainer className="relative space-y-6">
           <FadeUp>
-            <section className="relative overflow-hidden rounded-[30px] border border-border/60 bg-card/80 px-6 py-6 shadow-[0_18px_60px_rgba(2,8,23,0.18)] sm:px-8 sm:py-8">
-              <div className="pointer-events-none absolute -left-10 top-0 h-44 w-44 rounded-full bg-primary/20 blur-3xl" />
-              <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-sky-500/10 blur-3xl" />
-              <div className="relative grid gap-8 xl:grid-cols-[1.35fr,0.95fr]">
-                <div className="space-y-6">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className="gap-1.5 border border-primary/20 bg-primary/10 text-primary hover:bg-primary/10">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Weekly brief
-                    </Badge>
-                    {heroRising && (
-                      <Badge variant="secondary" className="border border-primary/20 bg-background/70 text-foreground">
-                        Momentum +{Math.round(heroRising.pct_change)}%
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="max-w-3xl space-y-3">
-                    <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-[3.7rem]">
-                      Make your next application from signal, not noise.
-                    </h1>
-                    <div className="flex flex-wrap items-center gap-3 pt-1">
-                      <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="font-medium text-foreground tabular-nums">
-                          <AnimatedNumber value={heroJobCount} />
-                        </span>
-                        live roles
-                      </span>
-                      <span className="text-border">·</span>
-                      <span className="inline-flex items-center gap-1 text-sm">
-                        <span className="text-muted-foreground">top signal:</span>
-                        <span className="font-medium text-primary">{primaryFocusSkill}</span>
-                        {topSignalDelta != null && (
-                          <span className="font-medium text-emerald-400">+{topSignalDelta}%</span>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    <Button asChild size="lg" className="h-11 rounded-xl px-5">
-                      <Link to="/jobs">
-                        <Compass className="h-4 w-4" /> Explore best matches
-                      </Link>
-                    </Button>
-                    <Button
-                      asChild
-                      variant="secondary"
-                      size="lg"
-                      className="h-11 rounded-xl border border-border/60 bg-background/60 px-5 text-foreground hover:bg-background/80"
-                    >
-                      <Link to="/skills">
-                        <Target className="h-4 w-4" /> Review skill gap
-                      </Link>
-                    </Button>
-                    <Button asChild variant="ghost" size="lg" className="h-11 rounded-xl px-4 text-muted-foreground hover:text-foreground">
-                      <Link to={user ? "/tracked" : "/auth"}>
-                        <Kanban className="h-4 w-4" /> Open tracker
-                      </Link>
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-3">
-                    {metricCards.map((metric) => (
-                      <MetricLinkCard key={metric.label} {...metric} />
-                    ))}
-                  </div>
-                </div>
-
-                <Card className="relative overflow-hidden border-primary/20 bg-background/55 backdrop-blur-sm">
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent" />
-                  <CardContent className="relative p-5 sm:p-6">
-                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Next move</p>
-                    <div className="mt-4 rounded-3xl border border-primary/20 bg-primary/10 p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-primary/70">Market pulse</p>
-                          <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">{primaryFocusSkill}</h2>
-                          <span className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground/70">
-                            <TrendingUp className="h-3 w-3" />
-                            {topSignalDelta != null ? "accelerating this week" : "market lead"}
-                          </span>
-                        </div>
-                        {heroRising && (
-                          <Badge className="bg-primary text-primary-foreground hover:bg-primary">+{Math.round(heroRising.pct_change)}%</Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-5 space-y-3">
-                      {nextMoveRows.map((row) => {
-                        const Icon = row.icon;
-                        return (
-                          <Link
-                            key={row.label}
-                            to={row.to}
-                            className="group flex items-center gap-3 rounded-2xl border border-border/60 bg-card/65 px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-card"
-                          >
-                            <div className="rounded-xl border border-border/60 bg-background/70 p-2 text-muted-foreground transition-colors group-hover:text-primary">
-                              <Icon className="h-4 w-4" />
-                            </div>
-                            <span className="text-sm font-medium transition-colors group-hover:text-foreground">
-                              {row.label}
-                            </span>
-                            <ChevronRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </section>
+            <OverviewHeroPanel
+              signalItems={signalItems}
+              isSignalsLoading={showHeroSignalsLoading}
+              signalsUnavailable={heroSignalsUnavailable}
+              momentumLabel={heroRising ? `Momentum +${Math.round(heroRising.pctChange)}%` : null}
+            />
           </FadeUp>
 
           <div className="grid gap-4 xl:grid-cols-[1.3fr,0.92fr]">
-              <FadeUp>
-              <Card className="h-full overflow-hidden border-border/60 bg-card/80">
-                <CardContent className="p-5 sm:p-6">
-                  <OverviewPanelHeader
-                    icon={CalendarClock}
-                    label="Deadline radar"
-                    actionLabel={visibleDeadlinePanels.length > 0 ? "View all deadlines" : "Explore jobs"}
-                    to={deadlineRadarLink}
-                  />
-                  {visibleDeadlinePanels.length > 0 ? (
-                    <div
-                      className={cn(
-                        "mt-5 grid gap-3",
-                        visibleDeadlinePanels.length === 1
-                          ? "grid-cols-1"
-                          : visibleDeadlinePanels.length === 2
-                            ? "grid-cols-1 lg:grid-cols-2"
-                            : "grid-cols-1 lg:grid-cols-3",
-                      )}
-                    >
-                    {visibleDeadlinePanels.map((panel) => (
-                      <div key={panel.key} className={cn("rounded-3xl border p-4", panel.panelClass)}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className={cn("font-mono text-[11px] uppercase tracking-[0.22em]", panel.labelClass)}>
-                              {panel.label}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">{panel.hint}</p>
-                          </div>
-                          <span className={cn("rounded-full border px-2.5 py-1 font-mono text-[11px]", panel.badgeClass)}>
-                            {panel.items.length}
-                          </span>
-                        </div>
-
-                        <div className="mt-4 space-y-2">
-                          {panel.items.length > 0 ? (
-                            panel.items.map((job) => (
-                              <Link
-                                key={job.id}
-                                to={`/jobs/${job.id}`}
-                                className="group block rounded-2xl border border-border/60 bg-background/60 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-background/80"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-medium">{job.headline}</p>
-                                    <p className="mt-1 text-xs text-muted-foreground">{job.employer_name}</p>
-                                  </div>
-                                  <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                                    {formatDeadline(job.application_deadline, panel.key)}
-                                  </span>
-                                </div>
-                              </Link>
-                            ))
-                          ) : (
-                            <div className="rounded-2xl border border-dashed border-border/60 bg-background/35 p-4 text-sm text-muted-foreground">
-                              {panel.emptyLabel}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    </div>
-                  ) : (
-                    <div className="mt-5 rounded-3xl border border-dashed border-border/60 bg-background/35 p-6">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                            No upcoming deadlines
-                          </p>
-                          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                            Nothing active in the market has a near-term application deadline right now. Use Explore to
-                            keep shortlisting roles before the next close dates appear.
-                          </p>
-                        </div>
-                        <Button asChild variant="outline" size="sm" className="shrink-0">
-                          <Link to="/jobs">
-                            Explore jobs <ArrowRight className="h-3.5 w-3.5" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+            <FadeUp>
+              <DeadlineRadarPanel
+                buckets={deadlineBuckets}
+                isLoading={showUpcomingDeadlineLoading}
+                unavailable={upcomingDeadlinesQuery.isError}
+              />
             </FadeUp>
 
             <div className="grid gap-4">
               <FadeUp>
-                <Card className="overflow-hidden border-border/60 bg-card/80">
-                  <CardContent className="p-5 sm:p-6">
-                    <OverviewPanelHeader icon={Kanban} label="Pipeline pulse" actionLabel="Open tracker" to="/tracked" />
-                    <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                      {[
-                        { label: "Saved", value: savedCount },
-                        { label: "Applied", value: appliedCount },
-                        { label: "Interviewing", value: interviewingCount },
-                      ].map((item) => (
-                        <div key={item.label} className="rounded-2xl border border-border/60 bg-background/55 p-4 text-center">
-                          <p className="font-mono text-2xl font-semibold">{item.value}</p>
-                          <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.label}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {trackedTotal === 0 ? (
-                      <div className="mt-4 flex flex-col items-center gap-3 py-2 text-center">
-                        <p className="text-sm text-muted-foreground">Save jobs to build your pipeline.</p>
-                        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-primary hover:text-primary">
-                          <Link to="/jobs">
-                            Browse jobs <ArrowRight className="h-3 w-3" />
-                          </Link>
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="mt-4 flex justify-end">
-                        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
-                          <Link to="/tracked">
-                            Open pipeline <ArrowRight className="h-3 w-3" />
-                          </Link>
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <PipelinePulsePanel
+                  metrics={pipelineMetrics}
+                  isLoading={showTrackedLoading}
+                  unavailable={!!user && trackedJobsQuery.isError}
+                  actionHref={pipelineHref}
+                />
               </FadeUp>
 
               <FadeUp>
-                <Card className="overflow-hidden border-border/60 bg-card/80">
-                  <CardContent className="p-5 sm:p-6">
-                    <OverviewPanelHeader
-                      icon={Building}
-                      label="Watchlist pulse"
-                      actionLabel={user ? "Manage" : "Sign in"}
-                      to={user ? "/watchlist" : "/auth"}
-                    />
-                    <div className="mt-4 flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-3xl font-semibold tracking-tight">{watchlistOpenings}</p>
-                        <p className="text-sm text-muted-foreground">openings across watched companies</p>
-                      </div>
-                      {user && watchlistHighlights.length > 0 && (
-                        <Badge variant="secondary" className="border border-border/60 bg-background/70 text-foreground">
-                          {watchlistHighlights.length} tracked
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="mt-5 space-y-2">
-                      {user && watchlistHighlights.length > 0 ? (
-                        watchlistHighlights.map((company) => (
-                          <Link
-                            key={company.name}
-                            to="/watchlist"
-                            className="group flex items-center justify-between rounded-2xl border border-border/60 bg-background/55 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-background/80"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 font-mono text-sm text-primary">
-                                {company.name.slice(0, 1).toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">{company.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {company.count} opening{company.count === 1 ? "" : "s"}
-                                </p>
-                              </div>
-                            </div>
-                            <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
-                          </Link>
-                        ))
-                      ) : (
-                        <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border/60 bg-background/35 p-5 text-center">
-                          <p className="text-sm text-muted-foreground">
-                            {user ? "Add companies to watch." : "Sign in to watch companies."}
-                          </p>
-                          <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-primary hover:text-primary">
-                            <Link to={user ? "/watchlist" : "/auth"}>
-                              {user ? "Manage watchlist" : "Sign in"} <ArrowRight className="h-3 w-3" />
-                            </Link>
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                <WatchlistPulsePanel
+                  actionHref={user ? "/watchlist" : "/auth"}
+                  actionLabel={user ? "Manage" : "Sign in"}
+                  trackedCount={watchlistHighlights.length}
+                  openings={watchlistOpenings}
+                  featured={watchlistHighlights[0]}
+                  isLoading={showWatchlistLoading}
+                  unavailable={!!user && watchedCompanyDataQuery.isError}
+                />
               </FadeUp>
             </div>
           </div>
 
           <FadeUp>
-            <Card className="relative overflow-hidden border-border/60 bg-card/80">
-              <div
-                className="pointer-events-none absolute inset-x-0 top-0 h-40 opacity-90"
-                style={{
-                  background:
-                    "linear-gradient(135deg, rgba(88, 128, 255, 0.14), transparent 42%), linear-gradient(225deg, rgba(16, 185, 129, 0.08), transparent 38%)",
-                }}
-              />
-              <CardContent className="relative p-5 sm:p-6">
-                <OverviewPanelHeader icon={BookOpen} label="Study focus" actionLabel="Full analysis" to="/skills" />
-                <div className="mt-5 grid gap-6 xl:grid-cols-[1.15fr,0.85fr]">
-                  <div className="space-y-5">
-                    <div>
-                      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Skill signals</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {studyFocusSkills.length > 0 ? (
-                          studyFocusSkills.map((skill) => {
-                            const isRising = typeof skill.weeklyDelta === "number" && skill.weeklyDelta > 0;
-                            return (
-                            <div
-                              key={skill.name}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition-colors hover:border-primary/25 hover:bg-background",
-                                isRising
-                                  ? "border-emerald-500/25 bg-emerald-500/5 text-foreground"
-                                  : "border-border/60 bg-background/65 text-foreground",
-                              )}
-                            >
-                              {isRising && <TrendingUp className="h-3 w-3 shrink-0 text-emerald-400" />}
-                              <span className="font-medium">{skill.name}</span>
-                              <span className={cn("font-mono text-xs", isRising ? "text-emerald-400" : "text-muted-foreground")}>
-                                {isRising ? `+${Math.round(skill.weeklyDelta ?? 0)}%` : skill.jobCount}
-                              </span>
-                            </div>
-                          );
-                          })
-                        ) : (
-                          <div className="rounded-2xl border border-dashed border-border/60 bg-background/35 p-4 text-sm text-muted-foreground">
-                            Market digest data is still warming up.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[28px] border border-primary/20 bg-primary/10 p-5">
-                    <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary/70">Learn next</p>
-                    <div className="mt-3">
-                      <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">{primaryFocusSkill}</h3>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
-                          {primaryFocusSkill}
-                        </span>
-                        <span className="text-xs text-muted-foreground/50">pairs with</span>
-                        <span className="rounded-full bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                          {secondaryFocusSkill}
-                        </span>
-                        <span className="text-xs text-emerald-400">closes gap</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 space-y-2">
-                      {focusQueue.map((skill, index) => (
-                        <div key={skill} className="flex items-center justify-between rounded-2xl border border-border/50 bg-background/60 px-3 py-2.5">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 font-mono text-xs text-primary">
-                              {index + 1}
-                            </div>
-                            <span className="text-sm font-medium">{skill}</span>
-                          </div>
-                          {risingBySkill.has(skill) ? (
-                            <span className="font-mono text-xs text-primary">
-                              +{Math.round(risingBySkill.get(skill) ?? 0)}%
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">steady</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap gap-2">
-                      <Button asChild size="sm" className="gap-1.5">
-                        <Link to="/skills">
-                          <GraduationCap className="h-3.5 w-3.5" /> Build the plan
-                        </Link>
-                      </Button>
-                      <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
-                        <Link to="/digest">
-                          <TrendingUp className="h-3.5 w-3.5" /> Open digest
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <StudyFocusPanel
+              chips={studyFocusChips}
+              rankedSkills={rankedStudySkills}
+              primarySkill={topSkillName}
+              secondarySkill={secondarySkillName}
+              isLoading={showStudyLoading}
+              unavailable={latestDigestQuery.isError}
+            />
           </FadeUp>
         </StaggerContainer>
       </div>

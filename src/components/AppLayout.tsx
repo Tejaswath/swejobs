@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import {
   CommandDialog,
@@ -29,8 +28,6 @@ import {
   Activity,
   Compass,
   Kanban,
-  Moon,
-  Sun,
   LogOut,
   LogIn,
   ChevronDown,
@@ -70,11 +67,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const userEmail = user?.email ?? "";
   const userInitial = userEmail.charAt(0).toUpperCase() || "U";
+  const moreActive = MORE_ITEMS.some((item) => location.pathname.startsWith(item.path));
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -90,12 +87,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-50 border-b border-border/40 glass">
-        <div className="mx-auto flex h-12 max-w-6xl items-center justify-between px-4 lg:px-6">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 lg:px-8">
+          <div className="flex items-center gap-3">
             {/* Mobile hamburger */}
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 md:hidden text-muted-foreground">
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground md:hidden">
                   <Menu className="h-4 w-4" />
                 </Button>
               </SheetTrigger>
@@ -144,15 +141,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SheetContent>
             </Sheet>
 
-            <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <Link to="/" className="flex items-center gap-3 text-sm font-semibold tracking-tight text-foreground">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
                 <Activity className="h-4.5 w-4.5 text-primary" />
               </div>
               <span className="hidden sm:inline text-base">SweJobs</span>
             </Link>
           </div>
 
-          <nav className="hidden md:flex items-center gap-0.5">
+          <nav className="hidden md:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
               const isActive = item.path === "/"
                 ? location.pathname === "/"
@@ -162,8 +159,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <Button
                     variant={isActive ? "secondary" : "ghost"}
                     size="sm"
-                    className={`gap-1.5 text-xs h-8 px-3 ${
-                      isActive ? "" : "text-muted-foreground hover:text-foreground"
+                    className={`h-10 gap-1.5 rounded-xl px-4 text-sm ${
+                      isActive
+                        ? "border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                        : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                     }`}
                   >
                     <item.icon className="h-3.5 w-3.5" />
@@ -176,7 +175,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {/* More dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 px-3 text-muted-foreground hover:text-foreground">
+                <Button
+                  variant={moreActive ? "secondary" : "ghost"}
+                  size="sm"
+                  className={`h-10 gap-1.5 rounded-xl px-4 text-sm ${
+                    moreActive
+                      ? "border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  }`}
+                >
                   <MoreHorizontal className="h-3.5 w-3.5" />
                   More
                 </Button>
@@ -192,34 +199,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </DropdownMenu>
           </nav>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {/* ⌘K — hidden on mobile */}
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setCmdOpen(true)}
-              className="hidden md:flex h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="hidden h-10 gap-2 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground md:flex"
             >
-              <Search className="h-3 w-3" />
-              <kbd className="pointer-events-none rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px]">⌘K</kbd>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleTheme}
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              aria-label="Toggle theme"
-            >
-              {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+              <Search className="h-3.5 w-3.5" />
+              <kbd className="pointer-events-none rounded border border-border/60 bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
             </Button>
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
-                    <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                  <Button variant="ghost" size="sm" className="h-10 gap-2 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
                       {userInitial}
                     </span>
-                    <span className="hidden max-w-[140px] truncate lg:inline">{userEmail}</span>
+                    <span className="hidden max-w-[160px] truncate lg:inline">{userEmail}</span>
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -240,7 +238,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </DropdownMenu>
             ) : (
               <Link to="/auth">
-                <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
+                <Button variant="ghost" size="sm" className="h-10 gap-1.5 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground">
                   <LogIn className="h-3 w-3" /> Sign in
                 </Button>
               </Link>
@@ -249,10 +247,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 lg:px-6">{children}</main>
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 lg:px-8">{children}</main>
 
       <footer className="border-t border-border/40 bg-background/80">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 lg:px-6">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 lg:px-8">
           <p className="text-xs text-muted-foreground">SweJobs</p>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Link to="/jobs" className="hover:text-foreground">Explore</Link>
