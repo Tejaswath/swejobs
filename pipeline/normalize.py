@@ -23,6 +23,8 @@ COUNTY_CODE_TO_NAME: dict[str, str] = {
     "25": "Norrbotten",
 }
 
+JS_SAFE_INTEGER_MAX = (1 << 53) - 1
+
 
 def _get_path(obj: dict[str, Any], path: str) -> Any:
     current: Any = obj
@@ -65,15 +67,18 @@ def _to_text(value: Any) -> str | None:
 def _stable_int_id(raw_id: Any) -> int:
     if raw_id is None:
         raise ValueError("Job id is missing")
-    if isinstance(raw_id, int):
+    if isinstance(raw_id, int) and abs(raw_id) <= JS_SAFE_INTEGER_MAX:
         return raw_id
 
     raw_str = str(raw_id).strip()
     if raw_str.isdigit():
-        return int(raw_str)
+        numeric_value = int(raw_str)
+        if abs(numeric_value) <= JS_SAFE_INTEGER_MAX:
+            return numeric_value
 
     digest = hashlib.md5(raw_str.encode("utf-8"), usedforsecurity=False).hexdigest()
-    return int(digest[:15], 16)
+    # 13 hex chars -> 52 bits, which is safely representable in JavaScript.
+    return int(digest[:13], 16)
 
 
 def _parse_datetime(value: Any) -> str | None:

@@ -44,6 +44,7 @@ class FeedFetchResult:
     error: str | None = None
     provider_status: str | None = None
     provider_rows_before_filters: int | None = None
+    matching_rows_before_limit: int | None = None
 
 
 def error_indicates_dns_failure(message: str | None) -> bool:

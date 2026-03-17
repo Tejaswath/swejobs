@@ -102,6 +102,7 @@ def fetch_lever_jobs(
 
     jobs = payload if isinstance(payload, list) else []
     rows: list[dict[str, Any]] = []
+    matching_rows = 0
     for job in jobs:
         if not isinstance(job, dict):
             continue
@@ -118,30 +119,37 @@ def fetch_lever_jobs(
         job_id = job.get("id")
         if not job_id:
             continue
+        matching_rows += 1
 
-        rows.append(
-            {
-                "id": f"lever:{feed.feed_key}:{job_id}",
-                "headline": headline,
-                "description": description,
-                "employer_name": feed.company_canonical,
-                "workplace_address": {
-                    "city": location,
-                    "municipality": location,
-                    "region": location,
-                },
-                "source_url": job.get("hostedUrl") or job.get("applyUrl"),
-                "publication_date": _epoch_millis_to_iso(job.get("createdAt")) or _epoch_millis_to_iso(job.get("updatedAt")),
-                "updated_at": _epoch_millis_to_iso(job.get("updatedAt")) or _epoch_millis_to_iso(job.get("createdAt")),
-                "source_name": "lever",
-                "source_provider": "lever",
-                "source_kind": "direct_company_ats",
-                "source_company_key": feed.company_canonical,
-                "is_direct_company_source": True,
-                "lang": "en",
-            }
-        )
-        if len(rows) >= max_rows:
-            break
+        if len(rows) < max_rows:
+            rows.append(
+                {
+                    "id": f"lever:{feed.feed_key}:{job_id}",
+                    "headline": headline,
+                    "description": description,
+                    "employer_name": feed.company_canonical,
+                    "workplace_address": {
+                        "city": location,
+                        "municipality": location,
+                        "region": location,
+                    },
+                    "source_url": job.get("hostedUrl") or job.get("applyUrl"),
+                    "publication_date": _epoch_millis_to_iso(job.get("createdAt")) or _epoch_millis_to_iso(job.get("updatedAt")),
+                    "updated_at": _epoch_millis_to_iso(job.get("updatedAt")) or _epoch_millis_to_iso(job.get("createdAt")),
+                    "source_name": "lever",
+                    "source_provider": "lever",
+                    "source_kind": "direct_company_ats",
+                    "source_company_key": feed.company_canonical,
+                    "is_direct_company_source": True,
+                    "lang": "en",
+                }
+            )
 
-    return FeedFetchResult(rows=rows, http_requests=1, http_status=http_status, endpoint_url=endpoint_url)
+    return FeedFetchResult(
+        rows=rows,
+        http_requests=1,
+        http_status=http_status,
+        endpoint_url=endpoint_url,
+        provider_rows_before_filters=len(jobs),
+        matching_rows_before_limit=matching_rows,
+    )

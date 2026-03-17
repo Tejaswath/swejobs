@@ -108,6 +108,7 @@ def fetch_greenhouse_jobs(
         return FeedFetchResult(rows=[], http_requests=1, http_status=http_status, error="invalid_payload")
 
     rows: list[dict[str, Any]] = []
+    matching_rows = 0
     for job in jobs:
         if not isinstance(job, dict):
             continue
@@ -124,30 +125,37 @@ def fetch_greenhouse_jobs(
         job_id = job.get("id")
         if job_id is None:
             continue
+        matching_rows += 1
 
-        rows.append(
-            {
-                "id": f"greenhouse:{feed.feed_key}:{job_id}",
-                "headline": headline,
-                "description": description,
-                "employer_name": feed.company_canonical,
-                "workplace_address": {
-                    "city": city,
-                    "region": region,
-                    "municipality": city,
-                },
-                "source_url": job.get("absolute_url"),
-                "publication_date": job.get("updated_at") or job.get("created_at"),
-                "updated_at": job.get("updated_at") or job.get("created_at"),
-                "source_name": "greenhouse",
-                "source_provider": "greenhouse",
-                "source_kind": "direct_company_ats",
-                "source_company_key": feed.company_canonical,
-                "is_direct_company_source": True,
-                "lang": "en",
-            }
-        )
-        if len(rows) >= max_rows:
-            break
+        if len(rows) < max_rows:
+            rows.append(
+                {
+                    "id": f"greenhouse:{feed.feed_key}:{job_id}",
+                    "headline": headline,
+                    "description": description,
+                    "employer_name": feed.company_canonical,
+                    "workplace_address": {
+                        "city": city,
+                        "region": region,
+                        "municipality": city,
+                    },
+                    "source_url": job.get("absolute_url"),
+                    "publication_date": job.get("updated_at") or job.get("created_at"),
+                    "updated_at": job.get("updated_at") or job.get("created_at"),
+                    "source_name": "greenhouse",
+                    "source_provider": "greenhouse",
+                    "source_kind": "direct_company_ats",
+                    "source_company_key": feed.company_canonical,
+                    "is_direct_company_source": True,
+                    "lang": "en",
+                }
+            )
 
-    return FeedFetchResult(rows=rows, http_requests=1, http_status=http_status, endpoint_url=endpoint_url)
+    return FeedFetchResult(
+        rows=rows,
+        http_requests=1,
+        http_status=http_status,
+        endpoint_url=endpoint_url,
+        provider_rows_before_filters=len(jobs),
+        matching_rows_before_limit=matching_rows,
+    )

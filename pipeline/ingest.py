@@ -135,6 +135,91 @@ class IngestionPipeline:
                 )
         return events
 
+    def _build_removed_events_from_existing(
+        self,
+        *,
+        rows: list[dict[str, Any]],
+        event_time: str,
+    ) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        for row in rows:
+            job_id = row.get("id")
+            if job_id is None:
+                continue
+            payload_hash_value = None
+            if isinstance(row.get("raw_json"), dict):
+                payload_hash_value = payload_hash(row["raw_json"])
+            events.append(
+                {
+                    "job_id": int(job_id),
+                    "event_type": "removed",
+                    "event_time": event_time,
+                    "payload_hash": payload_hash_value,
+                }
+            )
+        return events
+
+    @staticmethod
+    def _company_feed_fetch_succeeded(fetch_result: FeedFetchResult, *, persist_error: str | None) -> bool:
+        return (
+            persist_error is None
+            and not fetch_result.error
+            and not (fetch_result.http_status and fetch_result.http_status >= 400)
+        )
+
+    @staticmethod
+    def _can_reconcile_company_feed(
+        fetch_result: FeedFetchResult,
+        *,
+        row_limit: int,
+        persist_error: str | None,
+    ) -> bool:
+        if not IngestionPipeline._company_feed_fetch_succeeded(fetch_result, persist_error=persist_error):
+            return False
+        if row_limit <= 0:
+            return False
+        if fetch_result.matching_rows_before_limit is not None:
+            return fetch_result.matching_rows_before_limit <= row_limit
+        return len(fetch_result.rows) < row_limit
+
+    def _reconcile_missing_company_feed_jobs(
+        self,
+        *,
+        feed: CompanyFeed,
+        current_jobs: list[dict[str, Any]],
+        fetch_result: FeedFetchResult,
+        row_limit: int,
+        persist_error: str | None,
+    ) -> tuple[int, str]:
+        if not self._can_reconcile_company_feed(fetch_result, row_limit=row_limit, persist_error=persist_error):
+            return 0, "skipped_row_cap_or_error"
+
+        current_urls = {
+            str(job.get("source_url") or "").strip()
+            for job in current_jobs
+            if str(job.get("source_url") or "").strip()
+        }
+        active_rows = self.storage.fetch_active_jobs_for_company_source(
+            source_provider=feed.provider,
+            source_company_key=feed.company_canonical,
+        )
+        stale_rows = [
+            row
+            for row in active_rows
+            if str(row.get("source_url") or "").strip() not in current_urls
+        ]
+        if not stale_rows:
+            return 0, "ok"
+
+        removed_at = datetime.now(UTC).isoformat()
+        stale_ids = [int(row["id"]) for row in stale_rows if row.get("id") is not None]
+        if not stale_ids:
+            return 0, "ok"
+
+        self.storage.deactivate_jobs(stale_ids, removed_at=removed_at)
+        self.storage.insert_job_events(self._build_removed_events_from_existing(rows=stale_rows, event_time=removed_at))
+        return len(stale_ids), "ok"
+
     def _persist_records(
         self,
         *,
@@ -538,7 +623,8 @@ class IngestionPipeline:
                 )
                 continue
 
-            fetch_result = self._fetch_company_feed(feed, max_rows=remaining_rows, max_http=remaining_http)
+            row_limit_for_feed = remaining_rows
+            fetch_result = self._fetch_company_feed(feed, max_rows=row_limit_for_feed, max_http=remaining_http)
             http_requests += int(fetch_result.http_requests)
             remaining_http -= int(fetch_result.http_requests)
 
@@ -561,13 +647,27 @@ class IngestionPipeline:
                     persist_error = str(exc)
                     logger.warning("Company feed persist failed for %s: %s", feed.feed_key, exc)
 
+            removed_rows = 0
+            reconciliation_status = "not_run"
+            try:
+                removed_rows, reconciliation_status = self._reconcile_missing_company_feed_jobs(
+                    feed=feed,
+                    current_jobs=prepared_jobs,
+                    fetch_result=fetch_result,
+                    row_limit=row_limit_for_feed,
+                    persist_error=persist_error,
+                )
+            except Exception as exc:  # noqa: BLE001
+                reconciliation_status = "error"
+                logger.warning("Company feed reconciliation failed for %s: %s", feed.feed_key, exc)
+
             processed_rows += persisted_rows
             target_rows += persisted_target_count
             remaining_rows -= persisted_rows
 
             miss_key = self._feed_state_key(feed.feed_key, "consecutive_miss_count")
             auto_key = self._feed_state_key(feed.feed_key, "auto_disabled")
-            if persisted_target_count > 0:
+            if self._company_feed_fetch_succeeded(fetch_result, persist_error=persist_error):
                 updates[miss_key] = "0"
                 updates[auto_key] = "false"
                 updates[self._feed_state_key(feed.feed_key, "last_success_at")] = datetime.now(UTC).isoformat()
@@ -597,6 +697,8 @@ class IngestionPipeline:
                     "fetched_rows": len(fetch_result.rows),
                     "persisted_rows": persisted_rows,
                     "target_rows": persisted_target_count,
+                    "removed_rows": removed_rows,
+                    "reconciliation_status": reconciliation_status,
                     "http_status": fetch_result.http_status,
                     "error": persist_error or fetch_result.error,
                 }

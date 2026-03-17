@@ -212,6 +212,46 @@ class SupabaseStorage:
                     by_url[source_url] = row
         return by_url
 
+    def fetch_active_jobs_for_company_source(
+        self,
+        *,
+        source_provider: str,
+        source_company_key: str,
+    ) -> list[dict[str, Any]]:
+        if not source_provider or not source_company_key:
+            return []
+
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id,source_url,raw_json,source_company_key,company_canonical")
+            .eq("is_active", True)
+            .eq("source_provider", source_provider)
+            .limit(10000)
+            .execute(),
+            context="fetch active jobs for company source",
+        )
+        rows = response.data or []
+        return [
+            row
+            for row in rows
+            if str(row.get("source_company_key") or row.get("company_canonical") or "").strip() == source_company_key
+        ]
+
+    def deactivate_jobs(self, job_ids: list[int], *, removed_at: str) -> int:
+        if not job_ids:
+            return 0
+
+        payload = {
+            "is_active": False,
+            "removed_at": removed_at,
+            "updated_at": removed_at,
+        }
+        self._execute(
+            lambda job_ids=job_ids, payload=payload: self.client.table("jobs").update(payload).in_("id", job_ids).execute(),
+            context="deactivate jobs",
+        )
+        return len(job_ids)
+
     def upsert_jobs(self, rows: list[dict[str, Any]]) -> None:
         if not rows:
             return
