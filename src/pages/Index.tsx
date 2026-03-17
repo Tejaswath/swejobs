@@ -409,8 +409,10 @@ export default function Index() {
       badgeClass: "border-sky-500/20 bg-sky-500/10 text-sky-100",
     },
   ];
+  const visibleDeadlinePanels = deadlinePanels.filter((panel) => panel.items.length > 0);
   const deadlineFocusLink =
     groupedDeadlines.today.length > 0 ? "/jobs?deadline=today" : "/jobs?deadline=week";
+  const deadlineRadarLink = visibleDeadlinePanels.length > 0 ? "/jobs?deadline=upcoming" : "/jobs";
   const metricCards = [
     {
       to: "/jobs",
@@ -628,11 +630,21 @@ export default function Index() {
                   <OverviewPanelHeader
                     icon={CalendarClock}
                     label="Deadline radar"
-                    actionLabel="View all deadlines"
-                    to={deadlineFocusLink}
+                    actionLabel={visibleDeadlinePanels.length > 0 ? "View all deadlines" : "Explore jobs"}
+                    to={deadlineRadarLink}
                   />
-                  <div className="mt-5 grid gap-3 lg:grid-cols-3">
-                    {deadlinePanels.map((panel) => (
+                  {visibleDeadlinePanels.length > 0 ? (
+                    <div
+                      className={cn(
+                        "mt-5 grid gap-3",
+                        visibleDeadlinePanels.length === 1
+                          ? "grid-cols-1"
+                          : visibleDeadlinePanels.length === 2
+                            ? "grid-cols-1 lg:grid-cols-2"
+                            : "grid-cols-1 lg:grid-cols-3",
+                      )}
+                    >
+                    {visibleDeadlinePanels.map((panel) => (
                       <div key={panel.key} className={cn("rounded-3xl border p-4", panel.panelClass)}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -673,7 +685,27 @@ export default function Index() {
                         </div>
                       </div>
                     ))}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="mt-5 rounded-3xl border border-dashed border-border/60 bg-background/35 p-6">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                            No upcoming deadlines
+                          </p>
+                          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                            Nothing active in the market has a near-term application deadline right now. Use Explore to
+                            keep shortlisting roles before the next close dates appear.
+                          </p>
+                        </div>
+                        <Button asChild variant="outline" size="sm" className="shrink-0">
+                          <Link to="/jobs">
+                            Explore jobs <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </FadeUp>

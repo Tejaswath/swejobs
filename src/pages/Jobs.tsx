@@ -43,7 +43,7 @@ const STATUSES = ["saved", "applied", "interviewing", "rejected", "ignored"] as 
 
 type Lens = "best_matches" | "graduate_trainee" | "main_companies" | "hidden_gems" | "consultancies";
 type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_both" | "show_both_best_matches";
-type DeadlineFocus = "none" | "today" | "week";
+type DeadlineFocus = "none" | "today" | "week" | "upcoming";
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
   { id: "best_matches", label: "Best Matches", description: "Top ranked roles for your profile" },
@@ -152,11 +152,14 @@ export default function Jobs() {
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const debouncedSearch = useDebouncedValue(search, 275);
   const isSearchPending = search.trim() !== debouncedSearch.trim();
-  const deadlineFocus: DeadlineFocus = searchParams.get("deadline") === "today"
-    ? "today"
-    : searchParams.get("deadline") === "week"
-      ? "week"
-      : "none";
+  const deadlineFocus: DeadlineFocus =
+    searchParams.get("deadline") === "today"
+      ? "today"
+      : searchParams.get("deadline") === "week"
+        ? "week"
+        : searchParams.get("deadline") === "upcoming"
+          ? "upcoming"
+          : "none";
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -220,7 +223,7 @@ export default function Jobs() {
 
         if (deadlineFocus === "today") {
           query = query.eq("application_deadline", todayIso);
-        } else {
+        } else if (deadlineFocus === "week") {
           query = query.lte("application_deadline", weekEndIso);
         }
       } else {
@@ -741,6 +744,8 @@ export default function Jobs() {
               ? `${total.toLocaleString()} roles due today`
               : deadlineFocus === "week"
                 ? `${total.toLocaleString()} roles closing this week`
+                : deadlineFocus === "upcoming"
+                  ? `${total.toLocaleString()} upcoming deadline roles`
                 : `${total.toLocaleString()} jobs in current lens`}
           </p>
         </div>
@@ -748,7 +753,11 @@ export default function Jobs() {
         {deadlineFocus !== "none" && (
           <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
             <p className="font-medium text-foreground">
-              {deadlineFocus === "today" ? "Deadline focus: due today" : "Deadline focus: closing this week"}
+              {deadlineFocus === "today"
+                ? "Deadline focus: due today"
+                : deadlineFocus === "week"
+                  ? "Deadline focus: closing this week"
+                  : "Deadline focus: all upcoming deadlines"}
             </p>
             <p className="mt-1 text-muted-foreground">
               This view is opened from the homepage deadline widgets and is sorted by closing date first.
