@@ -56,7 +56,10 @@ export default function TrackedJobs() {
       <div className="space-y-6">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Tracker</h1>
-          <p className="text-xs text-muted-foreground">Your application pipeline</p>
+          <p className="text-xs text-muted-foreground">Discovery tracking — save and organize jobs you find</p>
+          <Link to="/applications" className="mt-2 inline-flex text-xs text-primary hover:underline">
+            Track your full application pipeline →
+          </Link>
         </div>
 
         {isEmpty ? (

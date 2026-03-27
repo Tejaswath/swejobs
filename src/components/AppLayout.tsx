@@ -28,6 +28,7 @@ import {
   Activity,
   Compass,
   Kanban,
+  ClipboardList,
   LogOut,
   LogIn,
   ChevronDown,
@@ -40,6 +41,7 @@ import {
   MoreHorizontal,
   Menu,
   Settings,
+  User,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -47,9 +49,11 @@ const NAV_ITEMS = [
   { path: "/", label: "Overview", icon: Activity },
   { path: "/jobs", label: "Explore", icon: Compass },
   { path: "/tracked", label: "Tracker", icon: Kanban },
+  { path: "/applications", label: "Applications", icon: ClipboardList },
 ];
 
 const MORE_ITEMS = [
+  { path: "/profile", label: "Resume Library", icon: User },
   { path: "/skills", label: "Skill Gap", icon: Target },
   { path: "/watchlist", label: "Company Watchlist", icon: Building },
   { path: "/digest", label: "Market Digest", icon: BarChart3 },

@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 300_000;
 
 export default function Admin() {
   const { user, loading } = useAuth();
@@ -33,7 +33,7 @@ export default function Admin() {
     queryKey: ["pipeline-freshness"],
     enabled: !!user,
     refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const [{ data: pollState, error: pollError }, { data: atsState, error: atsError }] = await Promise.all([
         supabase.from("ingestion_state").select("key, value").eq("key", "last_poll_at"),

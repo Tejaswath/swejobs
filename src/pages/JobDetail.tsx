@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, MapPin, Globe, Clock, Building, ExternalLink, Bookmark } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
+import { buildSweJobsApplication } from "@/lib/applications";
 
 const STATUSES = ["saved", "applied", "interviewing", "rejected", "ignored"] as const;
 
@@ -67,9 +68,24 @@ export default function JobDetail() {
         { onConflict: "user_id,job_id" }
       );
       if (error) throw error;
+
+      if (vals.status === "applied") {
+        const { error: applicationError } = await supabase.from("applications").upsert(
+          buildSweJobsApplication({
+            userId: user!.id,
+            jobId: Number(id),
+            company: job.employer_name ?? "Unknown",
+            jobTitle: job.headline,
+            jobUrl: job.source_url,
+          }),
+          { onConflict: "user_id,request_id" }
+        );
+        if (applicationError) throw applicationError;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tracked", id] });
+      qc.invalidateQueries({ queryKey: ["applications", user?.id] });
       toast({ title: "Saved" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),

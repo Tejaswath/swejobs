@@ -1,35 +1,13 @@
-import { useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
+import { Download, FileSpreadsheet } from "lucide-react";
+
 import { AppLayout } from "@/components/AppLayout";
-import { pickLatestDigest, type DigestRow } from "@/lib/digest";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
-import { Download, FileSpreadsheet, FileJson } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-
-function downloadCSV(filename: string, headers: string[], rows: any[][]) {
-  const BOM = "\uFEFF";
-  const csv = BOM + [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function downloadJSON(filename: string, data: any) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+import { supabase } from "@/integrations/supabase/client";
+import { downloadCSV } from "@/lib/export";
 
 export default function Export() {
   const { user } = useAuth();
@@ -39,139 +17,109 @@ export default function Export() {
     document.title = "Export | SweJobs";
   }, []);
 
-  const { data: latestDigest, error: latestDigestError } = useQuery({
-    queryKey: ["latest-digest-export"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("weekly_digests")
-        .select("id, period_start, period_end, generated_at, digest_json")
-        .order("generated_at", { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      return pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
-    },
-  });
-
-  const exportActiveJobs = async () => {
-    const { data, error } = await supabase
-      .from("jobs")
-      .select("id, headline, employer_name, municipality, region, lang, remote_flag, occupation_label, published_at, application_deadline, source_url")
-      .eq("is_active", true)
-      .eq("is_target_role", true)
-      .order("published_at", { ascending: false })
-      .limit(10000);
-
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-
-    const headers = ["ID", "Headline", "Employer", "Municipality", "Region", "Language", "Remote", "Occupation", "Published", "Deadline", "URL"];
-    const rows = (data ?? []).map((j) => [j.id, j.headline, j.employer_name, j.municipality, j.region, j.lang, j.remote_flag, j.occupation_label, j.published_at, j.application_deadline, j.source_url]);
-    downloadCSV("jobs_active.csv", headers, rows);
-    toast({ title: `Exported ${rows.length} jobs` });
-  };
-
-  const exportDelta = async () => {
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data, error } = await supabase
-      .from("job_events")
-      .select("id, job_id, event_type, event_time")
-      .gte("event_time", weekAgo)
-      .order("event_time", { ascending: false })
-      .limit(10000);
-
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-
-    const headers = ["EventID", "JobID", "EventType", "EventTime"];
-    const rows = (data ?? []).map((e) => [e.id, e.job_id, e.event_type, e.event_time]);
-    downloadCSV("jobs_delta_7d.csv", headers, rows);
-    toast({ title: `Exported ${rows.length} events` });
-  };
-
-  const exportDigest = async () => {
-    const { data, error } = await supabase
-      .from("weekly_digests")
-      .select("id, period_start, period_end, generated_at, digest_json")
-      .order("generated_at", { ascending: false })
-      .limit(100);
-
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
-    const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
-    if (!latest) { toast({ title: "Error", description: "No digest found", variant: "destructive" }); return; }
-    downloadJSON("weekly_digest.json", latest.digest_json);
-    toast({ title: "Digest exported" });
-  };
-
   const exportTracked = async () => {
-    if (!user) { toast({ title: "Sign in to export tracked jobs", variant: "destructive" }); return; }
+    if (!user) {
+      toast({ title: "Sign in to export tracked jobs", variant: "destructive" });
+      return;
+    }
+
     const { data, error } = await supabase
       .from("tracked_jobs")
       .select("id, job_id, status, notes, created_at, updated_at, jobs(headline, employer_name)")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
 
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
 
     const headers = ["TrackID", "JobID", "Headline", "Employer", "Status", "Notes", "Created", "Updated"];
-    const rows = (data ?? []).map((t) => {
-      const job = t.jobs as any;
-      return [t.id, t.job_id, job?.headline, job?.employer_name, t.status, t.notes, t.created_at, t.updated_at];
+    const rows = (data ?? []).map((tracked) => {
+      const job = tracked.jobs as { headline?: string | null; employer_name?: string | null } | null;
+      return [
+        tracked.id,
+        tracked.job_id,
+        job?.headline ?? "",
+        job?.employer_name ?? "",
+        tracked.status,
+        tracked.notes ?? "",
+        tracked.created_at ?? "",
+        tracked.updated_at ?? "",
+      ];
     });
+
     downloadCSV("my_tracked_jobs.csv", headers, rows);
     toast({ title: `Exported ${rows.length} tracked jobs` });
   };
 
-  const EXPORTS = [
-    { title: "Active Jobs", desc: "All currently active relevant jobs", icon: FileSpreadsheet, action: exportActiveJobs, format: "CSV" },
-    { title: "7-Day Delta", desc: "Created/Updated/Removed events this week", icon: FileSpreadsheet, action: exportDelta, format: "CSV" },
-    { title: "Latest Digest", desc: "Most recent weekly digest artifact", icon: FileJson, action: exportDigest, format: "JSON" },
-    { title: "My Tracked Jobs", desc: "Your personal tracking history", icon: FileSpreadsheet, action: exportTracked, format: "CSV", requiresAuth: true },
+  const exportApplications = async () => {
+    if (!user) {
+      toast({ title: "Sign in to export applications", variant: "destructive" });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("applications")
+      .select("company, job_title, status, job_url, applied_at, resume_label, source, notes")
+      .eq("user_id", user.id)
+      .order("applied_at", { ascending: false });
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    const headers = ["Company", "JobTitle", "Status", "JobURL", "AppliedAt", "ResumeUsed", "Source", "Notes"];
+    const rows = (data ?? []).map((application) => [
+      application.company,
+      application.job_title,
+      application.status,
+      application.job_url,
+      application.applied_at,
+      application.resume_label ?? "",
+      application.source,
+      application.notes ?? "",
+    ]);
+
+    downloadCSV("my_applications.csv", headers, rows);
+    toast({ title: `Exported ${rows.length} applications` });
+  };
+
+  const exports = [
+    {
+      title: "My Tracked Jobs",
+      description: "Your discovery list from Explore and Tracker.",
+      action: exportTracked,
+    },
+    {
+      title: "My Applications",
+      description: "Your actual application pipeline across SweJobs and manual entries.",
+      action: exportApplications,
+    },
   ];
 
   return (
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="font-mono text-2xl font-bold tracking-tight">Export Data</h1>
-          <p className="text-sm text-muted-foreground">Download clean data for your own analysis</p>
+          <h1 className="text-xl font-semibold tracking-tight">Personal Exports</h1>
+          <p className="text-sm text-muted-foreground">
+            Download only the job-search data you personally manage in SweJobs.
+          </p>
         </div>
 
-        {latestDigestError ? (
-          <Card className="border-destructive/40">
-            <CardContent className="space-y-1 p-4">
-              <p className="text-sm font-medium text-destructive">Digest status unavailable</p>
-              <p className="text-xs text-muted-foreground">
-                {(latestDigestError as Error).message}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-border/40">
-            <CardContent className="space-y-1 p-4">
-              <p className="text-sm font-medium">Digest source</p>
-              {latestDigest ? (
-                <p className="text-xs text-muted-foreground">
-                  Rolling 30d digest available. Generated at{" "}
-                  {new Date(latestDigest.generated_at ?? latestDigest.period_end).toLocaleString("sv-SE")}.
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No rolling 30d digest found yet. Run the digest command, then retry export.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
         <div className="grid gap-4 md:grid-cols-2">
-          {EXPORTS.map((exp) => (
-            <Card key={exp.title}>
+          {exports.map((item) => (
+            <Card key={item.title}>
               <CardHeader>
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                    <exp.icon className="h-5 w-5 text-primary" />
+                    <FileSpreadsheet className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">{exp.title}</CardTitle>
-                    <CardDescription>{exp.desc}</CardDescription>
+                    <CardTitle className="text-base">{item.title}</CardTitle>
+                    <CardDescription>{item.description}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -179,14 +127,13 @@ export default function Export() {
                 <Button
                   variant="outline"
                   className="gap-2"
-                  onClick={exp.action}
-                  disabled={exp.requiresAuth && !user}
+                  onClick={item.action}
+                  disabled={!user}
                 >
-                  <Download className="h-4 w-4" /> Download {exp.format}
+                  <Download className="h-4 w-4" />
+                  Download CSV
                 </Button>
-                {exp.requiresAuth && !user && (
-                  <p className="mt-2 text-xs text-muted-foreground">Sign in required</p>
-                )}
+                {!user ? <p className="mt-2 text-xs text-muted-foreground">Sign in required</p> : null}
               </CardContent>
             </Card>
           ))}

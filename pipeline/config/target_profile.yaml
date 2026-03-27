@@ -1,5 +1,5 @@
 version: 4
-updated_at: "2026-03-10"
+updated_at: "2026-03-26"
 
 role_families:
   include:
@@ -123,6 +123,9 @@ watched_companies:
   - amazon
   - warner bros discovery
   - electronic arts
+  - ubs
+  - arm
+  - noda
 
 scoring:
   minimum_target_score: 18

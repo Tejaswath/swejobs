@@ -14,6 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
+      applications: {
+        Row: {
+          applied_at: string
+          company: string
+          created_at: string
+          id: string
+          job_id: number | null
+          job_title: string
+          job_url: string
+          notes: string | null
+          request_id: string | null
+          resume_label: string | null
+          resume_version_id: string | null
+          source: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string
+          company: string
+          created_at?: string
+          id?: string
+          job_id?: number | null
+          job_title: string
+          job_url?: string
+          notes?: string | null
+          request_id?: string | null
+          resume_label?: string | null
+          resume_version_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          applied_at?: string
+          company?: string
+          created_at?: string
+          id?: string
+          job_id?: number | null
+          job_title?: string
+          job_url?: string
+          notes?: string | null
+          request_id?: string | null
+          resume_label?: string | null
+          resume_version_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applications_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_resume_version_id_fkey"
+            columns: ["resume_version_id"]
+            isOneToOne: false
+            referencedRelation: "resume_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_templates: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          name: string
+          subject: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body?: string
+          created_at?: string
+          id?: string
+          name: string
+          subject?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          name?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ingestion_state: {
         Row: {
           key: string
@@ -223,6 +322,147 @@ export type Database = {
         }
         Relationships: []
       }
+      profile_facts: {
+        Row: {
+          created_at: string
+          description: string | null
+          end_date: string | null
+          fact_type: string
+          id: string
+          is_current: boolean | null
+          location: string | null
+          organization: string | null
+          sort_order: number
+          start_date: string | null
+          structured_data: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          fact_type: string
+          id?: string
+          is_current?: boolean | null
+          location?: string | null
+          organization?: string | null
+          sort_order?: number
+          start_date?: string | null
+          structured_data?: Json
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          fact_type?: string
+          id?: string
+          is_current?: boolean | null
+          location?: string | null
+          organization?: string | null
+          sort_order?: number
+          start_date?: string | null
+          structured_data?: Json
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      recruiters: {
+        Row: {
+          company: string | null
+          created_at: string
+          email: string | null
+          id: string
+          linkedin_url: string | null
+          name: string
+          notes: string | null
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          linkedin_url?: string | null
+          name: string
+          notes?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          linkedin_url?: string | null
+          name?: string
+          notes?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      resume_versions: {
+        Row: {
+          created_at: string
+          file_name: string | null
+          file_size_bytes: number | null
+          id: string
+          is_default: boolean
+          label: string
+          mime_type: string | null
+          notes: string | null
+          parsed_text: string | null
+          storage_path: string | null
+          target_role: string | null
+          text_extracted_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          is_default?: boolean
+          label: string
+          mime_type?: string | null
+          notes?: string | null
+          parsed_text?: string | null
+          storage_path?: string | null
+          target_role?: string | null
+          text_extracted_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          is_default?: boolean
+          label?: string
+          mime_type?: string | null
+          notes?: string | null
+          parsed_text?: string | null
+          storage_path?: string | null
+          target_role?: string | null
+          text_extracted_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       saved_searches: {
         Row: {
           created_at: string | null
@@ -326,6 +566,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_profile: {
+        Row: {
+          created_at: string
+          full_name: string | null
+          headline: string | null
+          linkedin_url: string | null
+          location: string | null
+          portfolio_url: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          full_name?: string | null
+          headline?: string | null
+          linkedin_url?: string | null
+          location?: string | null
+          portfolio_url?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string | null
+          headline?: string | null
+          linkedin_url?: string | null
+          location?: string | null
+          portfolio_url?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_skills: {
         Row: {

@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { pickLatestDigest, type DigestRow } from "@/lib/digest";
+import { computeApplicationMetrics } from "@/lib/applications";
 
 import type {
   DeadlineBucketViewModel,
@@ -21,8 +22,6 @@ import type {
   PipelineMetric,
   StudySkillChip,
 } from "@/components/overview/types";
-
-const REFRESH_MS = 60_000;
 
 type UpcomingDeadlineJob = {
   id: number;
@@ -148,8 +147,6 @@ export default function Index() {
 
   const jobCountQuery = useQuery({
     queryKey: ["job-count"],
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { count, error } = await supabase
         .from("jobs")
@@ -163,8 +160,6 @@ export default function Index() {
 
   const latestDigestQuery = useQuery({
     queryKey: ["latest-digest", "rolling_30d"],
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("weekly_digests")
@@ -179,8 +174,6 @@ export default function Index() {
   const trackedJobsQuery = useQuery({
     queryKey: ["tracked-summary", user?.id],
     enabled: !!user,
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tracked_jobs")
@@ -193,10 +186,22 @@ export default function Index() {
     },
   });
 
+  const applicationsQuery = useQuery({
+    queryKey: ["applications", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("applications")
+        .select("status")
+        .eq("user_id", user!.id)
+        .order("status", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const upcomingDeadlinesQuery = useQuery({
     queryKey: ["upcoming-deadlines"],
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
@@ -214,8 +219,6 @@ export default function Index() {
   const watchedCompanyDataQuery = useQuery({
     queryKey: ["watched-overview", user?.id],
     enabled: !!user,
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data: watched, error: watchedError } = await supabase
         .from("watched_companies")
@@ -224,18 +227,22 @@ export default function Index() {
       if (watchedError) throw watchedError;
       if (!watched || watched.length === 0) return [];
 
-      const results: Array<{ name: string; count: number }> = [];
-      for (const item of watched) {
-        const { count, error } = await supabase
-          .from("jobs")
-          .select("id", { count: "exact", head: true })
-          .eq("employer_name", item.employer_name)
-          .eq("is_active", true);
-        if (error) throw error;
-        results.push({ name: item.employer_name, count: count ?? 0 });
+      const employerNames = Array.from(new Set(watched.map((item) => item.employer_name)));
+      const { data: activeJobs, error: jobsError } = await supabase
+        .from("jobs")
+        .select("employer_name")
+        .in("employer_name", employerNames)
+        .eq("is_active", true);
+      if (jobsError) throw jobsError;
+
+      const counts = new Map<string, number>();
+      for (const row of activeJobs ?? []) {
+        const employerName = row.employer_name;
+        if (!employerName) continue;
+        counts.set(employerName, (counts.get(employerName) ?? 0) + 1);
       }
 
-      return results;
+      return employerNames.map((name) => ({ name, count: counts.get(name) ?? 0 }));
     },
   });
 
@@ -253,6 +260,7 @@ export default function Index() {
   const savedCount = trackedCounts.saved ?? 0;
   const appliedCount = trackedCounts.applied ?? 0;
   const interviewingCount = trackedCounts.interviewing ?? 0;
+  const applicationMetricsSummary = computeApplicationMetrics(applicationsQuery.data ?? []);
 
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
@@ -408,12 +416,29 @@ export default function Index() {
     { label: "Applied", count: appliedCount, href: pipelineHref, accentClassName: appliedCount > 0 ? "text-primary" : undefined },
     { label: "Interviewing", count: interviewingCount, href: pipelineHref, accentClassName: interviewingCount > 0 ? "text-amber-300" : undefined },
   ];
+  const applicationsHref = user ? "/applications" : "/auth";
+  const applicationMetrics: PipelineMetric[] = [
+    { label: "Applied", count: applicationMetricsSummary.total, href: applicationsHref },
+    {
+      label: "OAs",
+      count: applicationMetricsSummary.oa,
+      href: applicationsHref,
+      accentClassName: applicationMetricsSummary.oa > 0 ? "text-amber-300" : undefined,
+    },
+    {
+      label: "Response %",
+      count: applicationMetricsSummary.responseRate,
+      href: applicationsHref,
+      accentClassName: applicationMetricsSummary.responseRate > 0 ? "text-emerald-300" : undefined,
+    },
+  ];
 
   const showHeroSignalsLoading = useDelayedVisibility(
     jobCountQuery.isLoading || latestDigestQuery.isLoading || upcomingDeadlinesQuery.isLoading,
   );
   const showUpcomingDeadlineLoading = useDelayedVisibility(upcomingDeadlinesQuery.isLoading);
   const showTrackedLoading = useDelayedVisibility(!!user && trackedJobsQuery.isLoading);
+  const showApplicationsLoading = useDelayedVisibility(!!user && applicationsQuery.isLoading);
   const showWatchlistLoading = useDelayedVisibility(!!user && watchedCompanyDataQuery.isLoading);
   const showStudyLoading = useDelayedVisibility(latestDigestQuery.isLoading);
   const heroSignalsUnavailable = jobCountQuery.isError || upcomingDeadlinesQuery.isError;
@@ -473,6 +498,17 @@ export default function Index() {
                   isLoading={showTrackedLoading}
                   unavailable={!!user && trackedJobsQuery.isError}
                   actionHref={pipelineHref}
+                  label="Discovery"
+                />
+              </FadeUp>
+
+              <FadeUp>
+                <PipelinePulsePanel
+                  metrics={applicationMetrics}
+                  isLoading={showApplicationsLoading}
+                  unavailable={!!user && applicationsQuery.isError}
+                  actionHref={applicationsHref}
+                  label="Applications"
                 />
               </FadeUp>
 
