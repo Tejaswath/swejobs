@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-03-13",
+  "updated_at": "2026-03-26",
   "companies": [
     {
       "company_canonical": "spotify",
@@ -194,6 +194,82 @@
       "aliases": [],
       "notes": "Swedish Tier A target",
       "career_page_url": "https://www.klarna.com/careers/"
+    },
+    {
+      "company_canonical": "ubs",
+      "display_name": "UBS",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "ubs ag"
+      ],
+      "notes": "User-priority global finance employer",
+      "career_page_url": "https://www.ubs.com/global/en/careers.html"
+    },
+    {
+      "company_canonical": "arm",
+      "display_name": "Arm",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "greenhouse",
+        "lever",
+        "workday",
+        "smartrecruiters",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [
+        "arm limited",
+        "arm ltd"
+      ],
+      "notes": "User-priority semiconductor/platform employer",
+      "career_page_url": "https://careers.arm.com/"
+    },
+    {
+      "company_canonical": "noda",
+      "display_name": "Noda",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "teamtailor",
+        "lever",
+        "greenhouse",
+        "smartrecruiters",
+        "workday",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "User-priority fintech/product employer"
     },
     {
       "company_canonical": "volvo cars",

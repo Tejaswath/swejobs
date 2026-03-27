@@ -32,7 +32,6 @@ function safePct(val: unknown): string {
 export default function Digest() {
   const queryClient = useQueryClient();
   const WINDOW_TYPE = "rolling_30d";
-  const REFRESH_MS = 60_000;
 
   useEffect(() => {
     document.title = "Market Digest | SweJobs";
@@ -40,8 +39,6 @@ export default function Digest() {
 
   const { data: digests, isFetching, error } = useQuery({
     queryKey: ["digests"],
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data } = await supabase
         .from("weekly_digests")

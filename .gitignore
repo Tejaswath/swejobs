@@ -37,6 +37,11 @@ pipeline/reports/
 *.sln
 *.sw?
 
+# Local project inventory docs
+PROJECT.md
+project.md
+
 # Temporary docs freeze: ignore markdown files
 *.md
 **/*.md
+.claude/

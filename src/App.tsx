@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { useEffect } from "react";
@@ -11,6 +11,8 @@ import Auth from "./pages/Auth";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import TrackedJobs from "./pages/TrackedJobs";
+import Applications from "./pages/Applications";
+import Profile from "./pages/Profile";
 import SavedSearches from "./pages/SavedSearches";
 import Digest from "./pages/Digest";
 import Export from "./pages/Export";
@@ -40,6 +42,9 @@ function App() {
               <Route path="/jobs" element={<Jobs />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/tracked" element={<TrackedJobs />} />
+              <Route path="/applications" element={<Applications />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/outreach" element={<Navigate to="/applications" replace />} />
               <Route path="/searches" element={<SavedSearches />} />
               <Route path="/digest" element={<Digest />} />
               <Route path="/export" element={<Export />} />

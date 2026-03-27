@@ -13,16 +13,18 @@ export function PipelinePulsePanel({
   isLoading,
   unavailable,
   actionHref,
+  label = "Pipeline",
 }: {
   metrics: PipelineMetric[];
   isLoading?: boolean;
   unavailable?: boolean;
   actionHref: string;
+  label?: string;
 }) {
   return (
     <Card className="overflow-hidden rounded-[30px] border-border/60 bg-card/80">
       <CardContent className="p-5 sm:p-6">
-        <OverviewSectionHeader icon={Kanban} label="Pipeline" actionLabel="Open" to={actionHref} />
+        <OverviewSectionHeader icon={Kanban} label={label} actionLabel="Open" to={actionHref} />
 
         {unavailable ? (
           <div className="mt-5 rounded-[24px] border border-dashed border-border/60 bg-background/35 p-5 text-sm text-muted-foreground">

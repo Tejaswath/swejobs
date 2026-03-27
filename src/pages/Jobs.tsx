@@ -34,9 +34,10 @@ import {
   normalizeCompanyKey,
   providerLabel,
 } from "@/lib/companyRegistry";
+import { buildSweJobsApplication } from "@/lib/applications";
 
 const PAGE_SIZE = 25;
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 300_000;
 const WATCHED_COMPANY_BOOST = 35;
 const CAREER_STAGE_CONFIDENCE_THRESHOLD = 0.6;
 const STATUSES = ["saved", "applied", "interviewing", "rejected", "ignored"] as const;
@@ -184,7 +185,7 @@ export default function Jobs() {
   const { data: rawJobsData, isLoading, isFetching, error: jobsError } = useQuery({
     queryKey: ["jobs-v3", debouncedSearch, lang, remoteOnly, deadlineFocus],
     refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const normalizedSearchTerm = debouncedSearch.trim();
       const today = new Date();
@@ -200,7 +201,7 @@ export default function Jobs() {
             "source_provider, source_kind, is_direct_company_source, is_target_role, is_noise",
         )
         .eq("is_active", true)
-        .limit(1000);
+        .limit(200);
 
       if (lang !== "all") {
         query = query.eq("lang", lang);
@@ -564,7 +565,7 @@ export default function Jobs() {
     queryKey: ["job-tags-list", jobIds.join(",")],
     enabled: jobIds.length > 0,
     refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("job_tags")
@@ -653,9 +654,24 @@ export default function Jobs() {
         { onConflict: "user_id,job_id" },
       );
       if (error) throw error;
+
+      if (values.status === "applied" && detail && selectedId) {
+        const { error: applicationError } = await supabase.from("applications").upsert(
+          buildSweJobsApplication({
+            userId: user!.id,
+            jobId: selectedId,
+            company: detail.employer_name ?? "Unknown",
+            jobTitle: detail.headline,
+            jobUrl: detail.source_url,
+          }),
+          { onConflict: "user_id,request_id" },
+        );
+        if (applicationError) throw applicationError;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tracked", selectedId] });
+      qc.invalidateQueries({ queryKey: ["applications", user?.id] });
       toast({ title: "Saved" });
     },
     onError: (error: Error) => {
