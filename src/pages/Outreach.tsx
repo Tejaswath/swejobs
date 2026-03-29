@@ -396,9 +396,20 @@ export default function Outreach() {
           body: values.body,
         }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const raw = await response.text();
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      } catch {
+        payload = {};
+      }
       if (!response.ok) {
-        throw new Error(String(payload?.error ?? "Send failed"));
+        const errorDetail =
+          (typeof payload?.error === "string" && payload.error) ||
+          (typeof payload?.message === "string" && payload.message) ||
+          (raw ? raw.slice(0, 240) : "") ||
+          `Send failed (${response.status})`;
+        throw new Error(errorDetail);
       }
     },
     onSuccess: () => {
@@ -912,19 +923,24 @@ export default function Outreach() {
                             </TableCell>
                             <TableCell className="max-w-[260px] truncate">{log.subject}</TableCell>
                             <TableCell>
-                              {log.status === "sent" ? (
-                                <Badge className="gap-1 border-emerald-500/30 bg-emerald-500/15 text-emerald-400">
-                                  <CheckCircle className="h-3 w-3" /> Sent
-                                </Badge>
-                              ) : log.status === "failed" ? (
-                                <Badge variant="destructive" className="gap-1">
-                                  <XCircle className="h-3 w-3" /> Failed
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="gap-1">
-                                  <Clock className="h-3 w-3" /> Pending
-                                </Badge>
-                              )}
+                              <div className="space-y-1">
+                                {log.status === "sent" ? (
+                                  <Badge className="gap-1 border-emerald-500/30 bg-emerald-500/15 text-emerald-400">
+                                    <CheckCircle className="h-3 w-3" /> Sent
+                                  </Badge>
+                                ) : log.status === "failed" ? (
+                                  <Badge variant="destructive" className="gap-1">
+                                    <XCircle className="h-3 w-3" /> Failed
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="gap-1">
+                                    <Clock className="h-3 w-3" /> Pending
+                                  </Badge>
+                                )}
+                                {log.status === "failed" && log.error_message ? (
+                                  <p className="max-w-[280px] text-xs text-muted-foreground">{log.error_message}</p>
+                                ) : null}
+                              </div>
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {new Date(log.sent_at).toLocaleString("sv-SE")}

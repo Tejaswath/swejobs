@@ -46,3 +46,4 @@ project.md
 *.md
 **/*.md
 .claude/
+.vercel
