@@ -59,6 +59,12 @@ class DeadlineExpiryTests(unittest.TestCase):
             compaction_inactive_job_days=60,
             compaction_job_event_days=30,
             compaction_weekly_digest_days=180,
+            enable_translation=False,
+            libretranslate_url="http://localhost:5000/translate",
+            translation_interval_polls=10,
+            translation_batch_size=20,
+            translation_max_chars=4000,
+            translation_timeout_seconds=20,
         )
 
     def test_normalize_job_canonicalizes_deadline_to_iso_date(self) -> None:

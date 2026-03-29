@@ -101,15 +101,14 @@ export default function TrackedJobs() {
     },
   });
 
-  if (!loading && !user) return <Navigate to="/auth" replace />;
-
   const allTracked = trackedJobs ?? [];
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const allSelected = allTracked.length > 0 && allTracked.every((item) => selectedSet.has(item.id));
   const discoveryItems = allTracked.filter((item) => !PIPELINE_STATUSES.has(item.status));
   const pipelineItems = allTracked.filter((item) => PIPELINE_STATUSES.has(item.status));
   const isEmpty = allTracked.length === 0;
 
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const allSelected = allTracked.length > 0 && allTracked.every((item) => selectedSet.has(item.id));
+  if (!loading && !user) return <Navigate to="/auth" replace />;
 
   const toggleSelect = (id: number, checked: boolean) => {
     setSelectedIds((current) => {

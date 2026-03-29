@@ -17,6 +17,7 @@ export type Database = {
       applications: {
         Row: {
           applied_at: string
+          ats_job_description: string | null
           ats_keywords_json: Json
           ats_score: number | null
           company: string
@@ -37,6 +38,7 @@ export type Database = {
         }
         Insert: {
           applied_at?: string
+          ats_job_description?: string | null
           ats_keywords_json?: Json
           ats_score?: number | null
           company: string
@@ -57,6 +59,7 @@ export type Database = {
         }
         Update: {
           applied_at?: string
+          ats_job_description?: string | null
           ats_keywords_json?: Json
           ats_score?: number | null
           company?: string
@@ -121,6 +124,93 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      email_config: {
+        Row: {
+          created_at: string
+          gmail_app_password: string
+          gmail_email: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          gmail_app_password: string
+          gmail_email: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          gmail_app_password?: string
+          gmail_email?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      email_logs: {
+        Row: {
+          body: string
+          created_at: string
+          error_message: string | null
+          id: string
+          open_count: number
+          opened_at: string | null
+          recruiter_id: string
+          sent_at: string
+          status: string
+          subject: string
+          template_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          open_count?: number
+          opened_at?: string | null
+          recruiter_id: string
+          sent_at?: string
+          status?: string
+          subject: string
+          template_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          open_count?: number
+          opened_at?: string | null
+          recruiter_id?: string
+          sent_at?: string
+          status?: string
+          subject?: string
+          template_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_logs_recruiter_id_fkey"
+            columns: ["recruiter_id"]
+            isOneToOne: false
+            referencedRelation: "recruiters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_logs_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "email_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ingestion_state: {
         Row: {
@@ -197,10 +287,12 @@ export type Database = {
           company_tier: string
           consultancy_flag: boolean
           description: string | null
+          description_en: string | null
           employer_id: string | null
           employer_name: string | null
           employment_type: string | null
           headline: string
+          headline_en: string | null
           id: number
           ingested_at: string | null
           is_active: boolean | null
@@ -244,10 +336,12 @@ export type Database = {
           company_tier?: string
           consultancy_flag?: boolean
           description?: string | null
+          description_en?: string | null
           employer_id?: string | null
           employer_name?: string | null
           employment_type?: string | null
           headline: string
+          headline_en?: string | null
           id: number
           ingested_at?: string | null
           is_active?: boolean | null
@@ -291,10 +385,12 @@ export type Database = {
           company_tier?: string
           consultancy_flag?: boolean
           description?: string | null
+          description_en?: string | null
           employer_id?: string | null
           employer_name?: string | null
           employment_type?: string | null
           headline?: string
+          headline_en?: string | null
           id?: number
           ingested_at?: string | null
           is_active?: boolean | null

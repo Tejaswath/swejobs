@@ -9,7 +9,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .classify import classify_job
-from .digest import generate_weekly_digest
 from .jobtech import JobTechClient
 from .normalize import normalize_job
 from .company_registry import company_registry_map, load_company_registry
@@ -94,6 +93,15 @@ class IngestionPipeline:
         compaction_inactive_job_days: int,
         compaction_job_event_days: int,
         compaction_weekly_digest_days: int,
+        enable_translation: bool,
+        libretranslate_url: str | None = None,
+        translation_provider: str = "google_cloud",
+        translation_api_key: str = "",
+        translation_api_url: str | None = None,
+        translation_interval_polls: int = 10,
+        translation_batch_size: int = 20,
+        translation_max_chars: int = 4000,
+        translation_timeout_seconds: int = 20,
     ) -> None:
         self.client = client
         self.storage = storage
@@ -116,7 +124,50 @@ class IngestionPipeline:
         self.compaction_inactive_job_days = max(1, compaction_inactive_job_days)
         self.compaction_job_event_days = max(1, compaction_job_event_days)
         self.compaction_weekly_digest_days = max(1, compaction_weekly_digest_days)
+        self.enable_translation = bool(enable_translation)
+        self.translation_provider = str(translation_provider or "google_cloud").strip().lower()
+        self.translation_api_key = str(translation_api_key or "").strip()
+        self.translation_api_url = str(
+            translation_api_url
+            or libretranslate_url
+            or "https://translation.googleapis.com/language/translate/v2",
+        ).strip()
+        self.translation_interval_polls = max(1, int(translation_interval_polls))
+        self.translation_batch_size = max(1, int(translation_batch_size))
+        self.translation_max_chars = max(256, int(translation_max_chars))
+        self.translation_timeout_seconds = max(5, int(translation_timeout_seconds))
         self._poll_counter = 0
+
+    def maybe_translate_jobs(self) -> int:
+        if not self.enable_translation:
+            return 0
+        if not self.translation_api_url:
+            logger.warning("Translation enabled but TRANSLATION_API_URL is empty; skipping translation cycle.")
+            return 0
+        if self.translation_provider == "google_cloud" and not self.translation_api_key:
+            logger.warning("Translation enabled but TRANSLATION_API_KEY is empty; skipping translation cycle.")
+            return 0
+        if self._poll_counter % self.translation_interval_polls != 0:
+            return 0
+
+        try:
+            from .translate import batch_translate_jobs
+
+            translated_rows = batch_translate_jobs(
+                storage=self.storage,
+                provider=self.translation_provider,
+                api_url=self.translation_api_url,
+                api_key=self.translation_api_key,
+                batch_size=self.translation_batch_size,
+                max_chars=self.translation_max_chars,
+                timeout_seconds=self.translation_timeout_seconds,
+            )
+            if translated_rows > 0:
+                logger.info("Translation cycle complete. translated_rows=%s", translated_rows)
+            return translated_rows
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Translation cycle failed (non-fatal): %s", exc)
+            return 0
 
     def _classify_and_prepare(self, raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         job_row, tags = normalize_job(raw)
@@ -1106,44 +1157,7 @@ class IngestionPipeline:
             dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
 
-    def maybe_refresh_digest(self) -> bool:
-        now = datetime.now(UTC)
-        state = self.storage.get_ingestion_state(["last_digest_generated_at"])
-        last_generated_at = self._parse_state_datetime(state.get("last_digest_generated_at"))
-
-        if last_generated_at is not None:
-            age = now - last_generated_at
-            if age < timedelta(minutes=self.digest_refresh_minutes):
-                return False
-
-        window_days = int(self.digest_window_days)
-        window_type = f"rolling_{window_days}d"
-        period_end = now
-        period_start = period_end - timedelta(days=window_days)
-
-        try:
-            generate_weekly_digest(
-                self.storage,
-                period_start=period_start,
-                period_end=period_end,
-                target_only=True,
-                window_type=window_type,
-                window_days=window_days,
-            )
-            self.storage.upsert_ingestion_state({"last_digest_generated_at": now.isoformat()})
-            logger.info("Digest refresh complete. window_type=%s window_days=%s", window_type, window_days)
-            return True
-        except Exception as exc:  # noqa: BLE001
-            # Digest should never impact ingestion reliability.
-            logger.exception("Digest refresh failed: %s", exc)
-            return False
-
     def run_poll_forever(self) -> None:
-        # Startup refresh to avoid stale digest after worker restart/no-event periods.
-        try:
-            self.maybe_refresh_digest()
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Startup digest refresh unexpectedly failed: %s", exc)
         try:
             report = self.maybe_expire_jobs_past_deadline()
             logger.info(
@@ -1182,13 +1196,10 @@ class IngestionPipeline:
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Stream poll failed: %s", exc)
             else:
-                # Refresh digest only after successful stream persistence.
-                # This runs even for zero-row polls so digest freshness is maintained
-                # during quiet periods when no new events arrive.
                 try:
-                    self.maybe_refresh_digest()
+                    self.maybe_translate_jobs()
                 except Exception as exc:  # noqa: BLE001
-                    logger.exception("Post-poll digest refresh unexpectedly failed: %s", exc)
+                    logger.exception("Post-poll translation unexpectedly failed: %s", exc)
                 try:
                     report = self.maybe_expire_jobs_past_deadline()
                     logger.info(

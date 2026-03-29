@@ -23,9 +23,13 @@ export function OverviewSignalStrip({
   }
 
   if (isLoading) {
+    const skeletonCount = Math.max(2, Math.min(3, items.length || 3));
     return (
-      <div className="grid overflow-hidden rounded-[22px] border border-border/60 bg-background/45 md:grid-cols-3 lg:grid-cols-[0.95fr_0.95fr_1.1fr]">
-        {Array.from({ length: 3 }).map((_, index) => (
+      <div className={cn(
+        "grid overflow-hidden rounded-[22px] border border-border/60 bg-background/45",
+        skeletonCount === 2 ? "md:grid-cols-2" : "md:grid-cols-3 lg:grid-cols-[0.95fr_0.95fr_1.1fr]",
+      )}>
+        {Array.from({ length: skeletonCount }).map((_, index) => (
           <div key={index} className="border-b border-border/40 px-4 py-3 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
             <Skeleton className="h-7 w-24 animate-shimmer bg-muted/70" />
             <Skeleton className="mt-2 h-3 w-16 animate-shimmer bg-muted/60" />
@@ -36,7 +40,10 @@ export function OverviewSignalStrip({
   }
 
   return (
-    <div className="grid overflow-hidden rounded-[22px] border border-border/60 bg-background/45 md:grid-cols-3 lg:grid-cols-[0.95fr_0.95fr_1.1fr]">
+    <div className={cn(
+      "grid overflow-hidden rounded-[22px] border border-border/60 bg-background/45",
+      items.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3 lg:grid-cols-[0.95fr_0.95fr_1.1fr]",
+    )}>
       {items.map((item, index) => (
         <Link
           key={item.label}

@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  CheckCircle,
+  Clock,
   Copy,
+  Eye,
   Mail,
   Pencil,
   Plus,
+  Send,
+  Settings2,
   Trash2,
   Upload,
+  XCircle,
 } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
@@ -44,6 +50,10 @@ import { parseCsvText } from "@/lib/csv";
 
 type Recruiter = Tables<"recruiters">;
 type EmailTemplate = Tables<"email_templates">;
+type EmailConfig = Tables<"email_config">;
+type EmailLog = Tables<"email_logs"> & {
+  recruiters: Pick<Recruiter, "name" | "email" | "company"> | null;
+};
 
 type RecruiterFormState = {
   name: string;
@@ -136,6 +146,10 @@ export default function Outreach() {
   const [selectedRecruiterIds, setSelectedRecruiterIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("manual");
   const [manualCompose, setManualCompose] = useState({ subject: "", body: "" });
+  const [gmailEmail, setGmailEmail] = useState("");
+  const [gmailAppPassword, setGmailAppPassword] = useState("");
+  const [sendingRecruiterId, setSendingRecruiterId] = useState<string | null>(null);
+  const smtpEnabled = import.meta.env.VITE_OUTREACH_SMTP_ENABLED === "true";
 
   const debouncedSearch = useDebouncedValue(search, 250).trim().toLowerCase();
 
@@ -170,6 +184,44 @@ export default function Outreach() {
       return data ?? [];
     },
   });
+
+  const gmailConfigQuery = useQuery({
+    queryKey: ["email-config", user?.id],
+    enabled: !!user && smtpEnabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("email_config")
+        .select("user_id, gmail_email, gmail_app_password, created_at, updated_at")
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data as EmailConfig | null;
+    },
+  });
+
+  const emailLogsQuery = useQuery({
+    queryKey: ["email-logs", user?.id],
+    enabled: !!user && smtpEnabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("email_logs")
+        .select(
+          "id, user_id, recruiter_id, template_id, subject, body, status, error_message, sent_at, opened_at, " +
+            "open_count, created_at, updated_at, recruiters(name, email, company)",
+        )
+        .eq("user_id", user!.id)
+        .order("sent_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as EmailLog[];
+    },
+  });
+
+  useEffect(() => {
+    if (!gmailConfigQuery.data) return;
+    setGmailEmail(gmailConfigQuery.data.gmail_email ?? "");
+    setGmailAppPassword("");
+  }, [gmailConfigQuery.data]);
 
   const filteredRecruiters = useMemo(() => {
     return (recruitersQuery.data ?? []).filter((recruiter) => {
@@ -280,6 +332,84 @@ export default function Outreach() {
     },
   });
 
+  const saveGmailConfigMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("Sign in required");
+      if (!smtpEnabled) throw new Error("SMTP sending is disabled.");
+      const nextEmail = gmailEmail.trim();
+      const nextPassword = gmailAppPassword.trim();
+      const existing = gmailConfigQuery.data;
+
+      if (!nextEmail) throw new Error("Gmail address is required.");
+      if (!existing && !nextPassword) {
+        throw new Error("App password is required for initial setup.");
+      }
+
+      const payload: Partial<EmailConfig> & { user_id: string; gmail_email: string } = {
+        user_id: user.id,
+        gmail_email: nextEmail,
+      };
+      if (nextPassword) {
+        payload.gmail_app_password = nextPassword;
+      }
+
+      const { error } = await supabase.from("email_config").upsert(payload, { onConflict: "user_id" });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["email-config", user?.id] });
+      setGmailAppPassword("");
+      toast({ title: "Gmail config saved" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not save Gmail config", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: async (values: {
+      recruiterId: string;
+      templateId: string | null;
+      subject: string;
+      body: string;
+    }) => {
+      if (!smtpEnabled) throw new Error("SMTP sending is disabled.");
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        throw new Error("Not authenticated.");
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error("Missing VITE_SUPABASE_URL.");
+      }
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          recruiter_id: values.recruiterId,
+          template_id: values.templateId,
+          subject: values.subject,
+          body: values.body,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(payload?.error ?? "Send failed"));
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["email-logs", user?.id] });
+      toast({ title: "Email sent" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not send email", description: error.message, variant: "destructive" });
+    },
+  });
+
   if (!loading && !user) return <Navigate to="/auth" replace />;
 
   const activeSubject = selectedTemplate ? selectedTemplate.subject : manualCompose.subject;
@@ -313,6 +443,21 @@ export default function Outreach() {
         description: error instanceof Error ? error.message : "Clipboard unavailable",
         variant: "destructive",
       });
+    }
+  };
+
+  const sendRecruiterEmail = async (recruiter: Recruiter, subject: string, body: string) => {
+    if (!smtpEnabled) return;
+    setSendingRecruiterId(recruiter.id);
+    try {
+      await sendEmailMutation.mutateAsync({
+        recruiterId: recruiter.id,
+        templateId: selectedTemplate?.id ?? null,
+        subject,
+        body,
+      });
+    } finally {
+      setSendingRecruiterId(null);
     }
   };
 
@@ -392,7 +537,7 @@ export default function Outreach() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Outreach</h1>
           <p className="text-sm text-muted-foreground">
-            Organize recruiter contacts, keep reusable templates, and generate personalized drafts without sending from SweJobs.
+            Organize recruiter contacts, keep reusable templates, and generate personalized drafts with optional in-app sending.
           </p>
         </div>
 
@@ -401,6 +546,15 @@ export default function Outreach() {
             <TabsTrigger value="recruiters">Recruiters</TabsTrigger>
             <TabsTrigger value="templates">Templates</TabsTrigger>
             <TabsTrigger value="compose">Compose</TabsTrigger>
+            {smtpEnabled ? (
+              <>
+                <TabsTrigger value="history">Send History</TabsTrigger>
+                <TabsTrigger value="settings">
+                  <Settings2 className="mr-1.5 h-3.5 w-3.5" />
+                  Settings
+                </TabsTrigger>
+              </>
+            ) : null}
           </TabsList>
 
           <TabsContent value="recruiters" className="space-y-4">
@@ -661,11 +815,30 @@ export default function Outreach() {
                               <Copy className="mr-2 h-4 w-4" /> Copy body
                             </Button>
                             {recruiter.email ? (
-                              <Button asChild size="sm">
-                                <a href={mailto}>
-                                  <Mail className="mr-2 h-4 w-4" /> Open in mail app
-                                </a>
-                              </Button>
+                              <>
+                                <Button asChild size="sm" variant="outline">
+                                  <a href={mailto}>
+                                    <Mail className="mr-2 h-4 w-4" /> mailto
+                                  </a>
+                                </Button>
+                                {smtpEnabled ? (
+                                  gmailConfigQuery.data ? (
+                                    <Button
+                                      size="sm"
+                                      className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                                      disabled={sendingRecruiterId === recruiter.id || sendEmailMutation.isPending}
+                                      onClick={() => void sendRecruiterEmail(recruiter, subject, body)}
+                                    >
+                                      <Send className="h-4 w-4" />
+                                      {sendingRecruiterId === recruiter.id ? "Sending..." : "Send email"}
+                                    </Button>
+                                  ) : (
+                                    <Button size="sm" variant="outline" disabled>
+                                      <Send className="mr-2 h-4 w-4" /> Configure Gmail first
+                                    </Button>
+                                  )
+                                ) : null}
+                              </>
                             ) : (
                               <Button size="sm" disabled>
                                 <Mail className="mr-2 h-4 w-4" /> No email
@@ -695,6 +868,140 @@ export default function Outreach() {
               </Card>
             </div>
           </TabsContent>
+
+          {smtpEnabled ? (
+            <TabsContent value="history" className="space-y-4">
+              <Card className="border-border/40 bg-card/60">
+                <CardHeader>
+                  <CardTitle className="text-base">Send history</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Recruiter</TableHead>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Sent</TableHead>
+                        <TableHead>Opens</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(emailLogsQuery.data ?? []).length > 0 ? (
+                        (emailLogsQuery.data ?? []).map((log) => (
+                          <TableRow key={log.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{log.recruiters?.name ?? "Unknown"}</p>
+                                <p className="text-xs text-muted-foreground">{log.recruiters?.email ?? ""}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-[260px] truncate">{log.subject}</TableCell>
+                            <TableCell>
+                              {log.status === "sent" ? (
+                                <Badge className="gap-1 border-emerald-500/30 bg-emerald-500/15 text-emerald-400">
+                                  <CheckCircle className="h-3 w-3" /> Sent
+                                </Badge>
+                              ) : log.status === "failed" ? (
+                                <Badge variant="destructive" className="gap-1">
+                                  <XCircle className="h-3 w-3" /> Failed
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="gap-1">
+                                  <Clock className="h-3 w-3" /> Pending
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {new Date(log.sent_at).toLocaleString("sv-SE")}
+                            </TableCell>
+                            <TableCell>
+                              {log.open_count > 0 ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Eye className="h-3.5 w-3.5 text-emerald-400" />
+                                  <span className="text-sm font-medium text-emerald-400">{log.open_count}×</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {log.opened_at ? new Date(log.opened_at).toLocaleString("sv-SE") : ""}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Not opened</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                            No emails sent yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          ) : null}
+
+          {smtpEnabled ? (
+            <TabsContent value="settings" className="space-y-4">
+              <Card className="border-border/40 bg-card/60">
+                <CardHeader>
+                  <CardTitle className="text-base">Gmail SMTP</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Use a Google App Password (not your normal password). Generate one at{" "}
+                    <a
+                      href="https://myaccount.google.com/apppasswords"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      myaccount.google.com/apppasswords
+                    </a>
+                    .
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Gmail address</Label>
+                      <Input
+                        value={gmailEmail}
+                        onChange={(event) => setGmailEmail(event.target.value)}
+                        placeholder="you@gmail.com"
+                        type="email"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>App password</Label>
+                      <Input
+                        value={gmailAppPassword}
+                        onChange={(event) => setGmailAppPassword(event.target.value)}
+                        placeholder={gmailConfigQuery.data ? "••••••••••••••••" : "xxxx xxxx xxxx xxxx"}
+                        type="password"
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={() => saveGmailConfigMutation.mutate()}
+                    disabled={saveGmailConfigMutation.isPending || !gmailEmail.trim()}
+                  >
+                    {saveGmailConfigMutation.isPending
+                      ? "Saving..."
+                      : gmailConfigQuery.data
+                        ? "Update config"
+                        : "Save config"}
+                  </Button>
+
+                  {gmailConfigQuery.data ? (
+                    <p className="text-xs text-emerald-400">Configured for {gmailConfigQuery.data.gmail_email}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          ) : null}
         </Tabs>
       </div>
 
@@ -750,7 +1057,7 @@ export default function Outreach() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingTemplate ? "Edit template" : "Add template"}</DialogTitle>
-            <DialogDescription>Templates stay client-side and are meant for copy/paste or mailto drafts.</DialogDescription>
+            <DialogDescription>Templates power both mailto drafts and optional in-app SMTP sending.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-2">

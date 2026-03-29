@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "SweJobs Capture",
+  "version": "1.0.0",
+  "description": "Capture job applications to SweJobs from any careers page.",
+  "permissions": ["activeTab", "storage", "alarms"],
+  "host_permissions": ["<all_urls>", "https://*.supabase.co/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

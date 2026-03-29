@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SweJobs Capture</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div>
+          <h1>SweJobs Capture</h1>
+          <p>Save this role into Applications.</p>
+        </div>
+        <button id="toggle-config" class="btn-link header-action" type="button" aria-label="Toggle advanced config">
+          ⚙
+        </button>
+      </header>
+
+      <section class="panel" id="config-section" style="display:none">
+        <div class="panel-header">
+          <h2>Supabase config</h2>
+        </div>
+        <label class="field">
+          <span>Supabase URL</span>
+          <input id="config-url" type="url" placeholder="https://xxxx.supabase.co" />
+        </label>
+        <label class="field">
+          <span>Anon key</span>
+          <input id="config-anon" type="password" placeholder="sb_publishable_..." />
+        </label>
+        <button id="save-config" class="btn btn-outline">Save config</button>
+      </section>
+
+      <section id="auth-section" class="panel hidden">
+        <div class="panel-header">
+          <h2>Sign in</h2>
+        </div>
+        <label class="field">
+          <span>Email</span>
+          <input id="auth-email" type="email" autocomplete="email" />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="auth-password" type="password" autocomplete="current-password" />
+        </label>
+        <button id="sign-in" class="btn btn-primary">Sign in</button>
+      </section>
+
+      <section id="capture-section" class="panel hidden">
+        <div class="panel-header split">
+          <h2>Capture role</h2>
+          <button id="sign-out" class="btn-link">Sign out</button>
+        </div>
+        <label class="field">
+          <span>Company</span>
+          <input id="company" type="text" />
+        </label>
+        <label class="field">
+          <span>Job title</span>
+          <input id="job-title" type="text" />
+        </label>
+        <label class="field">
+          <span>Status</span>
+          <select id="status">
+            <option value="applied">Applied</option>
+            <option value="oa">Online assessment</option>
+            <option value="interviewing">Interviewing</option>
+            <option value="offer">Offer</option>
+            <option value="rejected">Rejected</option>
+            <option value="withdrawn">Withdrawn</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Job URL</span>
+          <input id="job-url" type="url" />
+        </label>
+        <label class="field">
+          <span>Notes (optional)</span>
+          <textarea id="notes" rows="3" placeholder="Optional context for your tracker"></textarea>
+        </label>
+        <div class="row">
+          <button id="autofill" class="btn btn-outline">Autofill from page</button>
+          <button id="save-application" class="btn btn-primary">Save</button>
+        </div>
+      </section>
+
+      <p id="global-status" class="status hidden"></p>
+    </main>
+
+    <script type="module" src="./dist/popup.js"></script>
+  </body>
+</html>

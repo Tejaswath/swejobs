@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { AppLayout } from "@/components/AppLayout";
-import { AdvancedFiltersPopover } from "@/components/jobs/AdvancedFiltersPopover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   MapPin,
   ChevronLeft,
@@ -25,6 +25,7 @@ import {
   Star,
   TrendingUp,
   Search,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -46,7 +47,7 @@ const REFRESH_MS = 600_000;
 const WATCHED_COMPANY_BOOST = 35;
 const CAREER_STAGE_CONFIDENCE_THRESHOLD = 0.6;
 
-type Lens = "best_matches" | "all_roles" | "graduate_trainee" | "main_companies" | "hidden_gems" | "consultancies";
+type Lens = "best_matches" | "all_roles" | "graduate_trainee";
 type JobSort = "relevance" | "deadline" | "newest" | "ats_desc";
 type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_both" | "show_both_best_matches";
 type DeadlineFocus = "none" | "today" | "week" | "upcoming";
@@ -55,9 +56,6 @@ const LENSES: Array<{ id: Lens; label: string; description: string }> = [
   { id: "best_matches", label: "Best Matches", description: "Top ranked roles for your profile" },
   { id: "all_roles", label: "All Roles", description: "Every active role, no target-role filter" },
   { id: "graduate_trainee", label: "Graduate / Trainee", description: "Early-career and program roles" },
-  { id: "main_companies", label: "Main Companies", description: "Tier A/B employers" },
-  { id: "hidden_gems", label: "Hidden Gems", description: "High-score unknown-tier roles" },
-  { id: "consultancies", label: "Consultancies", description: "Consultancy and recruiter postings" },
 ];
 
 const JOB_SORT_OPTIONS: Array<{ id: JobSort; label: string }> = [
@@ -235,12 +233,13 @@ export default function Jobs() {
   }, []);
 
   const [lens, setLens] = useState<Lens>("best_matches");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [lang, setLang] = useState("all");
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [hideSwedishRequired, setHideSwedishRequired] = useState(true);
   const [hideCitizenshipRestricted, setHideCitizenshipRestricted] = useState(true);
   const [hideThreePlusYears, setHideThreePlusYears] = useState(true);
+  const [hideConsultancies, setHideConsultancies] = useState(true);
   const [sortBy, setSortBy] = useState<JobSort>("relevance");
   const [selectedAtsResumeId, setSelectedAtsResumeId] = useState<string>("auto");
   const [page, setPage] = useState(0);
@@ -292,7 +291,7 @@ export default function Jobs() {
       let query = supabase
         .from("jobs")
         .select(
-          "id, headline, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
+          "id, headline, headline_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
           "published_at, application_deadline, employment_type, working_hours, occupation_label, " +
             "relevance_score, role_family, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
             "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, " +
@@ -422,7 +421,13 @@ export default function Jobs() {
 
     const applyFilters = (
       jobs: typeof sourceJobs,
-      options: { currentLens: Lens; hideSwedish: boolean; hideCitizenship: boolean; hideYears: boolean },
+      options: {
+        currentLens: Lens;
+        hideSwedish: boolean;
+        hideCitizenship: boolean;
+        hideYears: boolean;
+        hideConsultancies: boolean;
+      },
     ) => {
       const hasSearch = normalizedSearchTerm.length > 0;
       let rows = jobs.filter((job) => {
@@ -444,25 +449,15 @@ export default function Jobs() {
       if (options.hideYears) {
         rows = rows.filter((job) => !requiresThreePlusYears(job));
       }
+      if (options.hideConsultancies) {
+        rows = rows.filter((job) => !effectiveConsultancyFlag(job));
+      }
 
       if (options.currentLens === "graduate_trainee") {
         rows = rows.filter((job) => {
           const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
           return boolValue(job.is_grad_program) || ["graduate", "trainee", "junior"].includes(stage);
         });
-      } else if (options.currentLens === "main_companies") {
-        rows = rows.filter((job) => ["A", "B"].includes(String(job.company_tier || "unknown")));
-      } else if (options.currentLens === "hidden_gems") {
-        rows = rows.filter((job) => {
-          const isUnknownTier = String(job.company_tier || "unknown") === "unknown";
-          const relevance = numberValue(job.relevance_score);
-          const consultancy = effectiveConsultancyFlag(job);
-          if (!isUnknownTier) return false;
-          if (consultancy && relevance < 40) return false;
-          return relevance >= 25;
-        });
-      } else if (options.currentLens === "consultancies") {
-        rows = rows.filter((job) => effectiveConsultancyFlag(job));
       }
 
       return rows;
@@ -473,6 +468,7 @@ export default function Jobs() {
       hideSwedish: hideSwedishRequired,
       hideCitizenship: hideCitizenshipRestricted,
       hideYears: hideThreePlusYears,
+      hideConsultancies,
     });
     let fallbackMode: SearchFallbackMode = "none";
 
@@ -488,6 +484,7 @@ export default function Jobs() {
             hideSwedish: false,
             hideCitizenship: hideCitizenshipRestricted,
             hideYears: hideThreePlusYears,
+            hideConsultancies,
           },
         },
       ];
@@ -501,6 +498,7 @@ export default function Jobs() {
               hideSwedish: hideSwedishRequired,
               hideCitizenship: hideCitizenshipRestricted,
               hideYears: false,
+              hideConsultancies,
             },
           },
           {
@@ -510,6 +508,7 @@ export default function Jobs() {
               hideSwedish: false,
               hideCitizenship: hideCitizenshipRestricted,
               hideYears: false,
+              hideConsultancies,
             },
           },
         );
@@ -523,6 +522,7 @@ export default function Jobs() {
             hideSwedish: false,
             hideCitizenship: hideCitizenshipRestricted,
             hideYears: hideThreePlusYears,
+            hideConsultancies,
           },
         });
       }
@@ -537,12 +537,14 @@ export default function Jobs() {
       }
     }
 
-    const isWatched = (job: any) => {
+    type RankedJob = (typeof sourceJobs)[number];
+
+    const isWatched = (job: RankedJob) => {
       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
       return watchedSet.has(canonical);
     };
     const normalizedSearch = normalizeCompanyName(normalizedSearchTerm);
-    const companySearchBoost = (job: any) => {
+    const companySearchBoost = (job: RankedJob) => {
       if (!normalizedSearch) return 0;
       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
       if (!canonical) return 0;
@@ -601,7 +603,16 @@ export default function Jobs() {
     });
 
     return { rows, fallbackMode };
-  }, [rawJobsData, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, lens, watchedSet, debouncedSearch]);
+  }, [
+    rawJobsData,
+    hideSwedishRequired,
+    hideCitizenshipRestricted,
+    hideThreePlusYears,
+    hideConsultancies,
+    lens,
+    watchedSet,
+    debouncedSearch,
+  ]);
 
   const rankAndFilterJobs = rankedJobsView.rows;
   const searchFallbackMode = rankedJobsView.fallbackMode;
@@ -744,7 +755,18 @@ export default function Jobs() {
 
   useEffect(() => {
     setPage(0);
-  }, [lens, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, search, lang, remoteOnly, deadlineFocus, sortBy]);
+  }, [
+    lens,
+    hideSwedishRequired,
+    hideCitizenshipRestricted,
+    hideThreePlusYears,
+    hideConsultancies,
+    search,
+    lang,
+    remoteOnly,
+    deadlineFocus,
+    sortBy,
+  ]);
 
   useEffect(() => {
     if (page >= totalPages) {
@@ -774,7 +796,16 @@ export default function Jobs() {
     !hideSwedishRequired ||
     !hideCitizenshipRestricted ||
     !hideThreePlusYears ||
+    !hideConsultancies ||
     search.trim().length > 0;
+
+  const activeFilterCount =
+    Number(lang !== "all") +
+    Number(remoteOnly) +
+    Number(!hideThreePlusYears) +
+    Number(!hideConsultancies) +
+    Number(!hideSwedishRequired) +
+    Number(!hideCitizenshipRestricted);
 
   const clearFilters = () => {
     setLens("best_matches");
@@ -784,11 +815,14 @@ export default function Jobs() {
     setHideSwedishRequired(true);
     setHideCitizenshipRestricted(true);
     setHideThreePlusYears(true);
+    setHideConsultancies(true);
     setSortBy("relevance");
     setPage(0);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.delete("deadline");
+      next.delete("search");
+      next.delete("coverage");
       return next;
     });
   };
@@ -861,7 +895,7 @@ export default function Jobs() {
       const { data, error } = await supabase
         .from("jobs")
         .select(
-          "id, headline, description, employer_name, company_canonical, company_tier, municipality, region, lang, " +
+          "id, headline, headline_en, description, description_en, employer_name, company_canonical, company_tier, municipality, region, lang, " +
           "remote_flag, published_at, application_deadline, employment_type, working_hours, occupation_label, source_url, " +
           "relevance_score, role_family, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
           "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, source_provider, source_kind, " +
@@ -902,6 +936,7 @@ export default function Jobs() {
   const [notes, setNotes] = useState("");
   const [appliedFeedbackJobId, setAppliedFeedbackJobId] = useState<number | null>(null);
   const [showAtsDetails, setShowAtsDetails] = useState(false);
+  const [showOriginalDescription, setShowOriginalDescription] = useState(false);
 
   useEffect(() => {
     if (tracking) {
@@ -914,6 +949,7 @@ export default function Jobs() {
   useEffect(() => {
     setAppliedFeedbackJobId(null);
     setShowAtsDetails(false);
+    setShowOriginalDescription(false);
   }, [selectedId]);
 
   const upsertTracking = useMutation({
@@ -1146,40 +1182,68 @@ export default function Jobs() {
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={lang} onValueChange={setLang}>
-            <SelectTrigger className="h-8 w-28 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All langs</SelectItem>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="mixed">Mixed</SelectItem>
-              <SelectItem value="sv">Swedish</SelectItem>
-            </SelectContent>
-          </Select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                aria-label="Open filters"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] font-medium">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 space-y-3 p-3">
+              <div className="space-y-1">
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Filters</h3>
+                <p className="text-xs text-muted-foreground/80">Tune role visibility rules.</p>
+              </div>
 
-          <div className="flex items-center gap-1.5">
-            <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} className="scale-75" />
-            <span className="text-xs text-muted-foreground">Remote</span>
-          </div>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Language</p>
+                  <Select value={lang} onValueChange={setLang}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All langs</SelectItem>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="mixed">Mixed</SelectItem>
+                      <SelectItem value="sv">Swedish</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <div className="flex items-center gap-1.5">
-            <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} className="scale-75" />
-            <span className="text-xs text-muted-foreground">Hide 3+ years (strict)</span>
-          </div>
-
-          <AdvancedFiltersPopover
-            values={{
-              hideSwedishRequired,
-              hideCitizenshipRestricted,
-              hideThreePlusYears,
-            }}
-            onChange={(nextValues) => {
-              setHideSwedishRequired(nextValues.hideSwedishRequired);
-              setHideCitizenshipRestricted(nextValues.hideCitizenshipRestricted);
-              setHideThreePlusYears(nextValues.hideThreePlusYears);
-            }}
-          />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs">Remote only</span>
+                  <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs">Hide 3+ years (strict)</span>
+                  <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs">Hide consultancies</span>
+                  <Switch checked={hideConsultancies} onCheckedChange={setHideConsultancies} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs">Hide Swedish-required</span>
+                  <Switch checked={hideSwedishRequired} onCheckedChange={setHideSwedishRequired} />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs">Hide citizenship-restricted</span>
+                  <Switch checked={hideCitizenshipRestricted} onCheckedChange={setHideCitizenshipRestricted} />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <Select value={sortBy} onValueChange={(value) => setSortBy(value as JobSort)}>
             <SelectTrigger className="h-8 w-44 text-xs">
@@ -1194,14 +1258,14 @@ export default function Jobs() {
             </SelectContent>
           </Select>
 
-          {user ? (
+          {user && (atsResumes?.length ?? 0) > 1 ? (
             <Select value={selectedAtsResumeId} onValueChange={setSelectedAtsResumeId}>
               <SelectTrigger className="h-8 w-56 text-xs">
-                <SelectValue placeholder="ATS resume" />
+                <SelectValue placeholder="Resume for match" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">
-                  {activeAtsResume ? `ATS resume: Auto (${activeAtsResume.label})` : "ATS resume: Auto"}
+                  {activeAtsResume ? `Auto (${activeAtsResume.label})` : "Auto"}
                 </SelectItem>
                 {(atsResumes ?? []).map((resume) => (
                   <SelectItem key={resume.id} value={resume.id}>
@@ -1211,6 +1275,11 @@ export default function Jobs() {
                 ))}
               </SelectContent>
             </Select>
+          ) : null}
+          {user && (atsResumes?.length ?? 0) === 1 && activeAtsResume ? (
+            <Badge variant="outline" className="h-8 rounded-md px-2 text-xs font-normal">
+              Resume: {activeAtsResume.label}
+            </Badge>
           ) : null}
 
           {hasActiveFilters && (
@@ -1233,7 +1302,7 @@ export default function Jobs() {
 
         <div className="flex gap-4" style={{ height: "calc(100vh - 320px)" }}>
           <div className={`flex flex-col ${selectedId ? "w-[380px] shrink-0" : "w-full max-w-2xl"} transition-all duration-200`}>
-            {coverageBanner && (
+            {searchParams.get("coverage") === "1" && coverageBanner && (
               <div
                 className={`mb-2 rounded-md border px-3 py-2 text-xs ${
                   coverageBanner.tone === "warning"
@@ -1269,7 +1338,7 @@ export default function Jobs() {
               <div className="space-y-2 py-12 text-center">
                 <p className="text-sm text-muted-foreground">No jobs found for this lens and filters.</p>
                 <p className="text-xs text-muted-foreground/80">
-                  {coverageBanner
+                  {searchParams.get("coverage") === "1" && coverageBanner
                     ? coverageBanner.body
                     : debouncedSearch.trim()
                     ? activeSearchCount === 0
@@ -1292,8 +1361,6 @@ export default function Jobs() {
                       const watched = watchedSet.has(canonical);
                       const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
                       const displayEmployer = companyDisplayName(job.company_canonical, job.employer_name);
-                      const sourceEntry = getCompanyRegistryEntryByCanonical(job.company_canonical);
-                      const sourceLabel = providerLabel(job.source_provider || sourceEntry?.provider);
                       const atsSnapshot = listAtsByJobId[job.id];
 
                       return (
@@ -1313,7 +1380,9 @@ export default function Jobs() {
                           )}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-medium leading-snug line-clamp-1">{job.headline}</h3>
+                          <h3 className="text-sm font-medium leading-snug line-clamp-1">
+                            {(job.lang === "sv" ? job.headline_en : null) || job.headline}
+                          </h3>
                             <div className="flex shrink-0 items-center gap-1">
                               {watched && (
                                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
@@ -1345,11 +1414,6 @@ export default function Jobs() {
                                   KW {atsSnapshot.displayScore}%
                                 </Badge>
                               ) : null}
-                              {boolValue(job.is_direct_company_source) && (
-                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                                  {sourceLabel}
-                                </Badge>
-                              )}
                             </div>
                           </div>
 
@@ -1372,26 +1436,6 @@ export default function Jobs() {
                           </div>
 
                           <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                            {job.swedish_required && (
-                              <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                                Swedish req
-                              </Badge>
-                            )}
-                            {(job.citizenship_required || job.security_clearance_required) && (
-                              <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                                Restricted
-                              </Badge>
-                            )}
-                            {numberValue(job.years_required_min, 0) >= 3 && (
-                              <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                                {job.years_required_min}+ yrs
-                              </Badge>
-                            )}
-                            {effectiveConsultancyFlag(job) && (
-                              <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                                Consultancy
-                              </Badge>
-                            )}
                             {tags.slice(0, 3).map((tag) => (
                               <Badge key={tag} variant="outline" className="h-4 px-1.5 text-[9px] font-normal">
                                 {tag}
@@ -1449,7 +1493,9 @@ export default function Jobs() {
                   <div className="space-y-5 p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h2 className="text-lg font-semibold leading-tight">{detail.headline}</h2>
+                        <h2 className="text-lg font-semibold leading-tight">
+                          {(detail.lang === "sv" ? detail.headline_en : null) || detail.headline}
+                        </h2>
                         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           {detailDisplayEmployer && (
                             <span className="flex items-center gap-1">
@@ -1709,8 +1755,19 @@ export default function Jobs() {
                       <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Description
                       </h3>
+                      {detail.lang === "sv" && detail.description_en ? (
+                        <button
+                          type="button"
+                          className="mb-2 text-[11px] text-primary hover:text-primary/80"
+                          onClick={() => setShowOriginalDescription((previous) => !previous)}
+                        >
+                          {showOriginalDescription ? "Show English translation" : "Show original Swedish"}
+                        </button>
+                      ) : null}
                       <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                        {detail.description || "No description available."}
+                        {(detail.lang === "sv" && detail.description_en && !showOriginalDescription
+                          ? detail.description_en
+                          : detail.description) || "No description available."}
                       </p>
                     </div>
                   </div>

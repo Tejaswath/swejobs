@@ -381,6 +381,57 @@ class SupabaseStorage:
         response = self._execute(lambda: query.limit(10000).execute(), context="fetch jobs between")
         return response.data or []
 
+    def fetch_jobs_needing_translation(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        normalized_limit = max(1, min(int(limit), 200))
+        by_id: dict[int, dict[str, Any]] = {}
+
+        headline_missing = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id,headline,description,headline_en,description_en,lang,is_active")
+            .eq("is_active", True)
+            .eq("lang", "sv")
+            .is_("headline_en", "null")
+            .order("updated_at", desc=True)
+            .limit(normalized_limit)
+            .execute(),
+            context="fetch jobs missing headline_en translation",
+        )
+        for row in headline_missing.data or []:
+            if row.get("id") is None:
+                continue
+            by_id[int(row["id"])] = row
+
+        if len(by_id) < normalized_limit:
+            description_missing = self._execute(
+                lambda: self.client.table("jobs")
+                .select("id,headline,description,headline_en,description_en,lang,is_active")
+                .eq("is_active", True)
+                .eq("lang", "sv")
+                .is_("description_en", "null")
+                .order("updated_at", desc=True)
+                .limit(normalized_limit)
+                .execute(),
+                context="fetch jobs missing description_en translation",
+            )
+            for row in description_missing.data or []:
+                if row.get("id") is None:
+                    continue
+                by_id[int(row["id"])] = row
+
+        rows = list(by_id.values())
+        rows.sort(key=lambda row: int(row.get("id") or 0), reverse=True)
+        return rows[:normalized_limit]
+
+    def update_job_translation(self, *, job_id: int, values: dict[str, Any]) -> None:
+        if not values:
+            return
+        payload = dict(values)
+        payload["updated_at"] = datetime.now(UTC).isoformat()
+        self._execute(
+            lambda: self.client.table("jobs").update(payload).eq("id", int(job_id)).execute(),
+            context="update job translation fields",
+        )
+
     def fetch_tags_for_jobs(self, job_ids: list[int]) -> list[dict[str, Any]]:
         if not job_ids:
             return []

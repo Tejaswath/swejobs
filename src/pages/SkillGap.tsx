@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
-import { pickLatestDigest, type DigestRow } from "@/lib/digest";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,24 +46,45 @@ export default function SkillGap() {
     },
   });
 
-  // Fetch market skills from latest digest
+  // Fetch market skills from current active roles (digest-free path)
   const { data: marketSkills, error: marketSkillsError, isLoading: marketSkillsLoading } = useQuery({
     queryKey: ["market-skills"],
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("weekly_digests")
-        .select("id, period_start, period_end, generated_at, digest_json")
-        .order("generated_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
-      if (!latest) return { top: [], rising: [] };
-      const d = latest.digest_json as any;
+      const { data: jobs, error: jobsError } = await supabase
+        .from("jobs")
+        .select("id")
+        .eq("is_active", true)
+        .eq("is_target_role", true)
+        .order("published_at", { ascending: false })
+        .limit(500);
+      if (jobsError) throw jobsError;
+
+      const jobIds = (jobs ?? []).map((job) => job.id);
+      if (jobIds.length === 0) return { top: [], rising: [] };
+
+      const { data: tags, error: tagsError } = await supabase
+        .from("job_tags")
+        .select("job_id, tag")
+        .in("job_id", jobIds);
+      if (tagsError) throw tagsError;
+
+      const counts = new Map<string, number>();
+      for (const row of tags ?? []) {
+        const key = String(row.tag ?? "").trim().toLowerCase();
+        if (!key) continue;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+
+      const top = Array.from(counts.entries())
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "sv-SE"))
+        .slice(0, 50)
+        .map(([skill, count]) => ({ skill, count }));
+
       return {
-        top: (d?.top_skills ?? []) as Array<{ skill: string; count: number }>,
-        rising: (d?.rising_skills ?? []) as Array<{ skill: string; pct_change: number }>,
+        top,
+        rising: [] as Array<{ skill: string; pct_change: number }>,
       };
     },
   });
@@ -263,7 +283,16 @@ export default function SkillGap() {
                       variant="outline"
                       className={`gap-1 text-xs cursor-pointer ${PROFICIENCY_COLORS[s.proficiency]}`}
                       onClick={() => {
-                        const next = PROFICIENCY_OPTIONS[(PROFICIENCY_OPTIONS.indexOf(s.proficiency as any) + 1) % 3];
+                        const current =
+                          PROFICIENCY_OPTIONS.includes(
+                            s.proficiency as (typeof PROFICIENCY_OPTIONS)[number],
+                          )
+                            ? (s.proficiency as (typeof PROFICIENCY_OPTIONS)[number])
+                            : "learning";
+                        const next =
+                          PROFICIENCY_OPTIONS[
+                            (PROFICIENCY_OPTIONS.indexOf(current) + 1) % PROFICIENCY_OPTIONS.length
+                          ];
                         updateProficiency.mutate({ id: s.id, proficiency: next });
                       }}
                     >

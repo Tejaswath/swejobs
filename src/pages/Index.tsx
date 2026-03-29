@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, ChevronDown, ChevronUp, Eye, FileText } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
 import { DeadlineRadarPanel } from "@/components/overview/DeadlineRadarPanel";
-import { WatchlistPulsePanel } from "@/components/overview/WatchlistPulsePanel";
 import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,20 +31,10 @@ type DeadlineGroups = {
   later: UpcomingDeadlineJob[];
 };
 
-type ParsedTopSkill = {
-  skill: string;
-  count: number;
-};
-
-type ParsedRisingSkill = {
-  skill: string;
-  pctChange: number;
-};
-
 type RecentActivityItem = {
   id: string;
   at: string;
-  kind: "shortlist" | "application" | "watch";
+  kind: "shortlist" | "application";
   company: string;
   role?: string;
   href?: string;
@@ -53,11 +42,6 @@ type RecentActivityItem = {
 
 const ONBOARDING_DISMISSED_KEY = "swejobs.overview.onboarding.dismissed.v1";
 const OVERVIEW_LAST_VISIT_KEY = "swejobs.overview.last-visit.v1";
-
-function safeNumber(value: unknown, fallback = 0): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -94,39 +78,6 @@ function deadlineBucket(deadlineDate: string | null): keyof DeadlineGroups {
   const weekEnd = endOfCurrentWeek(today);
   if (parsed <= weekEnd) return "thisWeek";
   return "later";
-}
-
-function parseTopSkills(raw: unknown): ParsedTopSkill[] {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((item) => {
-      const row = item as Record<string, unknown>;
-      const skill = String(row.skill ?? "").trim();
-      if (!skill) return null;
-      return {
-        skill,
-        count: safeNumber(row.count),
-      };
-    })
-    .filter((value): value is ParsedTopSkill => value !== null);
-}
-
-function parseRisingSkills(raw: unknown): ParsedRisingSkill[] {
-  if (!Array.isArray(raw)) return [];
-
-  return raw
-    .map((item) => {
-      const row = item as Record<string, unknown>;
-      const skill = String(row.skill ?? "").trim();
-      if (!skill) return null;
-      return {
-        skill,
-        pctChange: safeNumber(row.pct_change ?? row.delta_pct),
-      };
-    })
-    .filter((value): value is ParsedRisingSkill => value !== null)
-    .filter((value) => value.pctChange !== 0);
 }
 
 function relativeTime(value: string): string {
@@ -178,29 +129,20 @@ export default function Index() {
     },
   });
 
-  const latestDigestQuery = useQuery({
-    queryKey: ["latest-digest", "rolling_30d"],
-    staleTime: Number.POSITIVE_INFINITY,
+  const newThisWeekQuery = useQuery({
+    queryKey: ["new-this-week"],
+    staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const rollingResult = await supabase
-        .from("weekly_digests")
-        .select("id, digest_json, period_start, period_end, generated_at")
-        .contains("digest_json", { window_type: "rolling_30d" })
-        .order("generated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (rollingResult.error) throw rollingResult.error;
-      if (rollingResult.data) return rollingResult.data;
-
-      const fallback = await supabase
-        .from("weekly_digests")
-        .select("id, digest_json, period_start, period_end, generated_at")
-        .order("generated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (fallback.error) throw fallback.error;
-      return fallback.data;
+      const weekAgoIso = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      const { count, error } = await supabase
+        .from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true)
+        .eq("is_target_role", true)
+        .gte("published_at", weekAgoIso);
+      if (error) throw error;
+      return count ?? 0;
     },
   });
 
@@ -301,7 +243,7 @@ export default function Index() {
     queryKey: ["overview-recent-activity", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const [trackedResult, applicationsResult, watchlistResult] = await Promise.all([
+      const [trackedResult, applicationsResult] = await Promise.all([
         supabase
           .from("tracked_jobs")
           .select("id, job_id, status, updated_at, jobs(headline, employer_name)")
@@ -314,17 +256,10 @@ export default function Index() {
           .eq("user_id", user!.id)
           .order("updated_at", { ascending: false })
           .limit(5),
-        supabase
-          .from("watched_companies")
-          .select("id, employer_name, created_at")
-          .eq("user_id", user!.id)
-          .order("created_at", { ascending: false })
-          .limit(5),
       ]);
 
       if (trackedResult.error) throw trackedResult.error;
       if (applicationsResult.error) throw applicationsResult.error;
-      if (watchlistResult.error) throw watchlistResult.error;
 
       const trackedItems: RecentActivityItem[] = (trackedResult.data ?? []).map((item) => {
         const job = item.jobs as { headline?: string | null; employer_name?: string | null } | null;
@@ -347,23 +282,11 @@ export default function Index() {
         href: "/applications",
       }));
 
-      const watchlistItems: RecentActivityItem[] = (watchlistResult.data ?? []).map((item) => ({
-        id: `watchlist-${item.id}`,
-        at: item.created_at ?? "",
-        kind: "watch",
-        company: item.employer_name || "Company",
-        href: "/watchlist",
-      }));
-
-      return [...trackedItems, ...applicationItems, ...watchlistItems]
+      return [...trackedItems, ...applicationItems]
         .sort((left, right) => right.at.localeCompare(left.at))
         .slice(0, 5);
     },
   });
-
-  const digest = latestDigestQuery.data?.digest_json as Record<string, unknown> | null;
-  const topSkills = parseTopSkills(digest?.top_skills);
-  const risingSkills = parseRisingSkills(digest?.rising_skills);
 
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
@@ -379,14 +302,10 @@ export default function Index() {
     return groups;
   }, [upcomingDeadlinesQuery.data]);
 
-  const heroRising = risingSkills[0];
-  const topSkillName = heroRising?.skill ?? topSkills[0]?.skill ?? "software_engineering";
-
   const watchlistHighlights = useMemo(
     () => [...(watchedCompanyDataQuery.data ?? [])].sort((left, right) => right.count - left.count),
     [watchedCompanyDataQuery.data],
   );
-  const watchlistOpenings = watchlistHighlights.reduce((sum, company) => sum + company.count, 0);
   const recentActivityItems = recentActivityQuery.data ?? [];
 
   const deadlineBuckets: DeadlineBucketViewModel[] = [
@@ -433,23 +352,10 @@ export default function Index() {
       pulse: groupedDeadlines.today.length > 0,
     },
     {
-      label: "Top signal",
-      value: (
-        <div className="flex min-w-0 items-center gap-2">
-          <span title={topSkillName} className="max-w-[24ch] truncate sm:max-w-[28ch] lg:max-w-[32ch]">
-            {topSkillName}
-          </span>
-        </div>
-      ),
-      href: "/digest",
-      fullLabel: topSkillName,
-      accentClassName: "text-[1.65rem]",
-      badge:
-        typeof heroRising?.pctChange === "number" ? (
-          <Badge className="border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300 hover:bg-emerald-500/10">
-            +{Math.round(heroRising.pctChange)}%
-          </Badge>
-        ) : null,
+      label: "New this week",
+      value: <AnimatedNumber value={newThisWeekQuery.data ?? 0} />,
+      href: "/jobs",
+      fullLabel: `${newThisWeekQuery.data ?? 0} roles posted in the last 7 days`,
     },
   ];
 
@@ -469,7 +375,7 @@ export default function Index() {
       id: "watchlist",
       done: watchlistHighlights.length >= 3,
       label: "Watch 3 companies",
-      href: "/watchlist",
+      href: "/jobs",
     },
     {
       id: "skills",
@@ -511,13 +417,10 @@ export default function Index() {
       : undefined;
 
   const showHeroSignalsLoading = useDelayedVisibility(
-    jobCountQuery.isLoading || latestDigestQuery.isLoading || upcomingDeadlinesQuery.isLoading,
+    jobCountQuery.isLoading || newThisWeekQuery.isLoading || upcomingDeadlinesQuery.isLoading,
   );
   const showUpcomingDeadlineLoading = useDelayedVisibility(upcomingDeadlinesQuery.isLoading);
-  const showWatchlistLoading = useDelayedVisibility(!!user && watchedCompanyDataQuery.isLoading);
-  const shouldRenderWatchlistPanel =
-    !user || showWatchlistLoading || (!!user && watchedCompanyDataQuery.isError) || watchlistHighlights.length > 0;
-  const heroSignalsUnavailable = jobCountQuery.isError || upcomingDeadlinesQuery.isError;
+  const heroSignalsUnavailable = jobCountQuery.isError || upcomingDeadlinesQuery.isError || newThisWeekQuery.isError;
 
   if (!jobCountQuery.isLoading && !jobCountQuery.isError && (jobCountQuery.data ?? 0) === 0) {
     return (
@@ -620,6 +523,33 @@ export default function Index() {
             </FadeUp>
           ) : null}
 
+          {user ? (
+            <FadeUp>
+              <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                    Watched
+                  </p>
+                  {watchedCompanyDataQuery.isLoading ? (
+                    <span className="text-xs text-muted-foreground">Loading…</span>
+                  ) : watchlistHighlights.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">No watched companies yet.</span>
+                  ) : (
+                    watchlistHighlights.slice(0, 5).map((company) => (
+                      <Link
+                        key={company.name}
+                        to={`/jobs?search=${encodeURIComponent(company.name)}`}
+                        className="rounded-full border border-border/50 bg-background/35 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                      >
+                        {company.name}
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </div>
+            </FadeUp>
+          ) : null}
+
           <FadeUp>
             <DeadlineRadarPanel
               buckets={deadlineBuckets}
@@ -630,21 +560,6 @@ export default function Index() {
 
           <div className="border-t border-border/30 pt-6">
             <div className="grid gap-4 xl:grid-cols-2">
-              {shouldRenderWatchlistPanel ? (
-                <FadeUp>
-                  <WatchlistPulsePanel
-                    actionHref={user ? "/watchlist" : "/auth"}
-                    actionLabel={user ? "Manage" : "Sign in"}
-                    isAuthenticated={!!user}
-                    trackedCount={watchlistHighlights.length}
-                    openings={watchlistOpenings}
-                    companies={watchlistHighlights}
-                    isLoading={showWatchlistLoading}
-                    unavailable={!!user && watchedCompanyDataQuery.isError}
-                  />
-                </FadeUp>
-              ) : null}
-
               {user ? (
                 <FadeUp>
                   <Card className="rounded-[24px] border-border/60 bg-card/80">
@@ -655,7 +570,7 @@ export default function Index() {
                       ) : (
                         <div className="mt-3 space-y-2">
                           {recentActivityItems.map((item) => {
-                            const ItemIcon = item.kind === "application" ? FileText : item.kind === "watch" ? Eye : Bookmark;
+                            const ItemIcon = item.kind === "application" ? FileText : Bookmark;
                             return (
                               <Link
                                 key={item.id}
@@ -664,7 +579,6 @@ export default function Index() {
                                   "flex items-center justify-between gap-3 rounded-lg border border-border/50 border-l-2 bg-background/30 px-3 py-2 transition-colors hover:bg-muted/30 hover:border-primary/30",
                                   item.kind === "shortlist" && "border-l-primary/60",
                                   item.kind === "application" && "border-l-emerald-500/60",
-                                  item.kind === "watch" && "border-l-amber-500/60",
                                 )}
                               >
                                 <div className="flex min-w-0 items-center gap-2">

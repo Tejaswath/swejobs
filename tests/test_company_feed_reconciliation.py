@@ -75,6 +75,12 @@ class StaticFeedPipeline(IngestionPipeline):
             compaction_inactive_job_days=60,
             compaction_job_event_days=30,
             compaction_weekly_digest_days=180,
+            enable_translation=False,
+            libretranslate_url="",
+            translation_interval_polls=10,
+            translation_batch_size=20,
+            translation_max_chars=4000,
+            translation_timeout_seconds=20,
         )
         self._static_fetch_result = fetch_result
         self._static_prepared_jobs = prepared_jobs

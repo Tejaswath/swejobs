@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .company_registry import DEFAULT_COMPANY_REGISTRY_PATH
-from .digest import current_week_period, generate_weekly_digest
 from .ingest import IngestionPipeline
 from .jobtech import JobTechClient
 from .logging_utils import configure_logging
@@ -55,6 +54,14 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
         compaction_inactive_job_days=settings.compaction_inactive_job_days,
         compaction_job_event_days=settings.compaction_job_event_days,
         compaction_weekly_digest_days=settings.compaction_weekly_digest_days,
+        enable_translation=settings.enable_translation,
+        translation_provider=settings.translation_provider,
+        translation_api_key=settings.translation_api_key,
+        translation_api_url=settings.translation_api_url,
+        translation_interval_polls=settings.translation_interval_polls,
+        translation_batch_size=settings.translation_batch_size,
+        translation_max_chars=settings.translation_max_chars,
+        translation_timeout_seconds=settings.translation_timeout_seconds,
     )
     return pipeline, storage
 
@@ -100,15 +107,6 @@ def parse_args() -> argparse.Namespace:
         "--report-md",
         default="docs/company_source_verification.md",
     )
-
-    digest = sub.add_parser("digest", help="Generate digest")
-    digest.add_argument(
-        "--mode",
-        choices=["rolling", "calendar_week"],
-        default="rolling",
-        help="Digest mode. rolling uses --days window ending now. calendar_week uses Monday-start week.",
-    )
-    digest.add_argument("--days", type=int, default=30, help="Window size (days) for rolling mode")
 
     validate = sub.add_parser("validate-usefulness", help="Check feed usefulness thresholds")
     validate.add_argument("--sample-size", type=int, default=50)
@@ -259,28 +257,6 @@ def main() -> None:
             md_path.write_text("\n".join(lines), encoding="utf-8")
 
         print(json.dumps(report, indent=2))
-        return
-
-    if args.command == "digest":
-        if args.mode == "calendar_week":
-            start, end = current_week_period(datetime.now(UTC))
-            window_type = "calendar_week"
-            window_days = 7
-        else:
-            end = datetime.now(UTC)
-            start = end - timedelta(days=int(args.days))
-            window_days = int(args.days)
-            window_type = f"rolling_{window_days}d"
-
-        digest_json = generate_weekly_digest(
-            storage,
-            period_start=start,
-            period_end=end,
-            target_only=True,
-            window_type=window_type,
-            window_days=window_days,
-        )
-        print(json.dumps(digest_json, indent=2))
         return
 
     if args.command == "validate-usefulness":

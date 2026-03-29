@@ -151,7 +151,7 @@ function buildFormState(application: ApplicationRow, resumeVersions: ResumeVersi
     applied_at: formatApplicationDateInput(application.applied_at),
     job_id: application.job_id,
     resume_version_id: matchingResumeVersion?.storage_path ? matchingResumeVersion.id : RESUME_NONE,
-    ats_job_description: "",
+    ats_job_description: application.ats_job_description ?? "",
     notes: application.notes ?? "",
   };
 }
@@ -403,7 +403,7 @@ export default function Applications() {
         .from("applications")
         .select(
           "id, user_id, request_id, job_id, company, job_title, job_url, status, applied_at, notes, resume_label, " +
-            "resume_version_id, ats_score, ats_keywords_json, status_history, created_at, updated_at",
+            "resume_version_id, ats_score, ats_keywords_json, ats_job_description, status_history, created_at, updated_at",
         )
         .eq("user_id", user!.id)
         .order("applied_at", { ascending: false });
@@ -956,6 +956,7 @@ export default function Applications() {
       source: editingApplication?.source ?? "manual",
       request_id: editingApplication?.request_id ?? null,
       job_id: form.job_id,
+      ats_job_description: form.ats_job_description.trim() || null,
       status_history: statusHistorySnapshot,
       ...atsSnapshot,
     });

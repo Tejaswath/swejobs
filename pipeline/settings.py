@@ -32,6 +32,14 @@ class Settings:
     compaction_inactive_job_days: int
     compaction_job_event_days: int
     compaction_weekly_digest_days: int
+    enable_translation: bool
+    translation_provider: str
+    translation_api_key: str
+    translation_api_url: str
+    translation_interval_polls: int
+    translation_batch_size: int
+    translation_max_chars: int
+    translation_timeout_seconds: int
 
 
 def _required(name: str) -> str:
@@ -49,6 +57,15 @@ def _bool(name: str, default: bool) -> bool:
 
 
 def load_settings() -> Settings:
+    translation_provider = os.getenv("TRANSLATION_PROVIDER", "google_cloud").strip().lower()
+    translation_api_url = os.getenv("TRANSLATION_API_URL", "").strip()
+    if not translation_api_url:
+        translation_api_url = (
+            "https://translate.googleapis.com/translate_a/single"
+            if translation_provider in {"google_free", "google_free_web", "gtx"}
+            else "https://translation.googleapis.com/language/translate/v2"
+        )
+
     return Settings(
         supabase_url=_required("SUPABASE_URL"),
         supabase_service_role_key=_required("SUPABASE_SERVICE_ROLE_KEY"),
@@ -79,4 +96,12 @@ def load_settings() -> Settings:
         compaction_inactive_job_days=int(os.getenv("COMPACTION_INACTIVE_JOB_DAYS", "60")),
         compaction_job_event_days=int(os.getenv("COMPACTION_JOB_EVENT_DAYS", "30")),
         compaction_weekly_digest_days=int(os.getenv("COMPACTION_WEEKLY_DIGEST_DAYS", "180")),
+        enable_translation=_bool("ENABLE_TRANSLATION", False),
+        translation_provider=translation_provider,
+        translation_api_key=os.getenv("TRANSLATION_API_KEY", "").strip(),
+        translation_api_url=translation_api_url,
+        translation_interval_polls=int(os.getenv("TRANSLATION_INTERVAL_POLLS", "10")),
+        translation_batch_size=int(os.getenv("TRANSLATION_BATCH_SIZE", "20")),
+        translation_max_chars=int(os.getenv("TRANSLATION_MAX_CHARS", "4000")),
+        translation_timeout_seconds=int(os.getenv("TRANSLATION_TIMEOUT_SECONDS", "20")),
     )

@@ -32,15 +32,14 @@ import {
   LogIn,
   ChevronDown,
   Search,
-  BarChart3,
   Download,
   Target,
-  Building,
   Bookmark,
   MoreHorizontal,
   Menu,
   Settings,
   User,
+  Mail,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -54,8 +53,7 @@ const NAV_ITEMS = [
 const MORE_ITEMS = [
   { path: "/resumes", label: "Resume Library", icon: User },
   { path: "/skills", label: "Skill Gap", icon: Target },
-  { path: "/watchlist", label: "Company Watchlist", icon: Building },
-  { path: "/digest", label: "Market Digest", icon: BarChart3 },
+  { path: "/outreach", label: "Outreach", icon: Mail },
   { path: "/searches", label: "Saved Searches", icon: Bookmark },
   { path: "/export", label: "Export Data", icon: Download },
   { path: "/admin", label: "Admin", icon: Settings },
@@ -264,7 +262,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Link to="/jobs" className="hover:text-foreground">Explore</Link>
             <Link to="/tracked" className="hover:text-foreground">Shortlist</Link>
-            <Link to="/digest" className="hover:text-foreground">Digest</Link>
           </div>
         </div>
       </footer>
