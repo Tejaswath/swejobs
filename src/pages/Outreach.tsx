@@ -772,21 +772,35 @@ export default function Outreach() {
                   <div className="space-y-2">
                     <Label>Recruiters</Label>
                     <div className="max-h-[320px] space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-background/30 p-3">
-                      {(filteredRecruiters.length > 0 ? filteredRecruiters : recruitersQuery.data ?? []).map((recruiter) => (
-                        <label key={recruiter.id} className="flex items-start gap-2">
-                          <Checkbox
-                            checked={selectedRecruiterIds.includes(recruiter.id)}
-                            onCheckedChange={() => toggleRecruiterSelection(recruiter.id)}
-                          />
-                          <span className="space-y-0.5 text-sm">
-                            <span className="block font-medium">{recruiter.name}</span>
-                            <span className="block text-xs text-muted-foreground">
-                              {[recruiter.company, recruiter.title, recruiter.email].filter(Boolean).join(" · ")}
+                      {(filteredRecruiters.length > 0 ? filteredRecruiters : recruitersQuery.data ?? []).length > 0 ? (
+                        (filteredRecruiters.length > 0 ? filteredRecruiters : recruitersQuery.data ?? []).map((recruiter) => (
+                          <label key={recruiter.id} className="flex items-start gap-2">
+                            <Checkbox
+                              checked={selectedRecruiterIds.includes(recruiter.id)}
+                              onCheckedChange={() => toggleRecruiterSelection(recruiter.id)}
+                            />
+                            <span className="space-y-0.5 text-sm">
+                              <span className="block font-medium">{recruiter.name}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {[recruiter.company, recruiter.title, recruiter.email].filter(Boolean).join(" · ")}
+                              </span>
                             </span>
-                          </span>
-                        </label>
-                      ))}
+                          </label>
+                        ))
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-border/60 bg-background/50 p-3">
+                          <p className="text-sm text-muted-foreground">
+                            No recruiters yet. Add a recruiter with an email first, then select them here to generate drafts.
+                          </p>
+                          <Button className="mt-3" size="sm" variant="outline" onClick={() => openRecruiterDialog()}>
+                            <Plus className="mr-2 h-4 w-4" /> Add recruiter
+                          </Button>
+                        </div>
+                      )}
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      Recipient emails are managed via saved recruiters, not typed directly in Compose.
+                    </p>
                   </div>
                 </CardContent>
               </Card>
