@@ -38,6 +38,9 @@ export default function Admin() {
   const connectedCompanies = connectedCompanyRegistryEntries();
   const connectedViaJobTech = connectedViaJobTechRegistryEntries();
   const plannedCompanies = plannedCompanyRegistryEntries();
+  const trackedCanonicals = Array.from(
+    new Set(companyRegistry.map((company) => company.company_canonical).filter(Boolean)),
+  );
   const coverageCounts = companyCoverageStatusCounts();
   const missingCount =
     coverageCounts.planned + coverageCounts.blocked + coverageCounts.html_fallback_candidate;
@@ -56,7 +59,11 @@ export default function Admin() {
       ] = await Promise.all([
         supabase.from("ingestion_state").select("key, value").eq("key", "last_poll_at"),
         supabase.from("ingestion_state").select("key, value").like("key", "feed:%:last_success_at"),
-        supabase.from("jobs").select("company_canonical").eq("is_active", true).not("company_canonical", "is", null).limit(10000),
+        supabase
+          .from("jobs")
+          .select("company_canonical")
+          .eq("is_active", true)
+          .in("company_canonical", trackedCanonicals),
         supabase.from("ingestion_state").select("key, value").like("key", "company:%:last_seen_at"),
       ]);
       if (pollError) throw pollError;

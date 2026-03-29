@@ -24,7 +24,15 @@ export default function JobDetail() {
   const { data: job, isLoading } = useQuery({
     queryKey: ["job", id],
     queryFn: async () => {
-      const { data } = await supabase.from("jobs").select("*").eq("id", Number(id)).single();
+      const { data, error } = await supabase
+        .from("jobs")
+        .select(
+          "id, headline, description, employer_name, municipality, region, lang, published_at, remote_flag, " +
+            "employment_type, working_hours, occupation_label, source_url, application_deadline",
+        )
+        .eq("id", Number(id))
+        .single();
+      if (error) throw error;
       return data;
     },
   });
@@ -41,12 +49,13 @@ export default function JobDetail() {
     queryKey: ["tracked", id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("tracked_jobs")
-        .select("*")
+        .select("status, notes")
         .eq("job_id", Number(id))
         .eq("user_id", user!.id)
         .maybeSingle();
+      if (error) throw error;
       return data;
     },
   });
