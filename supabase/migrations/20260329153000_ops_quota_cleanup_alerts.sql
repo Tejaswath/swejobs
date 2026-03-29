@@ -117,13 +117,7 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     BEGIN
-      EXECUTE $sql$
-        SELECT cron.schedule(
-          'cleanup_orphan_resume_storage_nightly',
-          '15 3 * * *',
-          $$SELECT public.cleanup_orphan_resume_storage(500);$$
-        );
-      $sql$;
+      EXECUTE 'SELECT cron.schedule(''cleanup_orphan_resume_storage_nightly'', ''15 3 * * *'', ''SELECT public.cleanup_orphan_resume_storage(500);'')';
     EXCEPTION
       WHEN unique_violation THEN NULL;
     END;
