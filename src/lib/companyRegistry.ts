@@ -2,6 +2,7 @@ import rawRegistry from "../../pipeline/config/company_registry.json";
 
 export type CompanyCoverageStatus =
   | "connected"
+  | "connected_jobtech"
   | "planned"
   | "blocked"
   | "html_fallback_candidate";
@@ -53,6 +54,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   smartrecruiters: "SmartRecruiters",
   workday: "Workday",
   jobs2web: "Jobs2Web",
+  jobtech: "JobTech",
   html_fallback: "HTML fallback",
 };
 
@@ -133,6 +135,12 @@ export function connectedCompanyRegistryEntries(): CompanyRegistryEntry[] {
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
 }
 
+export function connectedViaJobTechRegistryEntries(): CompanyRegistryEntry[] {
+  return companyRegistry
+    .filter((entry) => entry.status === "connected_jobtech")
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
+}
+
 export function plannedCompanyRegistryEntries(): CompanyRegistryEntry[] {
   return companyRegistry
     .filter((entry) => entry.status === "planned")
@@ -152,6 +160,7 @@ export function companyCoverageStatusCounts(): Record<CompanyCoverageStatus, num
     },
     {
       connected: 0,
+      connected_jobtech: 0,
       planned: 0,
       blocked: 0,
       html_fallback_candidate: 0,

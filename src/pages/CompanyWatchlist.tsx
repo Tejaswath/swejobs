@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { pickLatestDigest, type DigestRow } from "@/lib/digest";
+import { findCompanyRegistryEntry, normalizeCompanyKey } from "@/lib/companyRegistry";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,33 +44,61 @@ export default function CompanyWatchlist() {
     queryKey: ["watched-company-data", watched?.map((w) => w.employer_name)],
     enabled: !!watched && watched.length > 0,
     queryFn: async () => {
-      const result: Record<string, { jobs: any[]; skills: Record<string, number> }> = {};
-      for (const w of watched!) {
-        const { data: jobs, error: jobsError } = await supabase
-          .from("jobs")
-          .select("id, headline, published_at, municipality, remote_flag")
-          .eq("employer_name", w.employer_name)
-          .eq("is_active", true)
-          .order("published_at", { ascending: false })
-          .limit(5);
-        if (jobsError) throw jobsError;
-
-        // Get tags for those jobs
-        const jobIds = (jobs ?? []).map((j) => j.id);
-        const skills: Record<string, number> = {};
-        if (jobIds.length > 0) {
-          const { data: tags, error: tagsError } = await supabase
-            .from("job_tags")
-            .select("tag")
-            .in("job_id", jobIds);
-          if (tagsError) throw tagsError;
-          (tags ?? []).forEach((t) => {
-            skills[t.tag] = (skills[t.tag] || 0) + 1;
-          });
-        }
-
-        result[w.employer_name] = { jobs: jobs ?? [], skills };
+      const watchedNames = Array.from(new Set((watched ?? []).map((item) => item.employer_name).filter(Boolean)));
+      if (watchedNames.length === 0) {
+        return {} as Record<string, { jobs: Array<{ id: number; headline: string; published_at: string | null; municipality: string | null; remote_flag: boolean | null }>; skills: Record<string, number> }>;
       }
+
+      const { data: allJobs, error: jobsError } = await supabase
+        .from("jobs")
+        .select("id, headline, published_at, municipality, remote_flag, employer_name")
+        .eq("is_active", true)
+        .in("employer_name", watchedNames)
+        .order("published_at", { ascending: false });
+      if (jobsError) throw jobsError;
+
+      const jobsByEmployer = new Map<string, Array<{ id: number; headline: string; published_at: string | null; municipality: string | null; remote_flag: boolean | null }>>();
+      for (const row of allJobs ?? []) {
+        const employerName = row.employer_name ?? "";
+        if (!employerName) continue;
+        if (!jobsByEmployer.has(employerName)) jobsByEmployer.set(employerName, []);
+        const jobsForEmployer = jobsByEmployer.get(employerName)!;
+        if (jobsForEmployer.length >= 5) continue;
+        jobsForEmployer.push({
+          id: row.id,
+          headline: row.headline,
+          published_at: row.published_at,
+          municipality: row.municipality,
+          remote_flag: row.remote_flag,
+        });
+      }
+
+      const selectedJobIds = Array.from(jobsByEmployer.values()).flatMap((rows) => rows.map((row) => row.id));
+      const tagsByJobId = new Map<number, string[]>();
+      if (selectedJobIds.length > 0) {
+        const { data: tags, error: tagsError } = await supabase
+          .from("job_tags")
+          .select("job_id, tag")
+          .in("job_id", selectedJobIds);
+        if (tagsError) throw tagsError;
+        for (const tagRow of tags ?? []) {
+          if (!tagsByJobId.has(tagRow.job_id)) tagsByJobId.set(tagRow.job_id, []);
+          tagsByJobId.get(tagRow.job_id)!.push(tagRow.tag);
+        }
+      }
+
+      const result: Record<string, { jobs: Array<{ id: number; headline: string; published_at: string | null; municipality: string | null; remote_flag: boolean | null }>; skills: Record<string, number> }> = {};
+      for (const employerName of watchedNames) {
+        const jobs = jobsByEmployer.get(employerName) ?? [];
+        const skills: Record<string, number> = {};
+        for (const job of jobs) {
+          for (const tag of tagsByJobId.get(job.id) ?? []) {
+            skills[tag] = (skills[tag] ?? 0) + 1;
+          }
+        }
+        result[employerName] = { jobs, skills };
+      }
+
       return result;
     },
   });
@@ -106,12 +135,14 @@ export default function CompanyWatchlist() {
   // Suggestions from digest
   const { data: topEmployers, error: topEmployersError } = useQuery({
     queryKey: ["top-employers-suggest"],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("weekly_digests")
         .select("id, period_start, period_end, generated_at, digest_json")
         .order("generated_at", { ascending: false })
-        .limit(100);
+        .limit(20);
       if (error) throw error;
       const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
       if (!latest) return [];
@@ -154,8 +185,10 @@ export default function CompanyWatchlist() {
     );
   }
 
-  const watchedNames = new Set((watched ?? []).map((w) => w.employer_name));
-  const suggestions = (topEmployers ?? []).filter((e) => !watchedNames.has(e.name)).slice(0, 6);
+  const watchedNames = new Set((watched ?? []).map((w) => normalizeCompanyKey(w.employer_name)));
+  const suggestions = (topEmployers ?? [])
+    .filter((employer) => !watchedNames.has(normalizeCompanyKey(employer.name)))
+    .slice(0, 6);
 
   return (
     <AppLayout>
@@ -224,6 +257,8 @@ export default function CompanyWatchlist() {
             const jobs = cd?.jobs ?? [];
             const skills = cd?.skills ?? {};
             const sortedSkills = Object.entries(skills).sort((a, b) => b[1] - a[1]).slice(0, 8);
+            const registryEntry = findCompanyRegistryEntry(w.employer_name);
+            const careerPageUrl = registryEntry?.career_page_url ?? null;
 
             return (
               <FadeUp key={w.id}>
@@ -240,6 +275,16 @@ export default function CompanyWatchlist() {
                             <p className="text-xs text-muted-foreground">
                               {jobs.length} active opening{jobs.length !== 1 ? "s" : ""}
                             </p>
+                            {careerPageUrl ? (
+                              <a
+                                href={careerPageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 inline-flex text-xs text-primary hover:underline"
+                              >
+                                Visit career page →
+                              </a>
+                            ) : null}
                           </div>
                         </div>
                         <Button
@@ -290,6 +335,13 @@ export default function CompanyWatchlist() {
                           ))}
                         </div>
                       )}
+                      {jobs.length === 0 ? (
+                        <div className="mt-3 rounded-md border border-dashed border-border/50 bg-background/30 px-3 py-2">
+                          <p className="text-xs text-muted-foreground">
+                            No active openings at {w.employer_name} right now.
+                          </p>
+                        </div>
+                      ) : null}
                     </CardContent>
                   </Card>
                 </HoverCard>

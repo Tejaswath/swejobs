@@ -7,6 +7,8 @@ export type OverviewSignalStripItem = {
   accentClassName?: string;
   fullLabel?: string;
   badge?: ReactNode;
+  tone?: "neutral" | "live" | "due";
+  pulse?: boolean;
 };
 
 export type DeadlinePreviewJob = {
@@ -20,12 +22,11 @@ export type DeadlinePreviewJob = {
 export type DeadlineBucketViewModel = {
   id: "today" | "thisWeek" | "later";
   label: string;
-  hint: string;
   count: number;
   href: string;
   accentClassName: string;
   badgeClassName: string;
-  jobs: DeadlinePreviewJob[];
+  jobs?: DeadlinePreviewJob[];
 };
 
 export type PipelineMetric = {

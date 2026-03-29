@@ -25,6 +25,7 @@ __pycache__/
 pipeline/.cache/
 pipeline/logs/
 pipeline/reports/
+supabase/.temp/
 
 # Editor directories and files
 .vscode/*

@@ -9,6 +9,7 @@ interface AuthContext {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -20,56 +21,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
+    let mounted = true;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    const applySession = (nextSession: Session | null) => {
+      if (!mounted) return;
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+    };
+
+    const bootstrapSession = async () => {
+      setLoading(true);
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        applySession(null);
+      } else {
+        applySession(data.session ?? null);
+      }
+      if (mounted) setLoading(false);
+    };
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (
+        event === "SIGNED_IN" ||
+        event === "SIGNED_OUT" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "USER_UPDATED" ||
+        event === "INITIAL_SESSION"
+      ) {
+        applySession(nextSession);
+      } else if (!nextSession) {
+        // Defensive fallback for unknown events with invalid/expired session.
+        applySession(null);
+      }
+      if (mounted) setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    void bootstrapSession();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=password`,
-      {
-        method: "POST",
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      },
-    );
-
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      const errorMessage =
-        payload?.msg || payload?.error_description || payload?.error || "Invalid login credentials";
-      return { error: new Error(errorMessage) };
-    }
-
-    const accessToken = payload?.access_token as string | undefined;
-    const refreshToken = payload?.refresh_token as string | undefined;
-    if (!accessToken || !refreshToken) {
-      return { error: new Error("Auth response missing session tokens.") };
-    }
-
-    const { error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
     });
-    return { error: error as Error | null };
+    return { error: (error ? new Error(error.message) : null) as Error | null };
   };
 
   const signUp = async (email: string, password: string) => {
@@ -82,19 +84,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
+    const currentPath =
+      window.location.pathname === "/auth"
+        ? "/"
+        : `${window.location.pathname}${window.location.search}${window.location.hash}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/jobs` },
+      options: { redirectTo: `${window.location.origin}${currentPath || "/"}` },
     });
+    return { error: error as Error | null };
+  };
+
+  const resetPassword = async (email: string) => {
+    const redirectTo = `${window.location.origin}/auth`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
     return { error: error as Error | null };
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithGoogle, resetPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   );

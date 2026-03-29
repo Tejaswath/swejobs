@@ -19,7 +19,9 @@ export type ApplicationSort =
   | "applied_asc"
   | "company_asc"
   | "company_desc"
-  | "status";
+  | "status"
+  | "ats_desc"
+  | "ats_asc";
 
 export type ApplicationMetrics = {
   total: number;
@@ -34,7 +36,7 @@ export type ApplicationMetrics = {
 
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: "Applied",
-  oa: "OA",
+  oa: "Online Assessment",
   interviewing: "Interview",
   offer: "Offer",
   rejected: "Rejected",

@@ -25,11 +25,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
 import { getErrorMessage, toDisplayError } from "@/lib/errors";
 import {
   deleteResumeVersion,
@@ -40,20 +38,14 @@ import {
   type ResumeVersionRow,
 } from "@/lib/resumes";
 
-type UserProfile = Tables<"user_profile">;
-
 type ResumeVersionFormState = {
   label: string;
-  target_role: string;
-  notes: string;
   is_default: boolean;
 };
 
 function emptyResumeVersionForm(): ResumeVersionFormState {
   return {
     label: "",
-    target_role: "",
-    notes: "",
     is_default: false,
   };
 }
@@ -61,8 +53,6 @@ function emptyResumeVersionForm(): ResumeVersionFormState {
 function toResumeVersionForm(version: ResumeVersionRow): ResumeVersionFormState {
   return {
     label: version.label,
-    target_role: version.target_role ?? "",
-    notes: version.notes ?? "",
     is_default: version.is_default,
   };
 }
@@ -72,34 +62,21 @@ export default function Profile() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [profileForm, setProfileForm] = useState({
-    full_name: "",
-    headline: "",
-    location: "",
-    linkedin_url: "",
-    portfolio_url: "",
-  });
   const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
   const [editingResumeVersion, setEditingResumeVersion] = useState<ResumeVersionRow | null>(null);
   const [resumeVersionForm, setResumeVersionForm] = useState<ResumeVersionFormState>(emptyResumeVersionForm());
 
+  const invalidateResumeCaches = () => {
+    if (!user) return Promise.resolve();
+    return Promise.all([
+      qc.invalidateQueries({ queryKey: ["resume-versions", user.id] }),
+      qc.invalidateQueries({ queryKey: ["default-resume-for-ats", user.id] }),
+    ]).then(() => undefined);
+  };
+
   useEffect(() => {
     document.title = "Resume Library | SweJobs";
   }, []);
-
-  const profileQuery = useQuery({
-    queryKey: ["user-profile", user?.id],
-    enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("user_profile")
-        .select("*")
-        .eq("user_id", user!.id)
-        .maybeSingle();
-      if (error) throw toDisplayError(error, "Could not load your application basics.");
-      return data;
-    },
-  });
 
   const resumeVersionsQuery = useQuery({
     queryKey: ["resume-versions", user?.id],
@@ -116,43 +93,6 @@ export default function Profile() {
     },
   });
 
-  useEffect(() => {
-    if (!profileQuery.data) return;
-    setProfileForm({
-      full_name: profileQuery.data.full_name ?? "",
-      headline: profileQuery.data.headline ?? "",
-      location: profileQuery.data.location ?? "",
-      linkedin_url: profileQuery.data.linkedin_url ?? "",
-      portfolio_url: profileQuery.data.portfolio_url ?? "",
-    });
-  }, [profileQuery.data]);
-
-  const saveProfileMutation = useMutation({
-    mutationFn: async () => {
-      if (!user) throw new Error("Sign in required");
-      const payload: UserProfile = {
-        user_id: user.id,
-        full_name: profileForm.full_name.trim(),
-        headline: profileForm.headline.trim(),
-        location: profileForm.location.trim(),
-        linkedin_url: profileForm.linkedin_url.trim(),
-        portfolio_url: profileForm.portfolio_url.trim(),
-        created_at: profileQuery.data?.created_at ?? new Date().toISOString(),
-        updated_at: profileQuery.data?.updated_at ?? new Date().toISOString(),
-      };
-
-      const { error } = await supabase.from("user_profile").upsert(payload);
-      if (error) throw toDisplayError(error, "Could not save your application basics.");
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["user-profile", user?.id] });
-      toast({ title: "Basics saved" });
-    },
-    onError: (error: unknown) => {
-      toast({ title: "Could not save basics", description: getErrorMessage(error), variant: "destructive" });
-    },
-  });
-
   const uploadResumeMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!user) throw new Error("Sign in required");
@@ -165,7 +105,7 @@ export default function Profile() {
       });
     },
     onSuccess: (resumeVersion) => {
-      void qc.invalidateQueries({ queryKey: ["resume-versions", user?.id] });
+      void invalidateResumeCaches();
       toast({
         title: "Resume uploaded",
         description: resumeVersion.parsed_text
@@ -195,8 +135,6 @@ export default function Profile() {
         .from("resume_versions")
         .update({
           label: resumeVersionForm.label.trim(),
-          target_role: resumeVersionForm.target_role.trim(),
-          notes: resumeVersionForm.notes.trim(),
           is_default: resumeVersionForm.is_default,
         })
         .eq("id", editingResumeVersion.id);
@@ -204,7 +142,7 @@ export default function Profile() {
       if (error) throw toDisplayError(error, "Could not update this resume.");
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["resume-versions", user?.id] });
+      void invalidateResumeCaches();
       toast({ title: "Resume details updated" });
       setResumeDialogOpen(false);
       setEditingResumeVersion(null);
@@ -233,7 +171,7 @@ export default function Profile() {
       if (error) throw toDisplayError(error, "Could not set the default resume.");
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["resume-versions", user?.id] });
+      void invalidateResumeCaches();
       toast({ title: "Default resume updated" });
     },
     onError: (error: unknown) => {
@@ -244,7 +182,7 @@ export default function Profile() {
   const deleteResumeMutation = useMutation({
     mutationFn: async (resumeVersion: ResumeVersionRow) => deleteResumeVersion(supabase, resumeVersion),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["resume-versions", user?.id] });
+      void invalidateResumeCaches();
       toast({ title: "Resume deleted" });
     },
     onError: (error: unknown) => {
@@ -260,7 +198,6 @@ export default function Profile() {
   });
 
   const resumeVersions = resumeVersionsQuery.data ?? [];
-  const defaultResume = resumeVersions.find((resumeVersion) => resumeVersion.is_default) ?? null;
 
   if (!loading && !user) return <Navigate to="/auth" replace />;
 
@@ -283,7 +220,7 @@ export default function Profile() {
         <div className="space-y-2">
           <h1 className="text-xl font-semibold tracking-tight">Resume Library</h1>
           <p className="text-sm text-muted-foreground">
-            Upload the PDF resumes you actually reuse, then attach them directly in Applications.
+            Upload your resume PDFs here. Pick one when logging an application.
           </p>
         </div>
 
@@ -292,7 +229,7 @@ export default function Profile() {
             <div className="space-y-1">
               <CardTitle>Saved resumes</CardTitle>
               <CardDescription>
-                Keep this simple: PDF only, 3 MB max, one clear label per version.
+                PDF only, 3 MB max.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -310,10 +247,6 @@ export default function Profile() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border border-border/50 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
-              Applications will reuse the label you choose here. Your default resume is preselected whenever you add a new application.
-            </div>
-
             {resumeVersionsQuery.isLoading ? (
               <div className="rounded-lg border border-border/50 bg-background/30 p-8 text-sm text-muted-foreground">
                 Loading your resume library…
@@ -353,12 +286,7 @@ export default function Profile() {
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                         <span>{resumeVersion.file_name ?? "No file name"}</span>
                         <span>{formatResumeFileSize(resumeVersion.file_size_bytes)}</span>
-                        <span>{resumeVersion.parsed_text ? "ATS-ready" : "Limited text extraction"}</span>
                       </div>
-                      {resumeVersion.target_role ? (
-                        <p className="text-sm text-muted-foreground">Target role: {resumeVersion.target_role}</p>
-                      ) : null}
-                      {resumeVersion.notes ? <p className="text-sm text-muted-foreground">{resumeVersion.notes}</p> : null}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -401,74 +329,6 @@ export default function Profile() {
             )}
           </CardContent>
         </Card>
-
-        <Card className="border-border/40 bg-card/60">
-          <CardHeader className="gap-2 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-1">
-              <CardTitle>Application basics</CardTitle>
-              <CardDescription>
-                Optional identity fields you want to keep around while applying.
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              {defaultResume ? (
-                <Badge variant="secondary">Default resume: {defaultResume.label}</Badge>
-              ) : (
-                <Badge variant="outline">No default resume yet</Badge>
-              )}
-              <Button onClick={() => saveProfileMutation.mutate()} disabled={saveProfileMutation.isPending}>
-                Save basics
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="profile-full-name">Full name</Label>
-              <Input
-                id="profile-full-name"
-                value={profileForm.full_name}
-                onChange={(event) => setProfileForm((current) => ({ ...current, full_name: event.target.value }))}
-                placeholder="Your full name"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-headline">Headline</Label>
-              <Input
-                id="profile-headline"
-                value={profileForm.headline}
-                onChange={(event) => setProfileForm((current) => ({ ...current, headline: event.target.value }))}
-                placeholder="Backend engineer focused on distributed systems"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-location">Location</Label>
-              <Input
-                id="profile-location"
-                value={profileForm.location}
-                onChange={(event) => setProfileForm((current) => ({ ...current, location: event.target.value }))}
-                placeholder="Stockholm, Sweden"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="profile-linkedin">LinkedIn URL</Label>
-              <Input
-                id="profile-linkedin"
-                value={profileForm.linkedin_url}
-                onChange={(event) => setProfileForm((current) => ({ ...current, linkedin_url: event.target.value }))}
-                placeholder="https://linkedin.com/in/..."
-              />
-            </div>
-            <div className="grid gap-2 md:col-span-2">
-              <Label htmlFor="profile-portfolio">Portfolio URL</Label>
-              <Input
-                id="profile-portfolio"
-                value={profileForm.portfolio_url}
-                onChange={(event) => setProfileForm((current) => ({ ...current, portfolio_url: event.target.value }))}
-                placeholder="https://your-site.dev"
-              />
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <Dialog open={resumeDialogOpen} onOpenChange={setResumeDialogOpen}>
@@ -476,7 +336,7 @@ export default function Profile() {
           <DialogHeader>
             <DialogTitle>Edit resume details</DialogTitle>
             <DialogDescription>
-              Keep the label clear. Applications will reuse it as the exact resume you sent.
+              Give this resume a short name you'll recognize.
             </DialogDescription>
           </DialogHeader>
 
@@ -488,25 +348,6 @@ export default function Profile() {
                 value={resumeVersionForm.label}
                 onChange={(event) => setResumeVersionForm((current) => ({ ...current, label: event.target.value }))}
                 placeholder="Backend, General, Finance"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="resume-target-role">Target role</Label>
-              <Input
-                id="resume-target-role"
-                value={resumeVersionForm.target_role}
-                onChange={(event) => setResumeVersionForm((current) => ({ ...current, target_role: event.target.value }))}
-                placeholder="Backend Engineer"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="resume-notes">Notes</Label>
-              <Textarea
-                id="resume-notes"
-                rows={4}
-                value={resumeVersionForm.notes}
-                onChange={(event) => setResumeVersionForm((current) => ({ ...current, notes: event.target.value }))}
-                placeholder="What this version emphasizes, and when you use it."
               />
             </div>
             <label className="flex items-center gap-2 text-sm">

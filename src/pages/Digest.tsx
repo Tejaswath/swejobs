@@ -39,12 +39,14 @@ export default function Digest() {
 
   const { data: digests, isFetching, error } = useQuery({
     queryKey: ["digests"],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data } = await supabase
         .from("weekly_digests")
         .select("id, period_start, period_end, generated_at, digest_json")
         .order("generated_at", { ascending: false })
-        .limit(100);
+        .limit(20);
       return (data ?? []) as DigestRow[];
     },
   });

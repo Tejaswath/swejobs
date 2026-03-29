@@ -12,10 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   MapPin,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   ExternalLink,
   Building,
   Bookmark,
@@ -26,7 +28,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   companyDisplayName,
   findCompanyRegistryEntry,
@@ -35,23 +37,34 @@ import {
   providerLabel,
 } from "@/lib/companyRegistry";
 import { buildSweJobsApplication } from "@/lib/applications";
+import { extractKeywordsFromJobText, runAtsScan, type AtsScanResult } from "@/lib/ats";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
-const REFRESH_MS = 300_000;
+const LIST_FETCH_LIMIT = 300;
+const REFRESH_MS = 600_000;
 const WATCHED_COMPANY_BOOST = 35;
 const CAREER_STAGE_CONFIDENCE_THRESHOLD = 0.6;
-const STATUSES = ["saved", "applied", "interviewing", "rejected", "ignored"] as const;
 
-type Lens = "best_matches" | "graduate_trainee" | "main_companies" | "hidden_gems" | "consultancies";
+type Lens = "best_matches" | "all_roles" | "graduate_trainee" | "main_companies" | "hidden_gems" | "consultancies";
+type JobSort = "relevance" | "deadline" | "newest" | "ats_desc";
 type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_both" | "show_both_best_matches";
 type DeadlineFocus = "none" | "today" | "week" | "upcoming";
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
   { id: "best_matches", label: "Best Matches", description: "Top ranked roles for your profile" },
+  { id: "all_roles", label: "All Roles", description: "Every active role, no target-role filter" },
   { id: "graduate_trainee", label: "Graduate / Trainee", description: "Early-career and program roles" },
   { id: "main_companies", label: "Main Companies", description: "Tier A/B employers" },
   { id: "hidden_gems", label: "Hidden Gems", description: "High-score unknown-tier roles" },
   { id: "consultancies", label: "Consultancies", description: "Consultancy and recruiter postings" },
+];
+
+const JOB_SORT_OPTIONS: Array<{ id: JobSort; label: string }> = [
+  { id: "relevance", label: "Best match (ranked)" },
+  { id: "ats_desc", label: "Keyword match (highest)" },
+  { id: "deadline", label: "Deadline (soonest)" },
+  { id: "newest", label: "Newest posted" },
 ];
 
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, C: 2, unknown: 3 };
@@ -113,11 +126,91 @@ function fallbackDescription(mode: SearchFallbackMode): string {
   return "";
 }
 
+function atsBadgeClass(score: number) {
+  if (score >= 60) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  if (score >= 35) return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+  if (score >= 15) return "border-orange-500/30 bg-orange-500/10 text-orange-300";
+  return "border-red-500/20 text-red-400/80";
+}
+
+function requiresThreePlusYears(job: { years_required_min?: unknown; reason_codes?: unknown }): boolean {
+  const years = numberValue(job.years_required_min, -1);
+  if (years >= 3) return true;
+  if (!Array.isArray(job.reason_codes)) return false;
+  return job.reason_codes.some((value) => String(value).toLowerCase() === "years_required_3plus");
+}
+
+type AtsScoreContext = {
+  headline?: string | null;
+  career_stage?: unknown;
+  career_stage_confidence?: unknown;
+  years_required_min?: unknown;
+  is_grad_program?: unknown;
+  reason_codes?: unknown;
+};
+
+function seniorityPenalty(context: AtsScoreContext): number {
+  const title = String(context.headline ?? "").toLowerCase().trim();
+  const stage = effectiveCareerStage(context.career_stage, context.career_stage_confidence);
+  const years = numberValue(context.years_required_min, -1);
+  const reasonCodes = Array.isArray(context.reason_codes)
+    ? context.reason_codes.map((value) => String(value).toLowerCase())
+    : [];
+  const hasSeniorTitleSignal = /\b(senior|lead|principal|staff|experienced|expert)\b/.test(title);
+  const hasJuniorSignal = /\b(junior|graduate|trainee|entry)\b/.test(title) || boolValue(context.is_grad_program);
+
+  let penalty = 0;
+  if (stage === "senior" || stage === "lead" || stage === "staff" || stage === "principal") {
+    penalty = Math.max(penalty, 40);
+  }
+  if (hasSeniorTitleSignal) {
+    penalty = Math.max(penalty, 40);
+  }
+  if (years >= 8) {
+    penalty = Math.max(penalty, 60);
+  } else if (years >= 5) {
+    penalty = Math.max(penalty, 45);
+  } else if (years >= 3) {
+    penalty = Math.max(penalty, 30);
+  }
+  if (reasonCodes.includes("years_required_3plus")) {
+    penalty = Math.max(penalty, 30);
+  }
+  if (reasonCodes.includes("career_stage_senior")) {
+    penalty = Math.max(penalty, 40);
+  }
+  if (years < 0 && stage === "unknown" && !hasJuniorSignal && !reasonCodes.includes("grad_program_detected")) {
+    penalty = Math.max(penalty, 10);
+  }
+  if (hasJuniorSignal) {
+    penalty = Math.max(0, penalty - 20);
+  }
+  return penalty;
+}
+
+function applySeniorityAdjustment(rawScore: number, context: AtsScoreContext): number {
+  return Math.max(0, rawScore - seniorityPenalty(context));
+}
+
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatDeadlineDisplay(deadline: string | null | undefined): string {
+  if (!deadline) return "No deadline";
+  const parsed = new Date(`${deadline}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "No deadline";
+
+  const today = startOfLocalDay(new Date());
+  const targetDay = startOfLocalDay(parsed);
+  const diffDays = Math.floor((targetDay.getTime() - today.getTime()) / 86_400_000);
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays <= 7) return `Closing in ${diffDays}d`;
+  return targetDay.toLocaleDateString("sv-SE", { month: "short", day: "numeric" });
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -148,6 +241,8 @@ export default function Jobs() {
   const [hideSwedishRequired, setHideSwedishRequired] = useState(true);
   const [hideCitizenshipRestricted, setHideCitizenshipRestricted] = useState(true);
   const [hideThreePlusYears, setHideThreePlusYears] = useState(true);
+  const [sortBy, setSortBy] = useState<JobSort>("relevance");
+  const [selectedAtsResumeId, setSelectedAtsResumeId] = useState<string>("auto");
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(-1);
@@ -183,9 +278,12 @@ export default function Jobs() {
   }, [watchedCompanies]);
 
   const { data: rawJobsData, isLoading, isFetching, error: jobsError } = useQuery({
-    queryKey: ["jobs-v3", debouncedSearch, lang, remoteOnly, deadlineFocus],
+    queryKey: ["jobs-v3", lens, debouncedSearch, lang, remoteOnly, deadlineFocus],
+    staleTime: 300_000,
+    placeholderData: (previous) => previous,
     refetchInterval: REFRESH_MS,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const normalizedSearchTerm = debouncedSearch.trim();
       const today = new Date();
@@ -197,11 +295,17 @@ export default function Jobs() {
           "id, headline, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
           "published_at, application_deadline, employment_type, working_hours, occupation_label, " +
             "relevance_score, role_family, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
-            "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, " +
+            "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, " +
             "source_provider, source_kind, is_direct_company_source, is_target_role, is_noise",
         )
         .eq("is_active", true)
-        .limit(200);
+        .limit(LIST_FETCH_LIMIT);
+
+      if (lens !== "all_roles") {
+        query = query.eq("is_target_role", true);
+      } else {
+        query = query.eq("is_noise", false);
+      }
 
       if (lang !== "all") {
         query = query.eq("lang", lang);
@@ -239,17 +343,14 @@ export default function Jobs() {
     },
   });
 
+  const activeSearchCount = rawJobsData?.length ?? 0;
+
   const { data: searchCoverage } = useQuery({
     queryKey: ["jobs-search-coverage", debouncedSearch],
-    enabled: debouncedSearch.trim().length > 0,
+    enabled: debouncedSearch.trim().length >= 2,
+    staleTime: 30_000,
     queryFn: async () => {
       const term = debouncedSearch.trim().replace(/[(),]/g, " ");
-
-      const activeQuery = supabase
-        .from("jobs")
-        .select("id", { count: "exact", head: true })
-        .eq("is_active", true)
-        .or(`headline.ilike.%${term}%,employer_name.ilike.%${term}%,company_canonical.ilike.%${term}%`);
 
       const visibleQuery = supabase
         .from("jobs")
@@ -258,16 +359,58 @@ export default function Jobs() {
         .eq("is_noise", false)
         .or(`headline.ilike.%${term}%,employer_name.ilike.%${term}%,company_canonical.ilike.%${term}%`);
 
-      const [{ count: activeCount, error: activeError }, { count: visibleCount, error: visibleError }] =
-        await Promise.all([activeQuery, visibleQuery]);
-
-      if (activeError) throw activeError;
+      const { count: visibleCount, error: visibleError } = await visibleQuery;
       if (visibleError) throw visibleError;
 
       return {
-        activeCount: activeCount ?? 0,
         visibleCount: visibleCount ?? 0,
       };
+    },
+  });
+
+  const { data: atsResumes } = useQuery({
+    queryKey: ["ats-resumes", user?.id],
+    enabled: !!user,
+    staleTime: 60 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("resume_versions")
+        .select("id, label, parsed_text, is_default, created_at")
+        .eq("user_id", user!.id)
+        .not("parsed_text", "is", null)
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      return (data ?? []).filter((resume) => typeof resume.parsed_text === "string" && resume.parsed_text.length > 0);
+    },
+  });
+
+  const activeAtsResume = useMemo(() => {
+    if (!atsResumes || atsResumes.length === 0) return null;
+    const defaultResume = atsResumes.find((resume) => resume.is_default) ?? atsResumes[0];
+    if (selectedAtsResumeId === "auto") return defaultResume;
+    return atsResumes.find((resume) => resume.id === selectedAtsResumeId) ?? defaultResume;
+  }, [atsResumes, selectedAtsResumeId]);
+
+  useEffect(() => {
+    if (!atsResumes || atsResumes.length === 0) {
+      if (selectedAtsResumeId !== "auto") setSelectedAtsResumeId("auto");
+      return;
+    }
+    if (selectedAtsResumeId === "auto") return;
+    if (!atsResumes.some((resume) => resume.id === selectedAtsResumeId)) {
+      setSelectedAtsResumeId("auto");
+    }
+  }, [atsResumes, selectedAtsResumeId]);
+
+  const { data: userSkills } = useQuery({
+    queryKey: ["user-skills", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("user_skills").select("skill").eq("user_id", user!.id);
+      if (error) throw error;
+      return new Set((data ?? []).map((item) => item.skill.toLowerCase()));
     },
   });
 
@@ -283,6 +426,7 @@ export default function Jobs() {
     ) => {
       const hasSearch = normalizedSearchTerm.length > 0;
       let rows = jobs.filter((job) => {
+        if (options.currentLens === "all_roles") return true;
         const isTarget = boolValue((job as { is_target_role?: unknown }).is_target_role);
         const isNoise = boolValue((job as { is_noise?: unknown }).is_noise);
         if (!hasSearch) return isTarget;
@@ -298,10 +442,7 @@ export default function Jobs() {
         );
       }
       if (options.hideYears) {
-        rows = rows.filter((job) => {
-          const years = numberValue(job.years_required_min, -1);
-          return years < 0 || years < 3;
-        });
+        rows = rows.filter((job) => !requiresThreePlusYears(job));
       }
 
       if (options.currentLens === "graduate_trainee") {
@@ -349,25 +490,30 @@ export default function Jobs() {
             hideYears: hideThreePlusYears,
           },
         },
-        {
-          mode: "show_experience",
-          options: {
-            currentLens: lens,
-            hideSwedish: hideSwedishRequired,
-            hideCitizenship: hideCitizenshipRestricted,
-            hideYears: false,
-          },
-        },
-        {
-          mode: "show_both",
-          options: {
-            currentLens: lens,
-            hideSwedish: false,
-            hideCitizenship: hideCitizenshipRestricted,
-            hideYears: false,
-          },
-        },
       ];
+
+      if (!hideThreePlusYears) {
+        fallbacks.push(
+          {
+            mode: "show_experience",
+            options: {
+              currentLens: lens,
+              hideSwedish: hideSwedishRequired,
+              hideCitizenship: hideCitizenshipRestricted,
+              hideYears: false,
+            },
+          },
+          {
+            mode: "show_both",
+            options: {
+              currentLens: lens,
+              hideSwedish: false,
+              hideCitizenship: hideCitizenshipRestricted,
+              hideYears: false,
+            },
+          },
+        );
+      }
 
       if (lens !== "best_matches") {
         fallbacks.push({
@@ -376,7 +522,7 @@ export default function Jobs() {
             currentLens: "best_matches",
             hideSwedish: false,
             hideCitizenship: hideCitizenshipRestricted,
-            hideYears: false,
+            hideYears: hideThreePlusYears,
           },
         });
       }
@@ -408,8 +554,10 @@ export default function Jobs() {
 
     rows.sort((a, b) => {
       const targetDiff =
-        Number(boolValue((b as { is_target_role?: unknown }).is_target_role)) -
-        Number(boolValue((a as { is_target_role?: unknown }).is_target_role));
+        lens === "all_roles"
+          ? 0
+          : Number(boolValue((b as { is_target_role?: unknown }).is_target_role)) -
+            Number(boolValue((a as { is_target_role?: unknown }).is_target_role));
       if (targetDiff !== 0) return targetDiff;
 
       const watchedDiff = Number(isWatched(b)) - Number(isWatched(a));
@@ -457,18 +605,146 @@ export default function Jobs() {
 
   const rankAndFilterJobs = rankedJobsView.rows;
   const searchFallbackMode = rankedJobsView.fallbackMode;
+  const rankedJobIds = useMemo(() => rankAndFilterJobs.map((job) => job.id), [rankAndFilterJobs]);
 
-  const total = rankAndFilterJobs.length;
+  const { data: allJobTags } = useQuery({
+    queryKey: ["job-tags-ranked", rankedJobIds.join(",")],
+    enabled: rankedJobIds.length > 0,
+    staleTime: 300_000,
+    placeholderData: (previous) => previous,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("job_tags")
+        .select("job_id, tag")
+        .in("job_id", rankedJobIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const tagsByJobId = useMemo(() => {
+    return (allJobTags ?? []).reduce((acc, item) => {
+      if (!acc[item.job_id]) acc[item.job_id] = [];
+      acc[item.job_id].push(item.tag);
+      return acc;
+    }, {} as Record<number, string[]>);
+  }, [allJobTags]);
+
+  const { data: trackedStatuses } = useQuery({
+    queryKey: ["tracked-statuses", user?.id, rankedJobIds.join(",")],
+    enabled: !!user && rankedJobIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tracked_jobs")
+        .select("job_id, status")
+        .eq("user_id", user!.id)
+        .in("job_id", rankedJobIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const trackedStatusByJobId = useMemo(() => {
+    return (trackedStatuses ?? []).reduce((acc, item) => {
+      acc[item.job_id] = String(item.status ?? "");
+      return acc;
+    }, {} as Record<number, string>);
+  }, [trackedStatuses]);
+
+  const atsByJobId = useMemo(() => {
+    const parsedText = activeAtsResume?.parsed_text;
+    if (
+      !parsedText ||
+      rankAndFilterJobs.length === 0 ||
+      (rankedJobIds.length > 0 && Object.keys(tagsByJobId).length === 0)
+    ) {
+      return {} as Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>;
+    }
+
+    return rankAndFilterJobs.reduce<Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>>(
+      (acc, job) => {
+        const tags = tagsByJobId[job.id] ?? [];
+        const titleKeywords = extractKeywordsFromJobText([job.headline ?? "", job.occupation_label ?? ""].join(" "), 10);
+        const keywords = Array.from(new Set([...tags, ...titleKeywords])).slice(0, 20);
+        if (keywords.length === 0) return acc;
+
+        const context = {
+          headline: job.headline,
+          career_stage: job.career_stage,
+          career_stage_confidence: job.career_stage_confidence,
+          years_required_min: job.years_required_min,
+          is_grad_program: job.is_grad_program,
+          reason_codes: job.reason_codes,
+        };
+
+        const result = runAtsScan({
+          resumeText: parsedText,
+          targetKeywords: keywords,
+          trackedSkills: userSkills ?? [],
+        });
+
+        acc[job.id] = {
+          result,
+          displayScore: applySeniorityAdjustment(result.score, context),
+          penalty: seniorityPenalty(context),
+        };
+
+        return acc;
+      },
+      {},
+    );
+  }, [activeAtsResume?.parsed_text, rankAndFilterJobs, rankedJobIds.length, tagsByJobId, userSkills]);
+
+  const sortedJobs = useMemo(() => {
+    const rows = [...rankAndFilterJobs];
+    if (rows.length <= 1 || sortBy === "relevance") return rows;
+
+    const baseOrderById = new Map(rows.map((job, index) => [job.id, index]));
+    const baseOrderDiff = (aId: number, bId: number) => (baseOrderById.get(aId) ?? 0) - (baseOrderById.get(bId) ?? 0);
+
+    if (sortBy === "newest") {
+      return rows.sort((a, b) => {
+        const diff = timeValue(String(b.published_at || "")) - timeValue(String(a.published_at || ""));
+        if (diff !== 0) return diff;
+        return baseOrderDiff(a.id, b.id);
+      });
+    }
+
+    if (sortBy === "deadline") {
+      return rows.sort((a, b) => {
+        const aValue = a.application_deadline ? Date.parse(`${a.application_deadline}T00:00:00`) : Number.POSITIVE_INFINITY;
+        const bValue = b.application_deadline ? Date.parse(`${b.application_deadline}T00:00:00`) : Number.POSITIVE_INFINITY;
+        const diff = aValue - bValue;
+        if (diff !== 0) return diff;
+        return baseOrderDiff(a.id, b.id);
+      });
+    }
+
+    if (!activeAtsResume?.parsed_text) return rows;
+
+    return rows.sort((a, b) => {
+      const bScore = atsByJobId[b.id]?.displayScore ?? -1;
+      const aScore = atsByJobId[a.id]?.displayScore ?? -1;
+      const diff = bScore - aScore;
+      if (diff !== 0) return diff;
+      return baseOrderDiff(a.id, b.id);
+    });
+  }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, sortBy]);
+
+  const total = sortedJobs.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const jobs = useMemo(() => {
     const start = page * PAGE_SIZE;
-    return rankAndFilterJobs.slice(start, start + PAGE_SIZE);
-  }, [rankAndFilterJobs, page]);
+    return sortedJobs.slice(start, start + PAGE_SIZE);
+  }, [page, sortedJobs]);
 
   useEffect(() => {
     setPage(0);
-  }, [lens, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, search, lang, remoteOnly, deadlineFocus]);
+  }, [lens, hideSwedishRequired, hideCitizenshipRestricted, hideThreePlusYears, search, lang, remoteOnly, deadlineFocus, sortBy]);
 
   useEffect(() => {
     if (page >= totalPages) {
@@ -492,6 +768,7 @@ export default function Jobs() {
   const hasActiveFilters =
     deadlineFocus !== "none" ||
     lens !== "best_matches" ||
+    sortBy !== "relevance" ||
     lang !== "all" ||
     remoteOnly ||
     !hideSwedishRequired ||
@@ -507,6 +784,7 @@ export default function Jobs() {
     setHideSwedishRequired(true);
     setHideCitizenshipRestricted(true);
     setHideThreePlusYears(true);
+    setSortBy("relevance");
     setPage(0);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -537,6 +815,22 @@ export default function Jobs() {
       };
     }
 
+    if (companyCoverageEntry.status === "connected_jobtech" && total > 0) {
+      return {
+        tone: "info" as const,
+        title: "Connected via JobTech",
+        body: `${displayName} roles are available through JobTech aggregation and shown below.`,
+      };
+    }
+
+    if (companyCoverageEntry.status === "connected_jobtech") {
+      return {
+        tone: "info" as const,
+        title: "Connected via JobTech",
+        body: `${displayName} is tracked through JobTech aggregation, but no active roles matched your current filters.`,
+      };
+    }
+
     if (companyCoverageEntry.status === "planned") {
       return {
         tone: "warning" as const,
@@ -560,35 +854,21 @@ export default function Jobs() {
     };
   }, [companyCoverageEntry, debouncedSearch, total]);
 
-  const jobIds = jobs.map((j) => j.id);
-  const { data: allJobTags } = useQuery({
-    queryKey: ["job-tags-list", jobIds.join(",")],
-    enabled: jobIds.length > 0,
-    refetchInterval: REFRESH_MS,
-    refetchIntervalInBackground: false,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("job_tags")
-        .select("job_id, tag")
-        .in("job_id", jobIds);
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
-
-  const tagsByJobId = useMemo(() => {
-    return (allJobTags ?? []).reduce((acc, item) => {
-      if (!acc[item.job_id]) acc[item.job_id] = [];
-      acc[item.job_id].push(item.tag);
-      return acc;
-    }, {} as Record<number, string[]>);
-  }, [allJobTags]);
-
   const { data: detail } = useQuery({
     queryKey: ["job", selectedId],
     enabled: !!selectedId,
     queryFn: async () => {
-      const { data, error } = await supabase.from("jobs").select("*").eq("id", selectedId!).single();
+      const { data, error } = await supabase
+        .from("jobs")
+        .select(
+          "id, headline, description, employer_name, company_canonical, company_tier, municipality, region, lang, " +
+          "remote_flag, published_at, application_deadline, employment_type, working_hours, occupation_label, source_url, " +
+          "relevance_score, role_family, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
+          "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, source_provider, source_kind, " +
+          "is_direct_company_source, is_target_role",
+        )
+        .eq("id", selectedId!)
+        .single();
       if (error) throw error;
       return data;
     },
@@ -601,16 +881,6 @@ export default function Jobs() {
       const { data, error } = await supabase.from("job_tags").select("tag").eq("job_id", selectedId!);
       if (error) throw error;
       return data?.map((item) => item.tag) ?? [];
-    },
-  });
-
-  const { data: userSkills } = useQuery({
-    queryKey: ["user-skills", user?.id],
-    enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("user_skills").select("skill").eq("user_id", user!.id);
-      if (error) throw error;
-      return new Set((data ?? []).map((item) => item.skill.toLowerCase()));
     },
   });
 
@@ -630,17 +900,21 @@ export default function Jobs() {
   });
 
   const [notes, setNotes] = useState("");
-  const [status, setStatus] = useState<string>("saved");
+  const [appliedFeedbackJobId, setAppliedFeedbackJobId] = useState<number | null>(null);
+  const [showAtsDetails, setShowAtsDetails] = useState(false);
 
   useEffect(() => {
     if (tracking) {
       setNotes(tracking.notes ?? "");
-      setStatus(tracking.status);
     } else {
       setNotes("");
-      setStatus("saved");
     }
   }, [tracking]);
+
+  useEffect(() => {
+    setAppliedFeedbackJobId(null);
+    setShowAtsDetails(false);
+  }, [selectedId]);
 
   const upsertTracking = useMutation({
     mutationFn: async (values: { status: string; notes: string }) => {
@@ -669,10 +943,15 @@ export default function Jobs() {
         if (applicationError) throw applicationError;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, values) => {
       qc.invalidateQueries({ queryKey: ["tracked", selectedId] });
       qc.invalidateQueries({ queryKey: ["applications", user?.id] });
-      toast({ title: "Saved" });
+      if (values.status === "applied") {
+        setAppliedFeedbackJobId(selectedId ?? null);
+        toast({ title: "Added to Applications" });
+      } else {
+        toast({ title: "Shortlisted" });
+      }
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -727,12 +1006,22 @@ export default function Jobs() {
       } else if (event.key === "Escape") {
         setSelectedId(null);
         setSelectedIdx(-1);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        if (selectedIdx >= 0 && selectedIdx < jobs.length) {
+          setSelectedId(jobs[selectedIdx].id);
+          return;
+        }
+        if (jobs.length > 0) {
+          setSelectedIdx(0);
+          setSelectedId(jobs[0].id);
+        }
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [jobs]);
+  }, [jobs, selectedIdx]);
 
   useEffect(() => {
     if (selectedIdx >= 0 && listRef.current) {
@@ -743,6 +1032,48 @@ export default function Jobs() {
 
   const matchingTags = detailTags?.filter((tag) => userSkills?.has(tag.toLowerCase())) ?? [];
   const missingTags = detailTags?.filter((tag) => !userSkills?.has(tag.toLowerCase())) ?? [];
+  const listAtsByJobId = useMemo(() => {
+    if (jobs.length === 0 || Object.keys(atsByJobId).length === 0) {
+      return {} as Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>;
+    }
+    return jobs.reduce<Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>>((acc, job) => {
+      const snapshot = atsByJobId[job.id];
+      if (snapshot) acc[job.id] = snapshot;
+      return acc;
+    }, {});
+  }, [atsByJobId, jobs]);
+
+  const detailAtsResult = useMemo(() => {
+    const parsedText = activeAtsResume?.parsed_text;
+    if (!detail || !parsedText) return null;
+
+    const detailTagKeywords = detailTags ?? [];
+    const descriptionKeywords = extractKeywordsFromJobText([detail.headline, detail.description ?? ""].join(" "), 35);
+    const keywords = Array.from(new Set([...detailTagKeywords, ...descriptionKeywords])).slice(0, 35);
+    if (keywords.length === 0) return null;
+
+    const context = {
+      headline: detail.headline,
+      career_stage: detail.career_stage,
+      career_stage_confidence: detail.career_stage_confidence,
+      years_required_min: detail.years_required_min,
+      is_grad_program: detail.is_grad_program,
+      reason_codes: detail.reason_codes,
+    };
+
+    const result = runAtsScan({
+      resumeText: parsedText,
+      targetKeywords: keywords,
+      trackedSkills: userSkills ?? [],
+    });
+
+    return {
+      result,
+      displayScore: applySeniorityAdjustment(result.score, context),
+      penalty: seniorityPenalty(context),
+    };
+  }, [activeAtsResume?.parsed_text, detail, detailTags, userSkills]);
+
   const detailDisplayEmployer = detail
     ? companyDisplayName(detail.company_canonical, detail.employer_name)
     : "";
@@ -787,7 +1118,12 @@ export default function Jobs() {
               key={item.id}
               size="sm"
               variant={lens === item.id ? "default" : "outline"}
-              className="h-8 text-xs"
+              className={cn(
+                "h-8 text-xs",
+                lens === item.id
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "border-border/60 bg-transparent text-muted-foreground hover:border-border hover:text-foreground",
+              )}
               onClick={() => setLens(item.id)}
               title={item.description}
             >
@@ -827,6 +1163,11 @@ export default function Jobs() {
             <span className="text-xs text-muted-foreground">Remote</span>
           </div>
 
+          <div className="flex items-center gap-1.5">
+            <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} className="scale-75" />
+            <span className="text-xs text-muted-foreground">Hide 3+ years (strict)</span>
+          </div>
+
           <AdvancedFiltersPopover
             values={{
               hideSwedishRequired,
@@ -840,12 +1181,55 @@ export default function Jobs() {
             }}
           />
 
+          <Select value={sortBy} onValueChange={(value) => setSortBy(value as JobSort)}>
+            <SelectTrigger className="h-8 w-44 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {JOB_SORT_OPTIONS.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {user ? (
+            <Select value={selectedAtsResumeId} onValueChange={setSelectedAtsResumeId}>
+              <SelectTrigger className="h-8 w-56 text-xs">
+                <SelectValue placeholder="ATS resume" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">
+                  {activeAtsResume ? `ATS resume: Auto (${activeAtsResume.label})` : "ATS resume: Auto"}
+                </SelectItem>
+                {(atsResumes ?? []).map((resume) => (
+                  <SelectItem key={resume.id} value={resume.id}>
+                    {resume.label}
+                    {resume.is_default ? " (Default)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="h-7 px-2 text-xs">
               Reset controls
             </Button>
           )}
         </div>
+
+        {sortBy === "ats_desc" && !activeAtsResume?.parsed_text ? (
+          <p className="text-[11px] text-muted-foreground">
+            Keyword sorting needs a resume with extracted text. Upload/select one in Resume Library.
+          </p>
+        ) : null}
+        {sortBy === "ats_desc" && activeAtsResume?.parsed_text ? (
+          <p className="text-[11px] text-muted-foreground">
+            Keyword match is not a full hiring-fit score. Experience and seniority requirements still apply.
+          </p>
+        ) : null}
 
         <div className="flex gap-4" style={{ height: "calc(100vh - 320px)" }}>
           <div className={`flex flex-col ${selectedId ? "w-[380px] shrink-0" : "w-full max-w-2xl"} transition-all duration-200`}>
@@ -888,7 +1272,7 @@ export default function Jobs() {
                   {coverageBanner
                     ? coverageBanner.body
                     : debouncedSearch.trim()
-                    ? searchCoverage?.activeCount === 0
+                    ? activeSearchCount === 0
                       ? "No active jobs were found for this search in the current source data."
                       : searchCoverage?.visibleCount === 0
                         ? "Jobs were found for this search, but all current matches were filtered as non-target/noise."
@@ -903,12 +1287,14 @@ export default function Jobs() {
                     {jobs.map((job, idx) => {
                       const isSelected = job.id === selectedId;
                       const tags = tagsByJobId[job.id] ?? [];
+                      const trackedStatus = trackedStatusByJobId[job.id];
                       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
                       const watched = watchedSet.has(canonical);
                       const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
                       const displayEmployer = companyDisplayName(job.company_canonical, job.employer_name);
                       const sourceEntry = getCompanyRegistryEntryByCanonical(job.company_canonical);
                       const sourceLabel = providerLabel(job.source_provider || sourceEntry?.provider);
+                      const atsSnapshot = listAtsByJobId[job.id];
 
                       return (
                         <div
@@ -918,9 +1304,13 @@ export default function Jobs() {
                             setSelectedId(job.id);
                             setSelectedIdx(idx);
                           }}
-                          className={`cursor-pointer rounded-md px-3 py-2.5 transition-colors ${
-                            isSelected ? "bg-primary/5" : "hover:bg-muted/40"
-                          }`}
+                          className={cn(
+                            "cursor-pointer rounded-md border-l-2 px-3 py-2.5 transition-all duration-200",
+                            isSelected && "border-l-primary bg-primary/5 shadow-sm",
+                            !isSelected && "border-l-transparent hover:bg-muted/40",
+                            !isSelected && job.company_tier === "A" && "border-l-emerald-500/40",
+                            !isSelected && job.company_tier === "B" && "border-l-sky-500/30",
+                          )}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <h3 className="text-sm font-medium leading-snug line-clamp-1">{job.headline}</h3>
@@ -930,6 +1320,16 @@ export default function Jobs() {
                                   Watched
                                 </Badge>
                               )}
+                              {trackedStatus === "saved" ? (
+                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-primary/25 text-primary">
+                                  Shortlisted
+                                </Badge>
+                              ) : null}
+                              {trackedStatus === "applied" ? (
+                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-emerald-500/25 text-emerald-300">
+                                  Applied
+                                </Badge>
+                              ) : null}
                               {job.remote_flag && (
                                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
                                   Remote
@@ -940,6 +1340,11 @@ export default function Jobs() {
                                   Tier {job.company_tier}
                                 </Badge>
                               )}
+                              {atsSnapshot ? (
+                                <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.displayScore))}>
+                                  KW {atsSnapshot.displayScore}%
+                                </Badge>
+                              ) : null}
                               {boolValue(job.is_direct_company_source) && (
                                 <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
                                   {sourceLabel}
@@ -948,16 +1353,22 @@ export default function Jobs() {
                             </div>
                           </div>
 
-                          <p className="mt-0.5 text-xs text-muted-foreground">{displayEmployer}</p>
+                          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span
+                              className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary/20 text-[8px] font-semibold text-primary"
+                              aria-hidden
+                            >
+                              {(displayEmployer || "?").charAt(0).toUpperCase()}
+                            </span>
+                            {displayEmployer}
+                          </p>
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
                             {job.lang && <span>{job.lang.toUpperCase()}</span>}
                             {stage !== "unknown" && (
                               <span>{stage}</span>
                             )}
-                            {job.published_at && (
-                              <span>{new Date(job.published_at).toLocaleDateString("sv-SE")}</span>
-                            )}
+                            <span>{formatDeadlineDisplay(job.application_deadline)}</span>
                           </div>
 
                           <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -1018,6 +1429,9 @@ export default function Jobs() {
                     </Button>
                   </div>
                 )}
+                <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                  ↑↓ Navigate · Enter Open · Esc Close
+                </p>
               </>
             )}
           </div>
@@ -1186,33 +1600,101 @@ export default function Jobs() {
                       </div>
                     )}
 
+                    {detailAtsResult ? (
+                      <div className="space-y-2 border-t border-border/40 pt-4">
+                        <div className="flex items-center gap-3 py-1">
+                          <div className="h-px flex-1 bg-border/40" />
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60">Match analysis</span>
+                          <div className="h-px flex-1 bg-border/40" />
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Keyword match (ATS)</h3>
+                          <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.displayScore))}>
+                            {detailAtsResult.displayScore}% match
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          This is a keyword overlap score, not a full suitability score. Years-of-experience requirements may still disqualify the role.
+                        </p>
+                        {detailAtsResult.penalty > 0 ? (
+                          <p className="text-[11px] text-muted-foreground">
+                            Seniority adjustment applied ({detailAtsResult.penalty} pts) based on title/stage/experience signals.
+                          </p>
+                        ) : null}
+                        <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
+                              {showAtsDetails ? "Hide keywords" : "Show keywords"}
+                              <ChevronsUpDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="space-y-3 pt-2">
+                            <div>
+                              <p className="mb-1 text-xs text-muted-foreground">Matched keywords</p>
+                              <div className="flex flex-wrap gap-1">
+                                {detailAtsResult.result.matchedKeywords.slice(0, 10).map((keyword) => (
+                                  <Badge key={keyword} variant="secondary" className="text-[10px] font-normal">
+                                    {keyword}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-1 text-xs text-muted-foreground">Missing keywords</p>
+                              <div className="flex flex-wrap gap-1">
+                                {detailAtsResult.result.missingKeywords.slice(0, 10).map((keyword) => (
+                                  <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
+                                    {keyword}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </div>
+                    ) : null}
+
                     {user && (
                       <div className="space-y-3 border-t border-border/40 pt-4">
                         <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                           <Bookmark className="h-3 w-3" /> Track
                         </h3>
-                        <div className="flex items-center gap-2">
-                          <Select value={status} onValueChange={setStatus}>
-                            <SelectTrigger className="h-8 w-32 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUSES.map((item) => (
-                                <SelectItem key={item} value={item} className="capitalize">
-                                  {item}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             size="sm"
+                            variant={tracking?.status === "saved" ? "default" : "outline"}
                             className="h-8 text-xs"
-                            onClick={() => upsertTracking.mutate({ status, notes })}
+                            onClick={() => upsertTracking.mutate({ status: "saved", notes })}
                             disabled={upsertTracking.isPending}
                           >
-                            {tracking ? "Update" : "Save"}
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={tracking?.status === "applied" ? "default" : "outline"}
+                            className="h-8 text-xs"
+                            onClick={() => upsertTracking.mutate({ status: "applied", notes })}
+                            disabled={upsertTracking.isPending}
+                          >
+                            I Applied
                           </Button>
                         </div>
+                        {selectedId && appliedFeedbackJobId === selectedId ? (
+                          <p className="text-xs text-emerald-300">
+                            Added to Applications.{" "}
+                            <Link to="/applications" className="underline">
+                              View →
+                            </Link>
+                          </p>
+                        ) : null}
+                        {selectedId ? (
+                          <Link
+                            to={`/applications?prefill_job_id=${selectedId}`}
+                            className="inline-flex text-xs text-muted-foreground underline hover:text-foreground"
+                          >
+                            Applied outside SweJobs? Log it
+                          </Link>
+                        ) : null}
                         <Textarea
                           value={notes}
                           onChange={(event) => setNotes(event.target.value)}

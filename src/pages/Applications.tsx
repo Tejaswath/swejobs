@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from "react";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowRightLeft,
   ClipboardList,
   ExternalLink,
   FileDown,
@@ -16,6 +17,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -40,26 +42,37 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Json, Tables } from "@/integrations/supabase/types";
 import {
   type AtsScanResult,
   extractKeywordsFromJobText,
   runAtsScan,
 } from "@/lib/ats";
 import {
+  companyRegistry,
+} from "@/lib/companyRegistry";
+import {
   APPLICATION_STATUSES,
   STATUS_COLORS,
   STATUS_LABELS,
+  buildSweJobsApplication,
   type ApplicationInsert,
   type ApplicationRow,
   type ApplicationSort,
   type ApplicationStatus,
+  sweJobsApplicationRequestId,
   computeApplicationMetrics,
   formatApplicationDate,
   formatApplicationDateInput,
 } from "@/lib/applications";
 import { getErrorMessage, toDisplayError } from "@/lib/errors";
 import { downloadCSV } from "@/lib/export";
+import {
+  buildUrlLookupCandidates,
+  canonicalizeJobUrl,
+  hostLookupIlikePatterns,
+  selectBestSimilarUrlMatch,
+} from "@/lib/jobUrlMatching";
 import {
   deriveResumeLabel,
   uploadResumeVersion,
@@ -73,6 +86,16 @@ type FilterStatus = "all" | ApplicationStatus;
 type ResumeVersion = Tables<"resume_versions">;
 type JobTag = { job_id: number; tag: string };
 type JobSummary = { id: number; headline: string; description: string | null };
+type UrlMatchJob = { id: number; headline: string; employer_name: string | null; source_url: string | null };
+type StatusTimelineEntry = { status: ApplicationStatus; at: string };
+type TrackedAppliedRow = {
+  job_id: number;
+  status: string;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  jobs: { id: number; headline: string; employer_name: string | null; source_url: string | null } | null;
+};
 
 type ApplicationFormState = {
   company: string;
@@ -80,7 +103,9 @@ type ApplicationFormState = {
   status: ApplicationStatus;
   job_url: string;
   applied_at: string;
+  job_id: number | null;
   resume_version_id: string;
+  ats_job_description: string;
   notes: string;
 };
 
@@ -90,6 +115,8 @@ const SORT_OPTIONS: Array<{ value: ApplicationSort; label: string }> = [
   { value: "company_asc", label: "Company (A-Z)" },
   { value: "company_desc", label: "Company (Z-A)" },
   { value: "status", label: "Status" },
+  { value: "ats_desc", label: "ATS score (highest)" },
+  { value: "ats_asc", label: "ATS score (lowest)" },
 ];
 
 function toAppliedAtIso(dateValue: string) {
@@ -103,7 +130,9 @@ function emptyFormState(defaultResumeId = ""): ApplicationFormState {
     status: "applied",
     job_url: "",
     applied_at: formatApplicationDateInput(new Date().toISOString()),
+    job_id: null,
     resume_version_id: defaultResumeId || RESUME_NONE,
+    ats_job_description: "",
     notes: "",
   };
 }
@@ -119,20 +148,123 @@ function buildFormState(application: ApplicationRow, resumeVersions: ResumeVersi
     status: application.status as ApplicationStatus,
     job_url: application.job_url,
     applied_at: formatApplicationDateInput(application.applied_at),
+    job_id: application.job_id,
     resume_version_id: matchingResumeVersion?.storage_path ? matchingResumeVersion.id : RESUME_NONE,
+    ats_job_description: "",
     notes: application.notes ?? "",
   };
 }
 
 function compareApplications(a: ApplicationRow, b: ApplicationRow, sort: ApplicationSort) {
-  if (sort === "applied_asc") return a.applied_at.localeCompare(b.applied_at);
-  if (sort === "company_asc") return a.company.localeCompare(b.company, "sv");
-  if (sort === "company_desc") return b.company.localeCompare(a.company, "sv");
+  if (sort === "applied_asc") {
+    const diff = a.applied_at.localeCompare(b.applied_at);
+    if (diff !== 0) return diff;
+  }
+  if (sort === "company_asc") {
+    const diff = a.company.localeCompare(b.company, "sv");
+    if (diff !== 0) return diff;
+  }
+  if (sort === "company_desc") {
+    const diff = b.company.localeCompare(a.company, "sv");
+    if (diff !== 0) return diff;
+  }
+  if (sort === "ats_desc") {
+    const diff = (b.ats_score ?? -1) - (a.ats_score ?? -1);
+    if (diff !== 0) return diff;
+  }
+  if (sort === "ats_asc") {
+    const diff = (a.ats_score ?? 101) - (b.ats_score ?? 101);
+    if (diff !== 0) return diff;
+  }
   if (sort === "status") {
     const statusCompare = a.status.localeCompare(b.status, "sv");
     if (statusCompare !== 0) return statusCompare;
   }
-  return b.applied_at.localeCompare(a.applied_at);
+  const appliedCompare = b.applied_at.localeCompare(a.applied_at);
+  if (appliedCompare !== 0) return appliedCompare;
+  return b.id.localeCompare(a.id, "sv");
+}
+
+function applicationRowTint(status: ApplicationStatus): string {
+  if (status === "offer") return "bg-emerald-900/10";
+  if (status === "interviewing" || status === "oa") return "bg-amber-900/10";
+  if (status === "rejected") return "bg-rose-900/10";
+  if (status === "withdrawn") return "bg-zinc-800/10";
+  return "";
+}
+
+function daysSinceApplied(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const appliedAt = new Date(value);
+  if (Number.isNaN(appliedAt.getTime())) return null;
+  const now = new Date();
+  const diff = now.getTime() - appliedAt.getTime();
+  if (diff < 0) return 0;
+  return Math.floor(diff / 86_400_000);
+}
+
+function formatDaysSinceApplied(value: string | null | undefined): string {
+  const days = daysSinceApplied(value);
+  if (days == null) return "—";
+  if (days < 7) return `${days}d`;
+  return `${Math.floor(days / 7)}w`;
+}
+
+function parseStatusHistory(value: Json | null | undefined): StatusTimelineEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const status = record.status;
+      const at = record.at;
+      if (typeof status !== "string" || typeof at !== "string") return null;
+      if (!APPLICATION_STATUSES.includes(status as ApplicationStatus)) return null;
+      return { status: status as ApplicationStatus, at };
+    })
+    .filter((entry): entry is StatusTimelineEntry => Boolean(entry));
+}
+
+function createStatusHistory(status: ApplicationStatus, at: string): StatusTimelineEntry[] {
+  return [{ status, at }];
+}
+
+function appendStatusHistory(
+  current: Json | null | undefined,
+  nextStatus: ApplicationStatus,
+  at: string = new Date().toISOString(),
+): StatusTimelineEntry[] {
+  const timeline = parseStatusHistory(current);
+  const last = timeline[timeline.length - 1];
+  if (last && last.status === nextStatus) {
+    return timeline;
+  }
+  return [...timeline, { status: nextStatus, at }];
+}
+
+function formatStatusHistoryTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("sv-SE", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildAtsPersistencePayload(result: AtsScanResult, source: "job_tags" | "job_description") {
+  return {
+    ats_score: result.score,
+    ats_keywords_json: {
+      matched: result.matchedKeywords,
+      missing: result.missingKeywords,
+      tracked_missing: result.trackedMissingKeywords,
+      source,
+      scanned_at: new Date().toISOString(),
+    },
+  };
 }
 
 function matchesSearch(application: ApplicationRow, query: string) {
@@ -169,20 +301,68 @@ function buildResumeSnapshot(
   };
 }
 
+function domainFromUrl(value: string): string {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function companyFaviconUrl(jobUrl: string): string | null {
+  const domain = domainFromUrl(jobUrl);
+  if (!domain) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
+}
+
+function companyFromCareerPageDomain(url: string): string | null {
+  const pastedDomain = domainFromUrl(url);
+  if (!pastedDomain) return null;
+
+  for (const entry of companyRegistry) {
+    if (!entry.career_page_url) continue;
+    const careerDomain = domainFromUrl(entry.career_page_url);
+    if (!careerDomain) continue;
+    if (pastedDomain === careerDomain || pastedDomain.endsWith(`.${careerDomain}`)) {
+      return entry.display_name;
+    }
+  }
+
+  return null;
+}
+
+async function fetchExternalJobTitle(url: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke("extract-job-title", {
+      body: { url },
+    });
+
+    if (error) return null;
+    const title = typeof data?.title === "string" ? data.title.trim() : "";
+    return title || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 export default function Applications() {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const resumeUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const handledPrefillRef = useRef<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingApplication, setEditingApplication] = useState<ApplicationRow | null>(null);
   const [form, setForm] = useState<ApplicationFormState>(emptyFormState());
+  const [urlMatchNotice, setUrlMatchNotice] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<ApplicationSort>("applied_desc");
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>("25");
   const [page, setPage] = useState(0);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
 
   const [atsDialogOpen, setAtsDialogOpen] = useState(false);
   const [atsApplication, setAtsApplication] = useState<ApplicationRow | null>(null);
@@ -284,6 +464,33 @@ export default function Applications() {
     }, {});
   }, [jobTagsQuery.data]);
 
+  const formLinkedJobQuery = useQuery({
+    queryKey: ["application-form-job", form.job_id],
+    enabled: dialogOpen && !!form.job_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("jobs")
+        .select("id, headline, description")
+        .eq("id", form.job_id!)
+        .maybeSingle();
+      if (error) throw toDisplayError(error, "Could not load the linked job for ATS preflight.");
+      return data as JobSummary | null;
+    },
+  });
+
+  const formLinkedJobTagsQuery = useQuery({
+    queryKey: ["application-form-job-tags", form.job_id],
+    enabled: dialogOpen && !!form.job_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("job_tags")
+        .select("tag")
+        .eq("job_id", form.job_id!);
+      if (error) throw toDisplayError(error, "Could not load linked job tags for ATS preflight.");
+      return (data ?? []).map((item) => item.tag);
+    },
+  });
+
   const availableResumes = (resumeVersionsQuery.data ?? []).filter((resumeVersion) => Boolean(resumeVersion.storage_path));
   const defaultResume = useMemo(
     () => availableResumes.find((resumeVersion) => resumeVersion.is_default) ?? availableResumes[0] ?? null,
@@ -291,12 +498,90 @@ export default function Applications() {
   );
   const defaultResumeId = defaultResume?.id ?? "";
 
+  const preflightAts = useMemo(() => {
+    if (!dialogOpen) return null;
+    if (!form.resume_version_id || form.resume_version_id === RESUME_NONE) return null;
+    const selectedResume = availableResumes.find((resumeVersion) => resumeVersion.id === form.resume_version_id);
+    if (!selectedResume?.parsed_text) return null;
+
+    const targetKeywords =
+      formLinkedJobTagsQuery.data && formLinkedJobTagsQuery.data.length > 0
+        ? formLinkedJobTagsQuery.data
+        : formLinkedJobQuery.data
+          ? extractKeywordsFromJobText(
+              [formLinkedJobQuery.data.headline, formLinkedJobQuery.data.description ?? ""].join(" "),
+              35,
+            )
+          : extractKeywordsFromJobText(form.ats_job_description, 35);
+
+    if (targetKeywords.length === 0) return null;
+
+    const result = runAtsScan({
+      resumeText: selectedResume.parsed_text,
+      targetKeywords,
+      trackedSkills: userSkillsQuery.data ?? [],
+    });
+
+    return {
+      result,
+      source: formLinkedJobTagsQuery.data && formLinkedJobTagsQuery.data.length > 0 ? "job_tags" as const : "job_description" as const,
+    };
+  }, [
+    availableResumes,
+    dialogOpen,
+    form.ats_job_description,
+    form.resume_version_id,
+    formLinkedJobQuery.data,
+    formLinkedJobTagsQuery.data,
+    userSkillsQuery.data,
+  ]);
+
+  useEffect(() => {
+    if (!user) return;
+    const prefillJobId = searchParams.get("prefill_job_id");
+    if (!prefillJobId || handledPrefillRef.current === prefillJobId) return;
+    handledPrefillRef.current = prefillJobId;
+
+    void (async () => {
+      const jobId = Number(prefillJobId);
+      if (!Number.isFinite(jobId)) return;
+
+      const { data, error } = await supabase
+        .from("jobs")
+        .select("id, headline, employer_name, source_url")
+        .eq("id", jobId)
+        .maybeSingle();
+      if (error || !data) return;
+
+      setEditingApplication(null);
+      setForm({
+        ...emptyFormState(defaultResumeId),
+        company: data.employer_name ?? "",
+        job_title: data.headline,
+        job_url: data.source_url ?? "",
+        job_id: data.id,
+      });
+      setUrlMatchNotice("Prefilled from Explore.");
+      setDialogOpen(true);
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete("prefill_job_id");
+        return next;
+      }, { replace: true });
+    })();
+  }, [defaultResumeId, searchParams, setSearchParams, user]);
+
   const filteredApplications = useMemo(() => {
     return (applicationsQuery.data ?? [])
       .filter((application) => (statusFilter === "all" ? true : application.status === statusFilter))
       .filter((application) => matchesSearch(application, debouncedSearch))
       .sort((a, b) => compareApplications(a, b, sort));
   }, [applicationsQuery.data, debouncedSearch, sort, statusFilter]);
+
+  const applicationsById = useMemo(
+    () => new Map((applicationsQuery.data ?? []).map((application) => [application.id, application])),
+    [applicationsQuery.data],
+  );
 
   const pageSizeValue = Number(pageSize);
   const totalPages = Math.max(1, Math.ceil(filteredApplications.length / pageSizeValue));
@@ -310,6 +595,11 @@ export default function Applications() {
       setPage(Math.max(0, totalPages - 1));
     }
   }, [page, totalPages]);
+
+  useEffect(() => {
+    const existingIds = new Set((applicationsQuery.data ?? []).map((application) => application.id));
+    setSelectedApplicationIds((current) => current.filter((id) => existingIds.has(id)));
+  }, [applicationsQuery.data]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -337,7 +627,40 @@ export default function Applications() {
     return filteredApplications.slice(start, start + pageSizeValue);
   }, [filteredApplications, page, pageSizeValue]);
 
+  const selectedApplicationSet = useMemo(() => new Set(selectedApplicationIds), [selectedApplicationIds]);
+  const selectedOnPage = useMemo(
+    () => pageItems.map((application) => application.id).filter((id) => selectedApplicationSet.has(id)),
+    [pageItems, selectedApplicationSet],
+  );
+  const allOnPageSelected = pageItems.length > 0 && selectedOnPage.length === pageItems.length;
+
+  const toggleSelection = (id: string, checked: boolean) => {
+    setSelectedApplicationIds((current) => {
+      if (checked) {
+        if (current.includes(id)) return current;
+        return [...current, id];
+      }
+      return current.filter((value) => value !== id);
+    });
+  };
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    const pageIds = pageItems.map((application) => application.id);
+    setSelectedApplicationIds((current) => {
+      if (checked) {
+        const merged = new Set([...current, ...pageIds]);
+        return Array.from(merged);
+      }
+      const pageIdSet = new Set(pageIds);
+      return current.filter((id) => !pageIdSet.has(id));
+    });
+  };
+
   const metrics = useMemo(() => computeApplicationMetrics(applicationsQuery.data ?? []), [applicationsQuery.data]);
+  const editingStatusTimeline = useMemo(
+    () => parseStatusHistory(editingApplication?.status_history),
+    [editingApplication?.status_history],
+  );
 
   const uploadResumeMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -352,6 +675,7 @@ export default function Applications() {
     },
     onSuccess: (resumeVersion) => {
       void qc.invalidateQueries({ queryKey: ["resume-versions", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["default-resume-for-ats", user?.id] });
       setForm((current) => ({ ...current, resume_version_id: resumeVersion.id }));
       toast({
         title: "Resume uploaded",
@@ -362,6 +686,26 @@ export default function Applications() {
     },
     onError: (error: unknown) => {
       toast({ title: "Could not upload resume", description: getErrorMessage(error), variant: "destructive" });
+    },
+  });
+
+  const persistAtsMutation = useMutation({
+    mutationFn: async (payload: {
+      applicationId: string;
+      result: AtsScanResult;
+      source: "job_tags" | "job_description";
+    }) => {
+      const { error } = await supabase
+        .from("applications")
+        .update(buildAtsPersistencePayload(payload.result, payload.source))
+        .eq("id", payload.applicationId);
+      if (error) throw toDisplayError(error, "Could not save ATS results on this application.");
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+    },
+    onError: (error: unknown) => {
+      toast({ title: "Could not save ATS result", description: getErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -390,8 +734,20 @@ export default function Applications() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: ApplicationStatus }) => {
-      const { error } = await supabase.from("applications").update({ status }).eq("id", id);
+    mutationFn: async ({
+      id,
+      status,
+      statusHistory,
+    }: {
+      id: string;
+      status: ApplicationStatus;
+      statusHistory: Json | null | undefined;
+    }) => {
+      const payload = {
+        status,
+        status_history: appendStatusHistory(statusHistory, status),
+      };
+      const { error } = await supabase.from("applications").update(payload).eq("id", id);
       if (error) throw toDisplayError(error, "Could not update the application status.");
     },
     onSuccess: () => {
@@ -407,12 +763,118 @@ export default function Applications() {
       const { error } = await supabase.from("applications").delete().eq("id", id);
       if (error) throw toDisplayError(error, "Could not delete this application.");
     },
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
       void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
       toast({ title: "Application deleted" });
+      setSelectedApplicationIds((current) => current.filter((id) => id !== deletedId));
     },
     onError: (error: unknown) => {
       toast({ title: "Could not delete application", description: getErrorMessage(error), variant: "destructive" });
+    },
+  });
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: async ({ ids, status }: { ids: string[]; status: ApplicationStatus }) => {
+      const updates = ids
+        .map((id) => {
+          const application = applicationsById.get(id);
+          if (!application) return null;
+          return supabase
+            .from("applications")
+            .update({
+              status,
+              status_history: appendStatusHistory(application.status_history, status),
+            })
+            .eq("id", id);
+        })
+        .filter(Boolean);
+
+      const results = await Promise.all(updates);
+      const failed = results.find((result) => result?.error);
+      if (failed?.error) throw toDisplayError(failed.error, "Could not update selected applications.");
+    },
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      toast({ title: `Updated ${variables.ids.length} applications` });
+      setSelectedApplicationIds([]);
+    },
+    onError: (error: unknown) => {
+      toast({ title: "Could not update selected applications", description: getErrorMessage(error), variant: "destructive" });
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from("applications").delete().in("id", ids);
+      if (error) throw toDisplayError(error, "Could not delete selected applications.");
+    },
+    onSuccess: (_data, ids) => {
+      void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      toast({ title: `Deleted ${ids.length} applications` });
+      setSelectedApplicationIds([]);
+    },
+    onError: (error: unknown) => {
+      toast({ title: "Could not delete selected applications", description: getErrorMessage(error), variant: "destructive" });
+    },
+  });
+
+  const importSavedAppliedMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("Sign in required");
+      const { data, error } = await supabase
+        .from("tracked_jobs")
+        .select("job_id, status, notes, created_at, updated_at, jobs!inner(id, headline, employer_name, source_url)")
+        .eq("user_id", user.id)
+        .eq("status", "applied");
+      if (error) throw toDisplayError(error, "Could not load applied jobs from Shortlist.");
+
+      const trackedRows = (data ?? []) as TrackedAppliedRow[];
+      if (trackedRows.length === 0) {
+        return { upserted: 0 };
+      }
+
+      const rows = trackedRows
+        .map((tracked) => {
+          if (!tracked.jobs) return null;
+          const appliedAt = tracked.updated_at ?? tracked.created_at ?? new Date().toISOString();
+          const base = buildSweJobsApplication({
+            userId: user.id,
+            jobId: tracked.jobs.id,
+            company: tracked.jobs.employer_name ?? "Unknown company",
+            jobTitle: tracked.jobs.headline,
+            jobUrl: tracked.jobs.source_url,
+          });
+
+          return {
+            ...base,
+            status: "applied",
+            applied_at: appliedAt,
+            notes: tracked.notes ?? "",
+            request_id: sweJobsApplicationRequestId(user.id, tracked.jobs.id),
+            status_history: createStatusHistory("applied", appliedAt),
+          } satisfies ApplicationInsert;
+        })
+        .filter((row): row is ApplicationInsert => Boolean(row));
+
+      if (rows.length === 0) {
+        return { upserted: 0 };
+      }
+
+      const { error: upsertError } = await supabase
+        .from("applications")
+        .upsert(rows, { onConflict: "user_id,request_id" });
+      if (upsertError) throw toDisplayError(upsertError, "Could not import applications from Shortlist.");
+
+      return { upserted: rows.length };
+    },
+    onSuccess: ({ upserted }) => {
+      void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      toast({
+        title: upserted > 0 ? `Imported ${upserted} application${upserted === 1 ? "" : "s"} from Shortlist` : "No applied Shortlist jobs to import",
+      });
+    },
+    onError: (error: unknown) => {
+      toast({ title: "Could not import from Shortlist", description: getErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -421,12 +883,14 @@ export default function Applications() {
   const openCreateDialog = () => {
     setEditingApplication(null);
     setForm(emptyFormState(defaultResumeId));
+    setUrlMatchNotice(null);
     setDialogOpen(true);
   };
 
   const openEditDialog = (application: ApplicationRow) => {
     setEditingApplication(application);
     setForm(buildFormState(application, resumeVersionsQuery.data ?? []));
+    setUrlMatchNotice(null);
     setDialogOpen(true);
   };
 
@@ -458,6 +922,16 @@ export default function Applications() {
     }
 
     const resumeSnapshot = buildResumeSnapshot(resumeVersionsQuery.data ?? [], editingApplication, form.resume_version_id);
+    const appliedAtIso = toAppliedAtIso(form.applied_at);
+    const atsSnapshot = preflightAts
+      ? buildAtsPersistencePayload(preflightAts.result, preflightAts.source)
+      : {
+          ats_score: editingApplication?.ats_score ?? null,
+          ats_keywords_json: editingApplication?.ats_keywords_json ?? {},
+        };
+    const statusHistorySnapshot = editingApplication
+      ? appendStatusHistory(editingApplication.status_history, form.status)
+      : createStatusHistory(form.status, appliedAtIso);
 
     upsertMutation.mutate({
       id: editingApplication?.id,
@@ -466,13 +940,15 @@ export default function Applications() {
       job_title: form.job_title.trim(),
       status: form.status,
       job_url: form.job_url.trim(),
-      applied_at: toAppliedAtIso(form.applied_at),
+      applied_at: appliedAtIso,
       resume_version_id: resumeSnapshot.resume_version_id,
       resume_label: resumeSnapshot.resume_label,
       notes: form.notes.trim(),
       source: editingApplication?.source ?? "manual",
       request_id: editingApplication?.request_id ?? null,
-      job_id: editingApplication?.job_id ?? null,
+      job_id: form.job_id,
+      status_history: statusHistorySnapshot,
+      ...atsSnapshot,
     });
   };
 
@@ -485,12 +961,13 @@ export default function Applications() {
       application.applied_at,
       application.resume_label ?? "",
       application.source,
+      application.ats_score ?? "",
       application.notes ?? "",
     ]);
 
     downloadCSV(
       "my_applications.csv",
-      ["Company", "JobTitle", "Status", "JobURL", "AppliedAt", "ResumeUsed", "Source", "Notes"],
+      ["Company", "JobTitle", "Status", "JobURL", "AppliedAt", "ResumeUsed", "Source", "ATSScore", "Notes"],
       rows,
     );
     toast({ title: `Exported ${rows.length} applications` });
@@ -523,6 +1000,8 @@ export default function Applications() {
 
     const linkedJob = atsApplication.job_id ? jobsById[atsApplication.job_id] : null;
     const linkedJobTags = atsApplication.job_id ? tagsByJobId[atsApplication.job_id] ?? [] : [];
+    const source: "job_tags" | "job_description" =
+      linkedJobTags.length > 0 ? "job_tags" : "job_description";
     const targetKeywords =
       linkedJobTags.length > 0
         ? linkedJobTags
@@ -541,16 +1020,100 @@ export default function Applications() {
       return;
     }
 
-    setAtsResult(
-      runAtsScan({
-        resumeText: resumeVersion.parsed_text,
-        targetKeywords,
-        trackedSkills: userSkillsQuery.data ?? [],
-      }),
-    );
+    const result = runAtsScan({
+      resumeText: resumeVersion.parsed_text,
+      targetKeywords,
+      trackedSkills: userSkillsQuery.data ?? [],
+    });
+    setAtsResult(result);
+    void persistAtsMutation.mutateAsync({
+      applicationId: atsApplication.id,
+      result,
+      source,
+    });
+  };
+
+  const handleJobUrlPaste = async (event: ClipboardEvent<HTMLInputElement>) => {
+    const pastedUrl = event.clipboardData.getData("text").trim();
+    if (!pastedUrl) return;
+
+    const canonical = canonicalizeJobUrl(pastedUrl);
+    const normalizedUrl = canonical ?? pastedUrl;
+
+    setForm((current) => ({ ...current, job_url: normalizedUrl }));
+    setUrlMatchNotice(null);
+
+    const exactLookupCandidates = buildUrlLookupCandidates(pastedUrl);
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("id, headline, employer_name, source_url")
+      .in("source_url", exactLookupCandidates)
+      .limit(5);
+
+    const exactMatch = !error && data && data.length > 0 ? (data[0] as UrlMatchJob) : null;
+    if (exactMatch) {
+      setForm((current) => ({
+        ...current,
+        company: exactMatch.employer_name ?? current.company,
+        job_title: exactMatch.headline,
+        job_id: exactMatch.id,
+      }));
+      setUrlMatchNotice("Matched to SweJobs role.");
+      return;
+    }
+
+    const hostPatterns = hostLookupIlikePatterns(pastedUrl);
+    if (hostPatterns.length > 0) {
+      const hostLookup = await supabase
+        .from("jobs")
+        .select("id, headline, employer_name, source_url")
+        .or(`source_url.ilike.${hostPatterns[0]},source_url.ilike.${hostPatterns[1]}`)
+        .order("published_at", { ascending: false })
+        .limit(40);
+
+      if (!hostLookup.error && hostLookup.data && hostLookup.data.length > 0) {
+        const similarMatch = selectBestSimilarUrlMatch(
+          pastedUrl,
+          hostLookup.data as UrlMatchJob[],
+        );
+        if (similarMatch) {
+          setForm((current) => ({
+            ...current,
+            company: similarMatch.employer_name ?? current.company,
+            job_title: similarMatch.headline,
+            job_id: similarMatch.id,
+          }));
+          setUrlMatchNotice("Matched to similar SweJobs role URL.");
+          return;
+        }
+      }
+    }
+
+    const fallbackCompany = companyFromCareerPageDomain(pastedUrl);
+    if (fallbackCompany) {
+      setForm((current) => ({
+        ...current,
+        company: current.company.trim() ? current.company : fallbackCompany,
+      }));
+      setUrlMatchNotice(`Company matched from domain: ${fallbackCompany}.`);
+    }
+
+    const fetchedTitle = await fetchExternalJobTitle(pastedUrl);
+    if (fetchedTitle) {
+      setForm((current) => ({
+        ...current,
+        job_title: current.job_title.trim() ? current.job_title : fetchedTitle,
+      }));
+      setUrlMatchNotice((current) =>
+        current ? `${current} Title fetched from job page.` : "Title fetched from job page.",
+      );
+    }
   };
 
   const isLoadingPage = loading || applicationsQuery.isLoading;
+  const responseGoal = 10;
+  const responseGap = Math.max(0, responseGoal - metrics.responseRate);
 
   return (
     <AppLayout>
@@ -564,14 +1127,21 @@ export default function Applications() {
               </p>
             </div>
             <div className="rounded-lg border border-border/50 bg-card/50 px-4 py-3 text-sm text-muted-foreground">
-              Applied through SweJobs? It appears here automatically when you mark a role as{" "}
-              <span className="font-medium text-foreground">applied</span>. Applied elsewhere? Add it manually and
-              keep the same pipeline in one place.
+              Mark SweJobs roles as applied to bring them here, or add applications manually.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="gap-2" onClick={exportApplications} disabled={!applicationsQuery.data?.length}>
               <FileDown className="h-4 w-4" /> Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => importSavedAppliedMutation.mutate()}
+              disabled={importSavedAppliedMutation.isPending || !user}
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+              Import from Shortlist
             </Button>
             <Button className="gap-2" onClick={openCreateDialog}>
               <Plus className="h-4 w-4" /> New Application
@@ -580,28 +1150,31 @@ export default function Applications() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-4">
-          <Card className="border-border/40 bg-card/60">
+          <Card className="border-border/40 border-t-2 border-t-stone-500/40 bg-card/60">
             <CardContent className="p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Applications</p>
               <p className="mt-2 text-2xl font-semibold">{metrics.total}</p>
             </CardContent>
           </Card>
-          <Card className="border-border/40 bg-card/60">
+          <Card className="border-border/40 border-t-2 border-t-amber-500/40 bg-card/60">
             <CardContent className="p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">OAs</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Online Assessments</p>
               <p className="mt-2 text-2xl font-semibold">{metrics.oa}</p>
             </CardContent>
           </Card>
-          <Card className="border-border/40 bg-card/60">
+          <Card className="border-border/40 border-t-2 border-t-blue-500/40 bg-card/60">
             <CardContent className="p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Interviews</p>
               <p className="mt-2 text-2xl font-semibold">{metrics.interviewing}</p>
             </CardContent>
           </Card>
-          <Card className="border-border/40 bg-card/60">
+          <Card className="border-border/40 border-t-2 border-t-emerald-500/40 bg-card/60">
             <CardContent className="p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Response Rate</p>
               <p className="mt-2 text-2xl font-semibold">{metrics.responseRate}%</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Goal {responseGoal}% {responseGap > 0 ? `· ${responseGap}% to go` : "· on target"}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -656,6 +1229,38 @@ export default function Applications() {
               </Select>
             </div>
 
+            {selectedApplicationIds.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/35 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  {selectedApplicationIds.length} selected
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={bulkStatusMutation.isPending}
+                    onClick={() => bulkStatusMutation.mutate({ ids: selectedApplicationIds, status: "rejected" })}
+                  >
+                    Mark rejected
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={bulkDeleteMutation.isPending}
+                    onClick={() => {
+                      if (!window.confirm(`Delete ${selectedApplicationIds.length} selected applications?`)) return;
+                      bulkDeleteMutation.mutate(selectedApplicationIds);
+                    }}
+                  >
+                    Delete selected
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedApplicationIds([])}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             {isLoadingPage ? (
               <div className="rounded-lg border border-border/50 bg-background/40 p-8 text-sm text-muted-foreground">
                 Loading applications…
@@ -679,106 +1284,184 @@ export default function Applications() {
               </div>
             ) : (
               <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Applied</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Resume</TableHead>
-                      <TableHead>Job URL</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pageItems.map((application) => (
-                      <TableRow key={application.id}>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {formatApplicationDate(application.applied_at)}
-                        </TableCell>
-                        <TableCell className="font-medium">{application.company}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">{application.job_title}</p>
-                            {application.notes ? (
-                              <p className="line-clamp-2 text-xs text-muted-foreground">{application.notes}</p>
-                            ) : null}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={application.status}
-                            onValueChange={(value) =>
-                              statusMutation.mutate({
-                                id: application.id,
-                                status: value as ApplicationStatus,
-                              })
-                            }
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                "w-[150px] border-0 shadow-none",
-                                STATUS_COLORS[application.status as ApplicationStatus],
-                              )}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {APPLICATION_STATUSES.map((status) => (
-                                <SelectItem key={status} value={status}>
-                                  {STATUS_LABELS[status]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="max-w-[180px] truncate text-sm text-muted-foreground">
-                          {application.resume_label || "No resume attached"}
-                        </TableCell>
-                        <TableCell>
-                          {application.job_url ? (
-                            <a
-                              href={application.job_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex max-w-[180px] items-center gap-1 truncate text-sm text-primary hover:underline"
-                            >
-                              <span className="truncate">{application.job_url}</span>
-                              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No link</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="capitalize">
-                            {application.source}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="outline" size="sm" className="gap-1" onClick={() => openEditDialog(application)}>
-                              <Pencil className="h-3.5 w-3.5" /> Edit
-                            </Button>
-                            <Button variant="outline" size="sm" className="gap-1" onClick={() => openAtsDialog(application)}>
-                              <FileSearch className="h-3.5 w-3.5" /> ATS
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1 text-destructive hover:text-destructive"
-                              onClick={() => deleteMutation.mutate(application.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" /> Delete
-                            </Button>
-                          </div>
-                        </TableCell>
+                <div className="w-full overflow-x-auto">
+                  <Table className="w-full table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[42px]">
+                          <Checkbox
+                            checked={allOnPageSelected}
+                            onCheckedChange={(checked) => toggleSelectAllOnPage(Boolean(checked))}
+                            aria-label="Select all applications on this page"
+                          />
+                        </TableHead>
+                        <TableHead className="w-[110px]">Applied</TableHead>
+                        <TableHead className="w-[72px]">Age</TableHead>
+                        <TableHead className="w-[154px]">Company</TableHead>
+                        <TableHead className="w-[190px]">Title</TableHead>
+                        <TableHead className="w-[148px]">Status</TableHead>
+                        <TableHead className="w-[76px]">ATS</TableHead>
+                        <TableHead className="w-[130px]">Resume</TableHead>
+                        <TableHead className="w-[170px]">Job URL</TableHead>
+                        <TableHead className="w-[90px]">Source</TableHead>
+                        <TableHead className="w-[126px] text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {pageItems.map((application) => {
+                        const faviconUrl = application.job_url ? companyFaviconUrl(application.job_url) : null;
+                        return (
+                        <TableRow
+                          key={application.id}
+                          className={cn(applicationRowTint(application.status as ApplicationStatus), "transition-colors hover:bg-muted/30")}
+                        >
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedApplicationSet.has(application.id)}
+                              onCheckedChange={(checked) => toggleSelection(application.id, Boolean(checked))}
+                              aria-label={`Select application ${application.company} ${application.job_title}`}
+                            />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {formatApplicationDate(application.applied_at)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {formatDaysSinceApplied(application.applied_at)}
+                          </TableCell>
+                          <TableCell className="max-w-[154px]">
+                            <div className="flex items-center gap-2">
+                              {faviconUrl ? (
+                                <img
+                                  src={faviconUrl}
+                                  alt=""
+                                  className="h-4 w-4 shrink-0 rounded-sm"
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : null}
+                              <span className="truncate font-medium" title={application.company}>
+                                {application.company}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <p className="truncate font-medium" title={application.job_title}>{application.job_title}</p>
+                              {application.notes ? (
+                                <p className="line-clamp-2 text-xs text-muted-foreground" title={application.notes}>{application.notes}</p>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={application.status}
+                              onValueChange={(value) =>
+                                statusMutation.mutate({
+                                  id: application.id,
+                                  status: value as ApplicationStatus,
+                                  statusHistory: application.status_history,
+                                })
+                              }
+                            >
+                              <SelectTrigger
+                                className={cn(
+                                  "w-[124px] border-0 shadow-none",
+                                  STATUS_COLORS[application.status as ApplicationStatus],
+                                )}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {APPLICATION_STATUSES.map((status) => (
+                                  <SelectItem key={status} value={status}>
+                                    {STATUS_LABELS[status]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            {application.ats_score != null ? (
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  application.ats_score >= 70
+                                    ? "border-emerald-500/30 text-emerald-300"
+                                    : application.ats_score >= 40
+                                      ? "border-amber-500/30 text-amber-300"
+                                      : "border-rose-500/30 text-rose-300",
+                                )}
+                              >
+                                {application.ats_score}%
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[130px] truncate text-sm text-muted-foreground" title={application.resume_label || "No resume attached"}>
+                            {application.resume_label || "No resume attached"}
+                          </TableCell>
+                          <TableCell>
+                            {application.job_url ? (
+                              <a
+                                href={application.job_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex max-w-[156px] items-center gap-1 truncate text-sm text-primary hover:underline"
+                                title={application.job_url}
+                              >
+                                <span className="truncate">{application.job_url}</span>
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No link</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="capitalize">
+                              {application.source}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-7 w-7"
+                                title="Edit application"
+                                aria-label="Edit application"
+                                onClick={() => openEditDialog(application)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-7 w-7"
+                                title="Run ATS scan"
+                                aria-label="Run ATS scan"
+                                onClick={() => openAtsDialog(application)}
+                              >
+                                <FileSearch className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                title="Delete application"
+                                aria-label="Delete application"
+                                onClick={() => deleteMutation.mutate(application.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
 
                 <div className="flex flex-col gap-3 border-t border-border/50 pt-3 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
                   <p>
@@ -811,10 +1494,10 @@ export default function Applications() {
           <p className="text-xs text-muted-foreground">
             Discovery tracking still lives in{" "}
             <Link to="/tracked" className="text-primary underline">
-              Tracker
+              Shortlist
             </Link>
             . Manage uploaded PDFs in{" "}
-            <Link to="/profile" className="text-primary underline">
+            <Link to="/resumes" className="text-primary underline">
               Resume Library
             </Link>
             .
@@ -831,21 +1514,46 @@ export default function Applications() {
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingApplication ? "Edit application" : "New application"}</DialogTitle>
             <DialogDescription>
-              Manual applications live here, and SweJobs-linked ones can be completed with the PDF resume you actually used.
+              Log where you applied. Paste a URL and we'll fill in what we can.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4">
+          <div className="grid max-h-[calc(90vh-11rem)] gap-4 overflow-y-auto pr-1">
+            <div className="grid gap-2">
+              <Label htmlFor="application-url">Job URL</Label>
+              <Input
+                id="application-url"
+                value={form.job_url}
+                autoFocus={!editingApplication}
+                onChange={(event) => {
+                  setUrlMatchNotice(null);
+                  setForm((current) => ({ ...current, job_url: event.target.value, job_id: null }));
+                }}
+                onPaste={(event) => {
+                  void handleJobUrlPaste(event);
+                }}
+                placeholder="Paste the job posting URL"
+              />
+              <p className="text-xs text-muted-foreground">
+                We'll try to fill in the company and title for you.
+              </p>
+              {urlMatchNotice ? (
+                <p className="text-xs text-emerald-300">{urlMatchNotice}</p>
+              ) : null}
+            </div>
+
             <div className="grid gap-2">
               <Label htmlFor="application-company">Company</Label>
               <Input
                 id="application-company"
                 value={form.company}
-                onChange={(event) => setForm((current) => ({ ...current, company: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, company: event.target.value, job_id: null }))
+                }
                 placeholder="Company name"
               />
             </div>
@@ -891,15 +1599,37 @@ export default function Applications() {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="application-url">Job URL</Label>
-              <Input
-                id="application-url"
-                value={form.job_url}
-                onChange={(event) => setForm((current) => ({ ...current, job_url: event.target.value }))}
-                placeholder="https://company.example/jobs/123"
-              />
-            </div>
+            {editingApplication ? (
+              <div className="rounded-md border border-border/50 bg-background/30 px-3 py-2">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Status timeline</p>
+                <div className="mt-2 space-y-1">
+                  {editingStatusTimeline.length > 0 ? (
+                    editingStatusTimeline.map((entry) => (
+                      <p key={`${entry.status}-${entry.at}`} className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{STATUS_LABELS[entry.status]}</span>
+                        {" · "}
+                        {formatStatusHistoryTimestamp(entry.at)}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No status timeline yet.</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {!form.job_id ? (
+              <div className="grid gap-2">
+                <Label htmlFor="application-ats-target">Job description (optional for ATS preflight)</Label>
+                <Textarea
+                  id="application-ats-target"
+                  value={form.ats_job_description}
+                  onChange={(event) => setForm((current) => ({ ...current, ats_job_description: event.target.value }))}
+                  placeholder="Paste key requirements if this role is not in SweJobs yet."
+                  rows={4}
+                />
+              </div>
+            ) : null}
 
             <div className="grid gap-3">
               <div className="flex items-center justify-between gap-2">
@@ -928,11 +1658,11 @@ export default function Applications() {
               </Select>
 
               <p className="text-xs text-muted-foreground">
-                Manage PDF resumes in{" "}
-                <Link to="/profile" className="text-primary underline">
+                Or upload a new PDF right here. You can also manage resumes in{" "}
+                <Link to="/resumes" className="text-primary underline">
                   Resume Library
                 </Link>
-                . Upload here if you want to stay in flow.
+                .
               </p>
 
               {editingApplication?.resume_label && !editingApplication.resume_version_id ? (
@@ -940,6 +1670,20 @@ export default function Applications() {
                   This row still has a legacy label saved: <span className="font-medium text-foreground">{editingApplication.resume_label}</span>.
                   Select a PDF resume to replace it.
                 </p>
+              ) : null}
+
+              {preflightAts ? (
+                <div className="rounded-md border border-border/50 bg-background/30 px-3 py-2 text-xs">
+                  <p className="font-medium text-foreground">ATS preflight: {preflightAts.result.score}% match</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Matched {preflightAts.result.matchedKeywords.length}, missing {preflightAts.result.missingKeywords.length}.
+                  </p>
+                  {preflightAts.result.missingKeywords.length > 0 ? (
+                    <p className="mt-1 line-clamp-2 text-muted-foreground">
+                      Missing: {preflightAts.result.missingKeywords.slice(0, 6).join(", ")}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
 
@@ -967,7 +1711,7 @@ export default function Applications() {
       </Dialog>
 
       <Dialog open={atsDialogOpen} onOpenChange={setAtsDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>ATS Scan</DialogTitle>
             <DialogDescription>
@@ -976,7 +1720,7 @@ export default function Applications() {
           </DialogHeader>
 
           {atsApplication ? (
-            <div className="grid gap-4">
+            <div className="grid max-h-[calc(90vh-11rem)] gap-4 overflow-y-auto pr-1">
               <div className="rounded-lg border border-border/50 bg-background/30 px-4 py-3">
                 <p className="font-medium">
                   {atsApplication.company} · {atsApplication.job_title}

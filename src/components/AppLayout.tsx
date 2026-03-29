@@ -27,7 +27,6 @@ import {
 import {
   Activity,
   Compass,
-  Kanban,
   ClipboardList,
   LogOut,
   LogIn,
@@ -48,12 +47,12 @@ import { useState, useEffect } from "react";
 const NAV_ITEMS = [
   { path: "/", label: "Overview", icon: Activity },
   { path: "/jobs", label: "Explore", icon: Compass },
-  { path: "/tracked", label: "Tracker", icon: Kanban },
+  { path: "/tracked", label: "Shortlist", icon: Bookmark },
   { path: "/applications", label: "Applications", icon: ClipboardList },
 ];
 
 const MORE_ITEMS = [
-  { path: "/profile", label: "Resume Library", icon: User },
+  { path: "/resumes", label: "Resume Library", icon: User },
   { path: "/skills", label: "Skill Gap", icon: Target },
   { path: "/watchlist", label: "Company Watchlist", icon: Building },
   { path: "/digest", label: "Market Digest", icon: BarChart3 },
@@ -96,7 +95,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Mobile hamburger */}
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-muted-foreground md:hidden">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Open navigation menu"
+                  className="h-9 w-9 rounded-xl text-muted-foreground md:hidden"
+                >
                   <Menu className="h-4 w-4" />
                 </Button>
               </SheetTrigger>
@@ -165,7 +169,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     size="sm"
                     className={`h-10 gap-1.5 rounded-xl px-4 text-sm ${
                       isActive
-                        ? "border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                        ? "relative border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] after:absolute after:bottom-1 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:rounded-full after:bg-primary"
                         : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                     }`}
                   >
@@ -184,7 +188,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   size="sm"
                   className={`h-10 gap-1.5 rounded-xl px-4 text-sm ${
                     moreActive
-                      ? "border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                      ? "relative border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] after:absolute after:bottom-1 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:rounded-full after:bg-primary"
                       : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                   }`}
                 >
@@ -208,6 +212,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="sm"
+              aria-label="Open command palette"
               onClick={() => setCmdOpen(true)}
               className="hidden h-10 gap-2 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground md:flex"
             >
@@ -258,7 +263,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <p className="text-xs text-muted-foreground">SweJobs</p>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Link to="/jobs" className="hover:text-foreground">Explore</Link>
-            <Link to="/tracked" className="hover:text-foreground">Tracker</Link>
+            <Link to="/tracked" className="hover:text-foreground">Shortlist</Link>
             <Link to="/digest" className="hover:text-foreground">Digest</Link>
           </div>
         </div>

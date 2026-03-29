@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -24,6 +25,48 @@ from .storage import SupabaseStorage, payload_hash
 from .target_profile import TargetProfile
 
 logger = logging.getLogger(__name__)
+
+
+_DEDUP_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "for",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+    "with",
+    "junior",
+    "senior",
+    "mid",
+    "level",
+    "stockholm",
+    "sweden",
+}
+
+
+def _normalize_match_text(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9åäö]+", " ", value.lower())).strip()
+
+
+def _headline_tokens(headline: str) -> set[str]:
+    normalized = _normalize_match_text(headline)
+    if not normalized:
+        return set()
+    return {token for token in normalized.split() if len(token) > 2 and token not in _DEDUP_STOPWORDS}
+
+
+def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    overlap = len(left & right)
+    union = len(left | right)
+    if union == 0:
+        return 0.0
+    return overlap / union
 
 
 class IngestionPipeline:
@@ -269,14 +312,50 @@ class IngestionPipeline:
                 seen_urls.add(source_url)
             deduped_rows.append((job_row, tags))
 
+        # Fallback dedup to avoid cross-provider duplicates when source URLs differ.
+        # Collapse exact company+location+headline rows first, then near-duplicates by headline token overlap.
+        semantic_deduped_rows: list[tuple[dict[str, Any], list[str]]] = []
+        seen_signatures: dict[tuple[str, str], list[set[str]]] = {}
+        seen_exact_signatures: set[tuple[str, str, str]] = set()
+        for job_row, tags in deduped_rows:
+            company_key = _normalize_match_text(
+                str(job_row.get("company_canonical") or job_row.get("employer_name") or "")
+            )
+            location_key = _normalize_match_text(
+                " ".join(
+                    [
+                        str(job_row.get("municipality") or ""),
+                        str(job_row.get("region") or ""),
+                    ]
+                )
+            )
+            headline_key = _normalize_match_text(str(job_row.get("headline") or ""))
+            headline_key_tokens = _headline_tokens(str(job_row.get("headline") or ""))
+
+            if company_key and location_key and headline_key:
+                exact_signature = (company_key, location_key, headline_key)
+                if exact_signature in seen_exact_signatures:
+                    continue
+                seen_exact_signatures.add(exact_signature)
+
+            if company_key and location_key and len(headline_key_tokens) >= 3:
+                signature_key = (company_key, location_key)
+                prior_tokens = seen_signatures.get(signature_key, [])
+                is_duplicate = any(_jaccard_similarity(headline_key_tokens, existing) >= 0.75 for existing in prior_tokens)
+                if is_duplicate:
+                    continue
+                seen_signatures.setdefault(signature_key, []).append(headline_key_tokens)
+
+            semantic_deduped_rows.append((job_row, tags))
+
         existing_by_url = self.storage.fetch_jobs_by_source_urls(
-            [str(job.get("source_url") or "").strip() for job, _ in deduped_rows]
+            [str(job.get("source_url") or "").strip() for job, _ in semantic_deduped_rows]
         )
 
         jobs: list[dict[str, Any]] = []
         tags_by_job_id: dict[int, list[str]] = {}
         target_count = 0
-        for job_row, tags in deduped_rows:
+        for job_row, tags in semantic_deduped_rows:
             source_url = str(job_row.get("source_url") or "").strip()
             if source_url:
                 existing = existing_by_url.get(source_url)
@@ -536,6 +615,11 @@ class IngestionPipeline:
     def _feed_state_key(feed_key: str, suffix: str) -> str:
         return f"feed:{feed_key}:{suffix}"
 
+    @staticmethod
+    def _company_state_key(company_canonical: str, suffix: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(company_canonical).lower()).strip("_")
+        return f"company:{normalized}:{suffix}"
+
     def _fetch_company_feed(self, feed: CompanyFeed, *, max_rows: int, max_http: int):
         if feed.provider == "greenhouse":
             return fetch_greenhouse_jobs(
@@ -712,15 +796,21 @@ class IngestionPipeline:
             miss_key = self._feed_state_key(feed.feed_key, "consecutive_miss_count")
             auto_key = self._feed_state_key(feed.feed_key, "auto_disabled")
             if self._company_feed_fetch_succeeded(fetch_result, persist_error=persist_error):
+                now_iso = datetime.now(UTC).isoformat()
                 updates[miss_key] = "0"
                 updates[auto_key] = "false"
-                updates[self._feed_state_key(feed.feed_key, "last_success_at")] = datetime.now(UTC).isoformat()
+                updates[self._feed_state_key(feed.feed_key, "last_success_at")] = now_iso
+                updates[self._feed_state_key(feed.feed_key, "last_seen_at")] = now_iso
+                updates[self._company_state_key(feed.company_canonical, "last_seen_at")] = now_iso
+                updates[self._company_state_key(feed.company_canonical, "last_rows_seen")] = str(persisted_rows)
+                updates[self._company_state_key(feed.company_canonical, "last_status")] = "ok"
             else:
                 previous_miss = int(str(state.get(miss_key, "0")) or "0")
                 next_miss = previous_miss + 1
                 updates[miss_key] = str(next_miss)
                 if next_miss >= self.feed_consecutive_miss_threshold:
                     updates[auto_key] = "true"
+                updates[self._company_state_key(feed.company_canonical, "last_status")] = "error"
 
             self.storage.upsert_ingestion_state(updates)
             state.update(updates)

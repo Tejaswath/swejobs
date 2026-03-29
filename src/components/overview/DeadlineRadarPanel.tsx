@@ -38,26 +38,22 @@ export function DeadlineRadarPanel({
           <div className="mt-5 grid gap-3 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, index) => (
               <div key={index} className="rounded-[24px] border border-border/60 bg-background/35 p-4">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="mt-3 h-12 w-full" />
-                <Skeleton className="mt-2 h-12 w-full" />
+                <Skeleton className="h-4 w-24 animate-shimmer" />
+                <Skeleton className="mt-3 h-12 w-full animate-shimmer" />
+                <Skeleton className="mt-2 h-12 w-full animate-shimmer" />
               </div>
             ))}
           </div>
         ) : buckets.length === 0 ? (
-          <div className="mt-5 rounded-[24px] border border-dashed border-border/60 bg-background/35 p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-base font-medium text-foreground">No upcoming deadlines right now</p>
-                <p className="mt-1 text-sm text-muted-foreground">Use Explore to keep building your shortlist before the next close dates appear.</p>
-              </div>
-              <Button asChild variant="outline" className="gap-1.5 self-start">
-                <Link to="/jobs">
-                  Explore active roles
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </div>
+          <div className="mt-5 flex flex-col items-center gap-3 rounded-[24px] border border-dashed border-border/60 bg-background/35 p-8 text-center">
+            <CalendarClock className="h-8 w-8 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">No upcoming deadlines</p>
+            <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+              <Link to="/jobs">
+                Explore roles
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </Button>
           </div>
         ) : (
           <div
@@ -84,35 +80,24 @@ export function DeadlineRadarPanel({
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-foreground/90">{bucket.label}</p>
-                  </div>
+                  <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-foreground/90">{bucket.label}</p>
                   <span className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium", bucket.badgeClassName)}>
                     {bucket.count}
                   </span>
                 </div>
 
-                <div className="mt-4 space-y-2">
-                  {bucket.jobs.map((job) => (
-                    <Link
-                      key={job.id}
-                      to={job.href}
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      className="group block rounded-2xl border border-border/60 bg-background/70 p-3 transition-colors hover:border-primary/25 hover:bg-background/90"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-foreground">{job.headline}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">{job.employerName}</p>
-                        </div>
-                        <span className="shrink-0 rounded-full border border-border/60 bg-card/85 px-2 py-1 text-[11px] text-muted-foreground">
-                          {job.deadlineLabel}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 h-8 w-full justify-between text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(bucket.href);
+                  }}
+                >
+                  Open roles
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
               </div>
             ))}
           </div>

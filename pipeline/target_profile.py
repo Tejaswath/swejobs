@@ -7,10 +7,43 @@ from typing import Any
 import yaml
 
 
+COMPANY_SUFFIX_TOKENS = {
+    "ab",
+    "aktiebolag",
+    "ag",
+    "gmbh",
+    "group",
+    "holding",
+    "holdings",
+    "inc",
+    "ltd",
+    "limited",
+    "corp",
+    "corporation",
+    "plc",
+    "asa",
+    "oy",
+    "publ",
+}
+
+
 def _normalize_company_name(value: str) -> str:
     text = "".join(ch.lower() if ch.isalnum() else " " for ch in value).strip()
     tokens = [token for token in text.split() if token]
     return " ".join(tokens)
+
+
+def _strip_company_suffix_tokens(value: str) -> str:
+    tokens = [token for token in value.split() if token]
+    while len(tokens) > 1 and tokens[-1] in COMPANY_SUFFIX_TOKENS:
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def _token_overlap(left: set[str], right: set[str]) -> int:
+    if not left or not right:
+        return 0
+    return len(left & right)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -66,7 +99,42 @@ class TargetProfile:
         if not employer_name:
             return "", "unknown"
         normalized = _normalize_company_name(employer_name)
-        canonical = self.company_alias_map.get(normalized, normalized)
+        stripped = _strip_company_suffix_tokens(normalized)
+
+        for candidate in (normalized, stripped):
+            if not candidate:
+                continue
+            canonical = self.company_alias_map.get(candidate)
+            if canonical:
+                return canonical, self.company_tier_map.get(canonical, "unknown")
+            if candidate in self.company_tier_map:
+                return candidate, self.company_tier_map.get(candidate, "unknown")
+
+        target_tokens = set(stripped.split()) if stripped else set(normalized.split())
+        best_match: tuple[int, int, str] | None = None
+        if target_tokens:
+            for alias, canonical in self.company_alias_map.items():
+                alias_tokens = set(_strip_company_suffix_tokens(alias).split())
+                if not alias_tokens:
+                    continue
+                overlap = _token_overlap(target_tokens, alias_tokens)
+                if overlap == 0:
+                    continue
+                subset_match = alias_tokens.issubset(target_tokens)
+                ratio = overlap / max(1, len(alias_tokens))
+                if not subset_match and ratio < 0.7:
+                    continue
+                if len(alias_tokens) == 1 and not subset_match:
+                    continue
+                ranking = (overlap, len(alias_tokens), canonical)
+                if best_match is None or ranking > best_match:
+                    best_match = ranking
+
+        if best_match is not None:
+            canonical = best_match[2]
+            return canonical, self.company_tier_map.get(canonical, "unknown")
+
+        canonical = stripped or normalized
         tier = self.company_tier_map.get(canonical, "unknown")
         return canonical, tier
 
@@ -159,9 +227,15 @@ def _load_company_aliases(path: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     for alias, canonical in aliases.items():
         normalized_alias = _normalize_company_name(str(alias))
+        stripped_alias = _strip_company_suffix_tokens(normalized_alias)
         normalized_canonical = _normalize_company_name(str(canonical))
+        stripped_canonical = _strip_company_suffix_tokens(normalized_canonical)
         if normalized_alias and normalized_canonical:
             result[normalized_alias] = normalized_canonical
+            if stripped_alias:
+                result.setdefault(stripped_alias, normalized_canonical)
+            if stripped_canonical:
+                result.setdefault(stripped_canonical, stripped_canonical)
     return result
 
 

@@ -41,7 +41,7 @@ export function AdvancedFiltersPopover({ values, onChange }: AdvancedFiltersPopo
         <div className="space-y-1">
           <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Suppression rules</h3>
           <p className="text-xs text-muted-foreground/80">
-            Relax these when your search is too narrow.
+            These controls remove roles that violate your constraints.
           </p>
         </div>
 
@@ -80,7 +80,7 @@ export function AdvancedFiltersPopover({ values, onChange }: AdvancedFiltersPopo
 
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="hide-three-plus-years" className="cursor-pointer text-xs">
-              Hide 3+ years
+              Hide 3+ years (strict)
             </Label>
             <Switch
               id="hide-three-plus-years"

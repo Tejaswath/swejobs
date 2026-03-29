@@ -15,7 +15,13 @@ DEFAULT_PROVIDER_ORDER = (
     "workday",
     "html_fallback",
 )
-ALLOWED_REGISTRY_STATUSES = {"connected", "planned", "blocked", "html_fallback_candidate"}
+ALLOWED_REGISTRY_STATUSES = {
+    "connected",
+    "connected_jobtech",
+    "planned",
+    "blocked",
+    "html_fallback_candidate",
+}
 
 
 def _normalize_company_name(value: str) -> str:

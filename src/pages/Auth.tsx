@@ -9,12 +9,14 @@ import { Activity } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Auth() {
-  const { user, loading, signIn, signUp, signInWithGoogle } = useAuth();
+  const { user, loading, signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const googleAuthEnabled = import.meta.env.VITE_GOOGLE_AUTH_ENABLED === "true";
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   useEffect(() => {
     document.title = "Sign In | SweJobs";
@@ -30,6 +32,10 @@ export default function Auth() {
   if (user) return <Navigate to="/jobs" replace />;
 
   const handleSubmit = async (mode: "login" | "register") => {
+    if (!isValidEmail(email)) {
+      toast({ title: "Invalid email", description: "Enter a valid email address.", variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     const fn = mode === "login" ? signIn : signUp;
     const { error } = await fn(email, password);
@@ -49,6 +55,21 @@ export default function Auth() {
     if (error) {
       toast({ title: "Google sign-in error", description: error.message, variant: "destructive" });
     }
+  };
+
+  const handleResetPassword = async () => {
+    if (!isValidEmail(email)) {
+      toast({ title: "Enter your email first", description: "Provide a valid email to receive a reset link.", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await resetPassword(email);
+    setSubmitting(false);
+    if (error) {
+      toast({ title: "Reset failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Reset email sent", description: "Check your inbox for the password reset link." });
   };
 
   return (
@@ -108,12 +129,26 @@ export default function Auth() {
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSubmit(mode)}
                 />
+                {mode === "login" ? (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-0 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={handleResetPassword}
+                      disabled={submitting}
+                    >
+                      Forgot password?
+                    </Button>
+                  </div>
+                ) : null}
                 {mode === "register" && (
                   <p className="text-xs text-muted-foreground">Password must be at least 6 characters.</p>
                 )}
                 <Button
                   className="w-full"
-                  disabled={submitting || !email || !password}
+                  disabled={submitting || !isValidEmail(email) || !password}
                   onClick={() => handleSubmit(mode)}
                 >
                   {submitting ? "..." : mode === "login" ? "Sign in" : "Create account"}

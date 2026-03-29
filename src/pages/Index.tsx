@@ -1,32 +1,28 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { Bookmark, ChevronDown, ChevronUp, Eye, FileText } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
 import { DeadlineRadarPanel } from "@/components/overview/DeadlineRadarPanel";
-import { PipelinePulsePanel } from "@/components/overview/PipelinePulsePanel";
 import { WatchlistPulsePanel } from "@/components/overview/WatchlistPulsePanel";
-import { StudyFocusPanel } from "@/components/overview/StudyFocusPanel";
 import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
-import { pickLatestDigest, type DigestRow } from "@/lib/digest";
-import { computeApplicationMetrics } from "@/lib/applications";
+import { cn } from "@/lib/utils";
 
 import type {
   DeadlineBucketViewModel,
   OverviewSignalStripItem,
-  PipelineMetric,
-  StudySkillChip,
 } from "@/components/overview/types";
 
 type UpcomingDeadlineJob = {
   id: number;
-  headline: string;
-  employer_name: string | null;
   application_deadline: string | null;
 };
 
@@ -45,6 +41,18 @@ type ParsedRisingSkill = {
   skill: string;
   pctChange: number;
 };
+
+type RecentActivityItem = {
+  id: string;
+  at: string;
+  kind: "shortlist" | "application" | "watch";
+  company: string;
+  role?: string;
+  href?: string;
+};
+
+const ONBOARDING_DISMISSED_KEY = "swejobs.overview.onboarding.dismissed.v1";
+const OVERVIEW_LAST_VISIT_KEY = "swejobs.overview.last-visit.v1";
 
 function safeNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
@@ -88,13 +96,6 @@ function deadlineBucket(deadlineDate: string | null): keyof DeadlineGroups {
   return "later";
 }
 
-function formatDeadline(deadlineDate: string | null, bucket: keyof DeadlineGroups): string {
-  const parsed = parseDeadlineDate(deadlineDate);
-  if (!parsed) return "—";
-  if (bucket === "today") return "Today";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
-}
-
 function parseTopSkills(raw: unknown): ParsedTopSkill[] {
   if (!Array.isArray(raw)) return [];
 
@@ -128,21 +129,40 @@ function parseRisingSkills(raw: unknown): ParsedRisingSkill[] {
     .filter((value) => value.pctChange !== 0);
 }
 
-function uniqueByName(skills: StudySkillChip[]): StudySkillChip[] {
-  const seen = new Set<string>();
-  return skills.filter((skill) => {
-    const key = skill.name.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function relativeTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const deltaMs = Date.now() - timestamp;
+  const minutes = Math.max(1, Math.floor(deltaMs / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 export default function Index() {
   const { user } = useAuth();
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [onboardingExpanded, setOnboardingExpanded] = useState(false);
+  const [previousVisitIso, setPreviousVisitIso] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "SweJobs — Swedish Tech Job Tracker";
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setOnboardingDismissed(false);
+      return;
+    }
+    setOnboardingDismissed(localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "true");
+  }, [user]);
+
+  useEffect(() => {
+    const previous = localStorage.getItem(OVERVIEW_LAST_VISIT_KEY);
+    setPreviousVisitIso(previous);
+    localStorage.setItem(OVERVIEW_LAST_VISIT_KEY, new Date().toISOString());
   }, []);
 
   const jobCountQuery = useQuery({
@@ -160,43 +180,27 @@ export default function Index() {
 
   const latestDigestQuery = useQuery({
     queryKey: ["latest-digest", "rolling_30d"],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
-      const { data, error } = await supabase
+      const rollingResult = await supabase
+        .from("weekly_digests")
+        .select("id, digest_json, period_start, period_end, generated_at")
+        .contains("digest_json", { window_type: "rolling_30d" })
+        .order("generated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (rollingResult.error) throw rollingResult.error;
+      if (rollingResult.data) return rollingResult.data;
+
+      const fallback = await supabase
         .from("weekly_digests")
         .select("id, digest_json, period_start, period_end, generated_at")
         .order("generated_at", { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      return pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
-    },
-  });
-
-  const trackedJobsQuery = useQuery({
-    queryKey: ["tracked-summary", user?.id],
-    enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("tracked_jobs")
-        .select("status, job_id, jobs(headline, employer_name, application_deadline)")
-        .eq("user_id", user!.id)
-        .order("updated_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
-
-  const applicationsQuery = useQuery({
-    queryKey: ["applications", user?.id],
-    enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("applications")
-        .select("status")
-        .eq("user_id", user!.id)
-        .order("status", { ascending: true });
-      if (error) throw error;
-      return data ?? [];
+        .limit(1)
+        .maybeSingle();
+      if (fallback.error) throw fallback.error;
+      return fallback.data;
     },
   });
 
@@ -205,7 +209,7 @@ export default function Index() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("id, headline, employer_name, application_deadline")
+        .select("id, application_deadline")
         .eq("is_active", true)
         .eq("is_target_role", true)
         .not("application_deadline", "is", null)
@@ -246,21 +250,120 @@ export default function Index() {
     },
   });
 
+  const newRolesSinceLastVisitQuery = useQuery({
+    queryKey: ["overview-new-roles-since-last-visit", previousVisitIso],
+    enabled: !!previousVisitIso,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true)
+        .eq("is_target_role", true)
+        .gt("published_at", previousVisitIso!);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
+  const onboardingProgressQuery = useQuery({
+    queryKey: ["onboarding-progress", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const [resumeResult, skillResult, searchResult] = await Promise.all([
+        supabase
+          .from("resume_versions")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user!.id)
+          .not("storage_path", "is", null),
+        supabase
+          .from("user_skills")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user!.id),
+        supabase
+          .from("saved_searches")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user!.id),
+      ]);
+
+      if (resumeResult.error) throw resumeResult.error;
+      if (skillResult.error) throw skillResult.error;
+      if (searchResult.error) throw searchResult.error;
+
+      return {
+        resumeCount: resumeResult.count ?? 0,
+        skillCount: skillResult.count ?? 0,
+        searchCount: searchResult.count ?? 0,
+      };
+    },
+  });
+
+  const recentActivityQuery = useQuery({
+    queryKey: ["overview-recent-activity", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const [trackedResult, applicationsResult, watchlistResult] = await Promise.all([
+        supabase
+          .from("tracked_jobs")
+          .select("id, job_id, status, updated_at, jobs(headline, employer_name)")
+          .eq("user_id", user!.id)
+          .order("updated_at", { ascending: false })
+          .limit(5),
+        supabase
+          .from("applications")
+          .select("id, status, updated_at, company, job_title")
+          .eq("user_id", user!.id)
+          .order("updated_at", { ascending: false })
+          .limit(5),
+        supabase
+          .from("watched_companies")
+          .select("id, employer_name, created_at")
+          .eq("user_id", user!.id)
+          .order("created_at", { ascending: false })
+          .limit(5),
+      ]);
+
+      if (trackedResult.error) throw trackedResult.error;
+      if (applicationsResult.error) throw applicationsResult.error;
+      if (watchlistResult.error) throw watchlistResult.error;
+
+      const trackedItems: RecentActivityItem[] = (trackedResult.data ?? []).map((item) => {
+        const job = item.jobs as { headline?: string | null; employer_name?: string | null } | null;
+        return {
+          id: `tracked-${item.id}`,
+          at: item.updated_at ?? "",
+          kind: "shortlist",
+          company: job?.employer_name ?? "Company",
+          role: job?.headline ?? `Job #${item.id}`,
+          href: item.job_id ? `/jobs/${item.job_id}` : "/jobs",
+        };
+      });
+
+      const applicationItems: RecentActivityItem[] = (applicationsResult.data ?? []).map((item) => ({
+        id: `application-${item.id}`,
+        at: item.updated_at ?? "",
+        kind: "application",
+        company: item.company || "Company",
+        role: item.job_title || "Role",
+        href: "/applications",
+      }));
+
+      const watchlistItems: RecentActivityItem[] = (watchlistResult.data ?? []).map((item) => ({
+        id: `watchlist-${item.id}`,
+        at: item.created_at ?? "",
+        kind: "watch",
+        company: item.employer_name || "Company",
+        href: "/watchlist",
+      }));
+
+      return [...trackedItems, ...applicationItems, ...watchlistItems]
+        .sort((left, right) => right.at.localeCompare(left.at))
+        .slice(0, 5);
+    },
+  });
+
   const digest = latestDigestQuery.data?.digest_json as Record<string, unknown> | null;
   const topSkills = parseTopSkills(digest?.top_skills);
   const risingSkills = parseRisingSkills(digest?.rising_skills);
-  const studyFocus = (digest?.study_focus as Record<string, unknown> | undefined) ?? undefined;
-
-  const trackedCounts = trackedJobsQuery.data?.reduce((acc, tracked) => {
-    acc[tracked.status] = (acc[tracked.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>) ?? {};
-
-  const trackedTotal = Object.values(trackedCounts).reduce((sum, value) => sum + value, 0);
-  const savedCount = trackedCounts.saved ?? 0;
-  const appliedCount = trackedCounts.applied ?? 0;
-  const interviewingCount = trackedCounts.interviewing ?? 0;
-  const applicationMetricsSummary = computeApplicationMetrics(applicationsQuery.data ?? []);
 
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
@@ -277,101 +380,39 @@ export default function Index() {
   }, [upcomingDeadlinesQuery.data]);
 
   const heroRising = risingSkills[0];
-  const studyPrimarySkill = String(studyFocus?.primary_skill ?? "").trim();
-  const studySecondarySkill = String(studyFocus?.secondary_skill ?? "").trim();
-  const topSkillName =
-    heroRising?.skill ??
-    (studyPrimarySkill || topSkills[0]?.skill || "software_engineering");
-  const secondarySkillName =
-    studySecondarySkill ||
-    topSkills.find((skill) => skill.skill !== topSkillName)?.skill ||
-    "python";
+  const topSkillName = heroRising?.skill ?? topSkills[0]?.skill ?? "software_engineering";
 
-  const risingBySkill = new Map(risingSkills.map((skill) => [skill.skill, skill.pctChange]));
-  const studyFocusSkills = uniqueByName(
-    [
-      ...topSkills.map((skill) => ({
-        name: skill.skill,
-        count: skill.count,
-        delta: risingBySkill.get(skill.skill) ?? null,
-        isRising: risingBySkill.has(skill.skill),
-      })),
-      ...risingSkills.map((skill) => ({
-        name: skill.skill,
-        count: topSkills.find((topSkill) => topSkill.skill === skill.skill)?.count ?? 0,
-        delta: skill.pctChange,
-        isRising: true,
-      })),
-    ].slice(0, 8),
+  const watchlistHighlights = useMemo(
+    () => [...(watchedCompanyDataQuery.data ?? [])].sort((left, right) => right.count - left.count),
+    [watchedCompanyDataQuery.data],
   );
-  const studyFocusChips = studyFocusSkills.slice(0, 6);
-
-  const rankedStudySkills = Array.from(
-    new Set([
-      topSkillName,
-      secondarySkillName,
-      ...studyFocusSkills.map((skill) => skill.name),
-    ]),
-  )
-    .map((name) => studyFocusSkills.find((skill) => skill.name === name) ?? {
-      name,
-      count: 0,
-      delta: risingBySkill.get(name) ?? null,
-      isRising: risingBySkill.has(name),
-    })
-    .slice(0, 5);
-
-  const watchlistHighlights = watchedCompanyDataQuery.data ?? [];
   const watchlistOpenings = watchlistHighlights.reduce((sum, company) => sum + company.count, 0);
+  const recentActivityItems = recentActivityQuery.data ?? [];
 
   const deadlineBuckets: DeadlineBucketViewModel[] = [
     {
       id: "today",
       label: "Today",
-      hint: "Needs attention",
       count: groupedDeadlines.today.length,
       href: "/jobs?deadline=today",
-      accentClassName: "border-rose-500/20 bg-rose-500/5",
+      accentClassName: "border-rose-500/30 bg-rose-500/[0.08] shadow-[inset_0_1px_0_rgba(244,63,94,0.12)]",
       badgeClassName: "border-rose-500/20 bg-rose-500/10 text-rose-100",
-      jobs: groupedDeadlines.today.slice(0, 2).map((job) => ({
-        id: job.id,
-        headline: job.headline,
-        employerName: job.employer_name,
-        deadlineLabel: formatDeadline(job.application_deadline, "today"),
-        href: `/jobs/${job.id}`,
-      })),
     },
     {
       id: "thisWeek",
       label: "This week",
-      hint: "Worth planning",
       count: groupedDeadlines.thisWeek.length,
       href: "/jobs?deadline=week",
       accentClassName: "border-amber-500/20 bg-amber-500/5",
       badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-100",
-      jobs: groupedDeadlines.thisWeek.slice(0, 2).map((job) => ({
-        id: job.id,
-        headline: job.headline,
-        employerName: job.employer_name,
-        deadlineLabel: formatDeadline(job.application_deadline, "thisWeek"),
-        href: `/jobs/${job.id}`,
-      })),
     },
     {
       id: "later",
       label: "Later",
-      hint: "Good shortlist fuel",
       count: groupedDeadlines.later.length,
       href: "/jobs?deadline=upcoming",
-      accentClassName: "border-sky-500/20 bg-sky-500/5",
+      accentClassName: "border-sky-500/15 bg-sky-500/[0.03]",
       badgeClassName: "border-sky-500/20 bg-sky-500/10 text-sky-100",
-      jobs: groupedDeadlines.later.slice(0, 2).map((job) => ({
-        id: job.id,
-        headline: job.headline,
-        employerName: job.employer_name,
-        deadlineLabel: formatDeadline(job.application_deadline, "later"),
-        href: `/jobs/${job.id}`,
-      })),
     },
   ].filter((bucket) => bucket.count > 0);
 
@@ -381,18 +422,21 @@ export default function Index() {
       value: <AnimatedNumber value={jobCountQuery.data ?? 0} />,
       href: "/jobs",
       accentClassName: "text-foreground",
+      tone: "live",
     },
     {
       label: "Due today",
       value: <AnimatedNumber value={groupedDeadlines.today.length} />,
       href: "/jobs?deadline=today",
       accentClassName: groupedDeadlines.today.length > 0 ? "text-rose-200" : "text-foreground",
+      tone: "due",
+      pulse: groupedDeadlines.today.length > 0,
     },
     {
       label: "Top signal",
       value: (
         <div className="flex min-w-0 items-center gap-2">
-          <span title={topSkillName} className="max-w-[18ch] truncate sm:max-w-[22ch] lg:max-w-[26ch]">
+          <span title={topSkillName} className="max-w-[24ch] truncate sm:max-w-[28ch] lg:max-w-[32ch]">
             {topSkillName}
           </span>
         </div>
@@ -409,38 +453,70 @@ export default function Index() {
     },
   ];
 
-  const pipelineHref = user ? "/tracked" : "/auth";
+  const onboardingProgress = onboardingProgressQuery.data ?? {
+    resumeCount: 0,
+    skillCount: 0,
+    searchCount: 0,
+  };
+  const onboardingTasks = [
+    {
+      id: "resume",
+      done: onboardingProgress.resumeCount > 0,
+      label: "Upload a resume",
+      href: "/resumes",
+    },
+    {
+      id: "watchlist",
+      done: watchlistHighlights.length >= 3,
+      label: "Watch 3 companies",
+      href: "/watchlist",
+    },
+    {
+      id: "skills",
+      done: onboardingProgress.skillCount > 0,
+      label: "Add your skills",
+      href: "/skills",
+    },
+    {
+      id: "searches",
+      done: onboardingProgress.searchCount > 0,
+      label: "Save your first search",
+      href: "/searches",
+    },
+  ];
+  const onboardingRemaining = onboardingTasks.filter((task) => !task.done);
+  const onboardingCompletionPct = Math.round(((onboardingTasks.length - onboardingRemaining.length) / onboardingTasks.length) * 100);
+  const showOnboardingChecklist = !!user && !onboardingDismissed && onboardingRemaining.length > 0;
 
-  const pipelineMetrics: PipelineMetric[] = [
-    { label: "Saved", count: savedCount, href: pipelineHref },
-    { label: "Applied", count: appliedCount, href: pipelineHref, accentClassName: appliedCount > 0 ? "text-primary" : undefined },
-    { label: "Interviewing", count: interviewingCount, href: pipelineHref, accentClassName: interviewingCount > 0 ? "text-amber-300" : undefined },
-  ];
-  const applicationsHref = user ? "/applications" : "/auth";
-  const applicationMetrics: PipelineMetric[] = [
-    { label: "Applied", count: applicationMetricsSummary.total, href: applicationsHref },
-    {
-      label: "OAs",
-      count: applicationMetricsSummary.oa,
-      href: applicationsHref,
-      accentClassName: applicationMetricsSummary.oa > 0 ? "text-amber-300" : undefined,
-    },
-    {
-      label: "Response %",
-      count: applicationMetricsSummary.responseRate,
-      href: applicationsHref,
-      accentClassName: applicationMetricsSummary.responseRate > 0 ? "text-emerald-300" : undefined,
-    },
-  ];
+  useEffect(() => {
+    if (!showOnboardingChecklist) {
+      setOnboardingExpanded(false);
+    }
+  }, [showOnboardingChecklist]);
+
+  const isReturningUser = !!user && (recentActivityItems.length > 0 || watchlistHighlights.length > 0);
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 ? "Good morning" : currentHour < 18 ? "Good afternoon" : "Good evening";
+  const heroHeadline = !user
+    ? "Find your next role in Sweden."
+    : isReturningUser
+      ? `${greeting}.`
+      : "Welcome.";
+  const heroSubtext = !user
+    ? `${(jobCountQuery.data ?? 0).toLocaleString()} active roles from connected sources.`
+    : isReturningUser
+      ? (newRolesSinceLastVisitQuery.data ?? 0) > 0
+        ? `${newRolesSinceLastVisitQuery.data} new roles since your last visit.`
+        : undefined
+      : undefined;
 
   const showHeroSignalsLoading = useDelayedVisibility(
     jobCountQuery.isLoading || latestDigestQuery.isLoading || upcomingDeadlinesQuery.isLoading,
   );
   const showUpcomingDeadlineLoading = useDelayedVisibility(upcomingDeadlinesQuery.isLoading);
-  const showTrackedLoading = useDelayedVisibility(!!user && trackedJobsQuery.isLoading);
-  const showApplicationsLoading = useDelayedVisibility(!!user && applicationsQuery.isLoading);
   const showWatchlistLoading = useDelayedVisibility(!!user && watchedCompanyDataQuery.isLoading);
-  const showStudyLoading = useDelayedVisibility(latestDigestQuery.isLoading);
+  const shouldRenderWatchlistPanel =
+    !user || showWatchlistLoading || (!!user && watchedCompanyDataQuery.isError) || watchlistHighlights.length > 0;
   const heroSignalsUnavailable = jobCountQuery.isError || upcomingDeadlinesQuery.isError;
 
   if (!jobCountQuery.isLoading && !jobCountQuery.isError && (jobCountQuery.data ?? 0) === 0) {
@@ -452,7 +528,7 @@ export default function Index() {
               <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted-foreground">Overview</p>
               <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">Waiting for market data</h1>
               <p className="mt-3 text-sm text-muted-foreground">
-                Once the pipeline is connected, this page will show live roles, urgent deadlines, and study signals.
+                Once the pipeline is connected, this page will show live roles, urgent deadlines, and your recent activity.
               </p>
             </CardContent>
           </Card>
@@ -476,67 +552,142 @@ export default function Index() {
           <FadeUp>
             <OverviewHeroPanel
               signalItems={signalItems}
+              headline={heroHeadline}
+              subtext={heroSubtext}
+              primaryActionLabel="Explore roles"
+              primaryActionHref="/jobs"
+              secondaryAction={!user ? { label: "Sign up free", href: "/auth" } : null}
               isSignalsLoading={showHeroSignalsLoading}
               signalsUnavailable={heroSignalsUnavailable}
-              momentumLabel={heroRising ? `Momentum +${Math.round(heroRising.pctChange)}%` : null}
             />
           </FadeUp>
 
-          <div className="grid gap-4 xl:grid-cols-[1.3fr,0.92fr]">
+          {showOnboardingChecklist ? (
             <FadeUp>
-              <DeadlineRadarPanel
-                buckets={deadlineBuckets}
-                isLoading={showUpcomingDeadlineLoading}
-                unavailable={upcomingDeadlinesQuery.isError}
-              />
+              <Card className="rounded-[24px] border-border/60 bg-card/80">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-background/25 px-4 py-3 text-left transition-colors hover:border-primary/30"
+                      onClick={() => setOnboardingExpanded((previous) => !previous)}
+                    >
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-background/60">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-primary via-primary to-emerald-500 transition-[width]"
+                          style={{ width: `${onboardingCompletionPct}%` }}
+                        />
+                      </div>
+                      <span className="animate-subtle-pulse shrink-0 rounded-full border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                        {onboardingRemaining.length} steps left
+                      </span>
+                      {onboardingExpanded ? (
+                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-xs"
+                      onClick={() => {
+                        localStorage.setItem(ONBOARDING_DISMISSED_KEY, "true");
+                        setOnboardingDismissed(true);
+                      }}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                  {onboardingExpanded ? (
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {onboardingTasks.map((task) => (
+                        <Link
+                          key={task.id}
+                          to={task.href}
+                          className="flex items-center justify-between rounded-lg border border-border/50 bg-background/30 px-3 py-2 text-sm hover:border-primary/30"
+                        >
+                          <span>{task.label}</span>
+                          <Badge variant={task.done ? "secondary" : "outline"} className="text-[10px]">
+                            {task.done ? "Done" : "Start"}
+                          </Badge>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
             </FadeUp>
-
-            <div className="grid gap-4">
-              <FadeUp>
-                <PipelinePulsePanel
-                  metrics={pipelineMetrics}
-                  isLoading={showTrackedLoading}
-                  unavailable={!!user && trackedJobsQuery.isError}
-                  actionHref={pipelineHref}
-                  label="Discovery"
-                />
-              </FadeUp>
-
-              <FadeUp>
-                <PipelinePulsePanel
-                  metrics={applicationMetrics}
-                  isLoading={showApplicationsLoading}
-                  unavailable={!!user && applicationsQuery.isError}
-                  actionHref={applicationsHref}
-                  label="Applications"
-                />
-              </FadeUp>
-
-              <FadeUp>
-                <WatchlistPulsePanel
-                  actionHref={user ? "/watchlist" : "/auth"}
-                  actionLabel={user ? "Manage" : "Sign in"}
-                  trackedCount={watchlistHighlights.length}
-                  openings={watchlistOpenings}
-                  featured={watchlistHighlights[0]}
-                  isLoading={showWatchlistLoading}
-                  unavailable={!!user && watchedCompanyDataQuery.isError}
-                />
-              </FadeUp>
-            </div>
-          </div>
+          ) : null}
 
           <FadeUp>
-            <StudyFocusPanel
-              chips={studyFocusChips}
-              rankedSkills={rankedStudySkills}
-              primarySkill={topSkillName}
-              secondarySkill={secondarySkillName}
-              isLoading={showStudyLoading}
-              unavailable={latestDigestQuery.isError}
+            <DeadlineRadarPanel
+              buckets={deadlineBuckets}
+              isLoading={showUpcomingDeadlineLoading}
+              unavailable={upcomingDeadlinesQuery.isError}
             />
           </FadeUp>
+
+          <div className="border-t border-border/30 pt-6">
+            <div className="grid gap-4 xl:grid-cols-2">
+              {shouldRenderWatchlistPanel ? (
+                <FadeUp>
+                  <WatchlistPulsePanel
+                    actionHref={user ? "/watchlist" : "/auth"}
+                    actionLabel={user ? "Manage" : "Sign in"}
+                    isAuthenticated={!!user}
+                    trackedCount={watchlistHighlights.length}
+                    openings={watchlistOpenings}
+                    companies={watchlistHighlights}
+                    isLoading={showWatchlistLoading}
+                    unavailable={!!user && watchedCompanyDataQuery.isError}
+                  />
+                </FadeUp>
+              ) : null}
+
+              {user ? (
+                <FadeUp>
+                  <Card className="rounded-[24px] border-border/60 bg-card/80">
+                    <CardContent className="p-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Recent activity</p>
+                      {recentActivityItems.length === 0 ? (
+                        <p className="mt-3 text-sm text-muted-foreground">No activity yet.</p>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {recentActivityItems.map((item) => {
+                            const ItemIcon = item.kind === "application" ? FileText : item.kind === "watch" ? Eye : Bookmark;
+                            return (
+                              <Link
+                                key={item.id}
+                                to={item.href ?? "/"}
+                                className={cn(
+                                  "flex items-center justify-between gap-3 rounded-lg border border-border/50 border-l-2 bg-background/30 px-3 py-2 transition-colors hover:bg-muted/30 hover:border-primary/30",
+                                  item.kind === "shortlist" && "border-l-primary/60",
+                                  item.kind === "application" && "border-l-emerald-500/60",
+                                  item.kind === "watch" && "border-l-amber-500/60",
+                                )}
+                              >
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <ItemIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <p className="line-clamp-1 text-sm text-foreground">
+                                    {item.company}
+                                    {item.role ? ` · ${item.role}` : ""}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.at)}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </FadeUp>
+              ) : null}
+            </div>
+          </div>
         </StaggerContainer>
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-background to-transparent" />
       </div>
     </AppLayout>
   );

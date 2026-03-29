@@ -1,4 +1,4 @@
-updated_at: "2026-03-13"
+updated_at: "2026-03-29"
 
 # v1 uses only feeds that were endpoint-verified during implementation.
 feeds:
@@ -197,3 +197,273 @@ feeds:
       - data
       - machine learning
       - analytics
+
+  - feed_key: king_greenhouse
+    display_name: King
+    provider: greenhouse
+    slug_or_url: king
+    company_canonical: king
+    enabled: true
+    priority: 55
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - unity
+      - java
+      - python
+
+  - feed_key: klarna_greenhouse
+    display_name: Klarna
+    provider: greenhouse
+    slug_or_url: klarna
+    company_canonical: klarna
+    enabled: true
+    priority: 60
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - data
+      - java
+      - python
+
+  - feed_key: zalando_greenhouse
+    display_name: Zalando
+    provider: greenhouse
+    slug_or_url: zalando
+    company_canonical: zalando
+    enabled: true
+    priority: 65
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - data
+      - machine learning
+      - java
+      - python
+
+  - feed_key: tink_greenhouse
+    display_name: Tink
+    provider: greenhouse
+    slug_or_url: tink
+    company_canonical: tink
+    enabled: true
+    priority: 70
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - data
+      - java
+      - kotlin
+      - python
+
+  - feed_key: schibsted_greenhouse
+    display_name: Schibsted
+    provider: greenhouse
+    slug_or_url: schibsted
+    company_canonical: schibsted
+    enabled: true
+    priority: 75
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - java
+      - python
+
+  - feed_key: electronic_arts_greenhouse
+    display_name: Electronic Arts
+    provider: greenhouse
+    slug_or_url: ea
+    company_canonical: electronic arts
+    enabled: true
+    priority: 80
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - game
+      - cplusplus
+      - java
+      - python
+
+  - feed_key: epidemic_sound_greenhouse
+    display_name: Epidemic Sound
+    provider: greenhouse
+    slug_or_url: epidemicsound
+    company_canonical: epidemic sound
+    enabled: true
+    priority: 85
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - data
+      - machine learning
+      - java
+      - python
+
+  - feed_key: nexer_teamtailor
+    display_name: Nexer
+    provider: teamtailor
+    slug_or_url: https://careers.nexergroup.com/
+    company_canonical: nexer
+    enabled: true
+    priority: 90
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - cloud
+      - platform
+      - data
+      - security
+
+  - feed_key: knowit_teamtailor
+    display_name: Knowit
+    provider: teamtailor
+    slug_or_url: https://career.knowitgroup.com/
+    company_canonical: knowit
+    enabled: true
+    priority: 95
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - cloud
+      - platform
+      - data
+      - security
+
+  - feed_key: hiq_teamtailor
+    display_name: HiQ
+    provider: teamtailor
+    slug_or_url: https://career.hiq.se/
+    company_canonical: hiq
+    enabled: true
+    priority: 100
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - cloud
+      - platform
+      - data
+      - security
+
+  - feed_key: platform24_teamtailor
+    display_name: Platform24
+    provider: teamtailor
+    slug_or_url: https://careers.platform24.com/
+    company_canonical: platform24
+    enabled: true
+    priority: 105
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - cloud
+      - platform
+      - java
+      - python
+
+  - feed_key: raysearch_teamtailor
+    display_name: RaySearch
+    provider: teamtailor
+    slug_or_url: https://career.raysearchlabs.com/
+    company_canonical: raysearch laboratories
+    enabled: true
+    priority: 110
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - cplusplus
+      - python
+      - machine learning

@@ -17,6 +17,8 @@ export type Database = {
       applications: {
         Row: {
           applied_at: string
+          ats_keywords_json: Json
+          ats_score: number | null
           company: string
           created_at: string
           id: string
@@ -29,11 +31,14 @@ export type Database = {
           resume_version_id: string | null
           source: string
           status: string
+          status_history: Json
           updated_at: string
           user_id: string
         }
         Insert: {
           applied_at?: string
+          ats_keywords_json?: Json
+          ats_score?: number | null
           company: string
           created_at?: string
           id?: string
@@ -46,11 +51,14 @@ export type Database = {
           resume_version_id?: string | null
           source?: string
           status?: string
+          status_history?: Json
           updated_at?: string
           user_id: string
         }
         Update: {
           applied_at?: string
+          ats_keywords_json?: Json
+          ats_score?: number | null
           company?: string
           created_at?: string
           id?: string
@@ -63,6 +71,7 @@ export type Database = {
           resume_version_id?: string | null
           source?: string
           status?: string
+          status_history?: Json
           updated_at?: string
           user_id?: string
         }

@@ -23,6 +23,25 @@ aliases:
   "google sverige": "google sweden"
   # Saab
   "saab ab": "saab"
+  "saab": "saab"
+  "saab defence": "saab"
+  # Ericsson
+  "ericsson": "ericsson"
+  "ericsson ab": "ericsson"
+  "telefonaktiebolaget lm ericsson": "ericsson"
+  # Klarna
+  "klarna bank ab": "klarna"
+  "klarna holding": "klarna"
+  # SEB
+  "seb": "seb"
+  "seb ab": "seb"
+  "skandinaviska enskilda banken": "seb"
+  # Scania
+  "scania cv ab": "scania"
+  "scania group": "scania"
+  # Volvo Group
+  "volvo group": "volvo group"
+  "aktiebolaget volvo": "volvo group"
   # UBS
   "ubs ag": "ubs"
   # Arm

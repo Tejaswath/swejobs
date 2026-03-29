@@ -20,6 +20,7 @@ import SkillGap from "./pages/SkillGap";
 import CompanyWatchlist from "./pages/CompanyWatchlist";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -36,23 +37,33 @@ function App() {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/jobs" element={<Jobs />} />
-              <Route path="/jobs/:id" element={<JobDetail />} />
-              <Route path="/tracked" element={<TrackedJobs />} />
-              <Route path="/applications" element={<Applications />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/outreach" element={<Navigate to="/applications" replace />} />
-              <Route path="/searches" element={<SavedSearches />} />
-              <Route path="/digest" element={<Digest />} />
-              <Route path="/export" element={<Export />} />
-              <Route path="/skills" element={<SkillGap />} />
-              <Route path="/watchlist" element={<CompanyWatchlist />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route
+                  path="/jobs"
+                  element={
+                    <ErrorBoundary>
+                      <Jobs />
+                    </ErrorBoundary>
+                  }
+                />
+                <Route path="/jobs/:id" element={<JobDetail />} />
+                <Route path="/tracked" element={<TrackedJobs />} />
+                <Route path="/applications" element={<Applications />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/resumes" element={<Profile />} />
+                <Route path="/outreach" element={<Navigate to="/applications" replace />} />
+                <Route path="/searches" element={<SavedSearches />} />
+                <Route path="/digest" element={<Digest />} />
+                <Route path="/export" element={<Export />} />
+                <Route path="/skills" element={<SkillGap />} />
+                <Route path="/watchlist" element={<CompanyWatchlist />} />
+                <Route path="/admin" element={<Admin />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </ErrorBoundary>
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>

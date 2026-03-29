@@ -50,12 +50,14 @@ export default function SkillGap() {
   // Fetch market skills from latest digest
   const { data: marketSkills, error: marketSkillsError, isLoading: marketSkillsLoading } = useQuery({
     queryKey: ["market-skills"],
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("weekly_digests")
         .select("id, period_start, period_end, generated_at, digest_json")
         .order("generated_at", { ascending: false })
-        .limit(100);
+        .limit(20);
       if (error) throw error;
       const latest = pickLatestDigest((data ?? []) as DigestRow[], "rolling_30d");
       if (!latest) return { top: [], rising: [] };

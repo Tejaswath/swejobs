@@ -176,7 +176,7 @@
       "display_name": "Klarna",
       "priority_tier": "A",
       "category": "product",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -191,7 +191,10 @@
         "stockholm",
         "sweden"
       ],
-      "aliases": [],
+      "aliases": [
+        "klarna bank ab",
+        "klarna holding"
+      ],
       "notes": "Swedish Tier A target",
       "career_page_url": "https://www.klarna.com/careers/"
     },
@@ -276,7 +279,7 @@
       "display_name": "Volvo Cars",
       "priority_tier": "A",
       "category": "industrial",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -303,7 +306,7 @@
       "display_name": "Volvo Group",
       "priority_tier": "A",
       "category": "industrial",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -318,7 +321,9 @@
         "stockholm",
         "sweden"
       ],
-      "aliases": [],
+      "aliases": [
+        "aktiebolaget volvo"
+      ],
       "notes": "Distinct from Volvo Cars",
       "career_page_url": "https://www.volvogroup.com/en/careers.html"
     },
@@ -327,7 +332,7 @@
       "display_name": "SEB",
       "priority_tier": "A",
       "category": "finance",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -342,7 +347,10 @@
         "stockholm",
         "sweden"
       ],
-      "aliases": [],
+      "aliases": [
+        "skandinaviska enskilda banken",
+        "seb ab"
+      ],
       "notes": "Tier A Swedish finance employer",
       "career_page_url": "https://sebgroup.com/career"
     },
@@ -351,7 +359,7 @@
       "display_name": "Scania",
       "priority_tier": "A",
       "category": "industrial",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -366,7 +374,10 @@
         "stockholm",
         "sweden"
       ],
-      "aliases": [],
+      "aliases": [
+        "scania cv ab",
+        "scania group"
+      ],
       "notes": "Tier A Swedish industrial employer",
       "career_page_url": "https://jobs.scania.com/"
     },
@@ -425,7 +436,7 @@
       "display_name": "Saab",
       "priority_tier": "A",
       "category": "defense",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -440,7 +451,10 @@
         "stockholm",
         "sweden"
       ],
-      "aliases": [],
+      "aliases": [
+        "saab ab",
+        "saab defence"
+      ],
       "notes": "Strong relevance, especially security/system roles",
       "career_page_url": "https://www.saab.com/career/job-opportunities"
     },
@@ -449,7 +463,7 @@
       "display_name": "Ericsson",
       "priority_tier": "A",
       "category": "telecom",
-      "status": "planned",
+      "status": "connected_jobtech",
       "provider": null,
       "provider_identifier": null,
       "provider_order": [
@@ -464,7 +478,10 @@
         "stockholm",
         "sweden"
       ],
-      "aliases": [],
+      "aliases": [
+        "telefonaktiebolaget lm ericsson",
+        "ericsson ab"
+      ],
       "notes": "Tier A Swedish telecom employer",
       "career_page_url": "https://www.ericsson.com/en/careers/global-locations/sweden"
     },

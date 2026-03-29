@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,11 +17,19 @@ export default function SavedSearches() {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [keywords, setKeywords] = useState("");
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [englishOnly, setEnglishOnly] = useState(false);
+
+  const resetDialogState = () => {
+    setName("");
+    setKeywords("");
+    setRemoteOnly(false);
+    setEnglishOnly(false);
+  };
 
   useEffect(() => {
     document.title = "Saved Searches | SweJobs";
@@ -42,28 +50,57 @@ export default function SavedSearches() {
 
   // Count new matches per search
   const { data: matchCounts } = useQuery({
-    queryKey: ["search-match-counts", searches?.map((s) => s.id)],
+    queryKey: ["search-match-counts", searches?.map((s) => `${s.id}:${s.last_checked_at ?? s.created_at}`).join("|")],
     enabled: !!searches && searches.length > 0,
     queryFn: async () => {
-      const counts: Record<number, number> = {};
-      for (const s of searches!) {
-        let query = supabase
-          .from("jobs")
-          .select("id", { count: "exact", head: true })
-          .eq("is_active", true)
-          .eq("is_target_role", true)
-          .gt("published_at", s.last_checked_at ?? s.created_at!);
-
-        if (s.remote_only) query = query.eq("remote_flag", true);
-        if (s.english_only) query = query.eq("lang", "en");
-        if (s.keywords && s.keywords.length > 0) {
-          const orClauses = s.keywords.map((kw) => `headline.ilike.%${kw}%`).join(",");
-          query = query.or(orClauses);
-        }
-
-        const { count } = await query;
-        counts[s.id] = count ?? 0;
+      if (!searches || searches.length === 0) {
+        return {} as Record<number, number>;
       }
+
+      const cutoffTimes = searches
+        .map((search) => Date.parse(search.last_checked_at ?? search.created_at ?? ""))
+        .filter((value) => Number.isFinite(value));
+
+      const minCutoff = cutoffTimes.length > 0
+        ? new Date(Math.min(...cutoffTimes)).toISOString()
+        : new Date(0).toISOString();
+
+      const { data: jobs, error } = await supabase
+        .from("jobs")
+        .select("id, headline, published_at, remote_flag, lang")
+        .eq("is_active", true)
+        .eq("is_target_role", true)
+        .gte("published_at", minCutoff);
+
+      if (error) throw error;
+
+      const counts: Record<number, number> = {};
+      const normalizedSearches = searches.map((search) => ({
+        ...search,
+        cutoff: Date.parse(search.last_checked_at ?? search.created_at ?? ""),
+        keywords: (search.keywords ?? [])
+          .map((keyword) => keyword.trim().toLowerCase())
+          .filter(Boolean),
+      }));
+
+      for (const search of normalizedSearches) {
+        counts[search.id] = 0;
+      }
+
+      for (const job of jobs ?? []) {
+        const publishedAt = Date.parse(job.published_at ?? "");
+        if (!Number.isFinite(publishedAt)) continue;
+        const headline = (job.headline ?? "").toLowerCase();
+
+        for (const search of normalizedSearches) {
+          if (Number.isFinite(search.cutoff) && publishedAt <= search.cutoff) continue;
+          if (search.remote_only && !job.remote_flag) continue;
+          if (search.english_only && job.lang !== "en") continue;
+          if (search.keywords.length > 0 && !search.keywords.some((keyword) => headline.includes(keyword))) continue;
+          counts[search.id] += 1;
+        }
+      }
+
       return counts;
     },
   });
@@ -82,10 +119,7 @@ export default function SavedSearches() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["saved-searches"] });
       setOpen(false);
-      setName("");
-      setKeywords("");
-      setRemoteOnly(false);
-      setEnglishOnly(false);
+      resetDialogState();
       toast({ title: "Search saved" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -118,6 +152,19 @@ export default function SavedSearches() {
 
   if (!loading && !user) return <Navigate to="/auth" replace />;
 
+  const runSearch = (search: {
+    keywords: string[] | null;
+    remote_only: boolean | null;
+    english_only: boolean | null;
+  }) => {
+    const params = new URLSearchParams();
+    const query = (search.keywords ?? []).join(" ").trim();
+    if (query) params.set("search", query);
+    if (search.remote_only) params.set("remote", "1");
+    if (search.english_only) params.set("lang", "en");
+    navigate(`/jobs${params.toString() ? `?${params.toString()}` : ""}`);
+  };
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -126,7 +173,13 @@ export default function SavedSearches() {
             <h1 className="font-mono text-2xl font-bold tracking-tight">Saved Searches</h1>
             <p className="text-sm text-muted-foreground">Get notified about new matches</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => {
+              setOpen(nextOpen);
+              if (!nextOpen) resetDialogState();
+            }}
+          >
             <DialogTrigger asChild>
               <Button size="sm" className="gap-1.5">
                 <Plus className="h-4 w-4" /> New search
@@ -197,12 +250,26 @@ export default function SavedSearches() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => runSearch(s)}
+                    >
+                      Run search
+                    </Button>
                     {newCount > 0 && (
                       <Button variant="outline" size="sm" onClick={() => markChecked.mutate(s.id)}>
                         Mark seen
                       </Button>
                     )}
-                    <Button variant="ghost" size="icon" onClick={() => deleteSearch.mutate(s.id)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        if (!window.confirm(`Delete saved search "${s.name}"?`)) return;
+                        deleteSearch.mutate(s.id);
+                      }}
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
