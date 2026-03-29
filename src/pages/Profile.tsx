@@ -33,6 +33,7 @@ import {
   deleteResumeVersion,
   deriveResumeLabel,
   formatResumeFileSize,
+  MAX_RESUMES_PER_USER,
   openResumeDownload,
   uploadResumeVersion,
   type ResumeVersionRow,
@@ -201,6 +202,7 @@ export default function Profile() {
   });
 
   const resumeVersions = resumeVersionsQuery.data ?? [];
+  const resumeLimitReached = resumeVersions.length >= MAX_RESUMES_PER_USER;
 
   if (!loading && !user) return <Navigate to="/auth" replace />;
 
@@ -214,6 +216,14 @@ export default function Profile() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (resumeLimitReached) {
+      toast({
+        title: "Resume limit reached",
+        description: `You can store up to ${MAX_RESUMES_PER_USER} resumes. Delete an older one to upload a new PDF.`,
+        variant: "destructive",
+      });
+      return;
+    }
     await uploadResumeMutation.mutateAsync(file);
   };
 
@@ -243,13 +253,22 @@ export default function Profile() {
                 className="hidden"
                 onChange={handleUploadInput}
               />
-              <Button className="gap-2" onClick={() => uploadInputRef.current?.click()} disabled={uploadResumeMutation.isPending}>
+              <Button
+                className="gap-2"
+                onClick={() => uploadInputRef.current?.click()}
+                disabled={uploadResumeMutation.isPending || resumeLimitReached}
+              >
                 <Upload className="h-4 w-4" />
                 {uploadResumeMutation.isPending ? "Uploading…" : "Upload PDF"}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {resumeLimitReached ? (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                Resume limit reached ({MAX_RESUMES_PER_USER}). Delete an older resume to upload a new one.
+              </div>
+            ) : null}
             {resumeVersionsQuery.isLoading ? (
               <div className="rounded-lg border border-border/50 bg-background/30 p-8 text-sm text-muted-foreground">
                 Loading your resume library…

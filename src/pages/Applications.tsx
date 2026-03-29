@@ -75,6 +75,7 @@ import {
 } from "@/lib/jobUrlMatching";
 import {
   deriveResumeLabel,
+  MAX_RESUMES_PER_USER,
   uploadResumeVersion,
 } from "@/lib/resumes";
 import { cn } from "@/lib/utils";
@@ -498,6 +499,7 @@ export default function Applications() {
   });
 
   const availableResumes = (resumeVersionsQuery.data ?? []).filter((resumeVersion) => Boolean(resumeVersion.storage_path));
+  const resumeLimitReached = (resumeVersionsQuery.data?.length ?? 0) >= MAX_RESUMES_PER_USER;
   const defaultResume = useMemo(
     () => availableResumes.find((resumeVersion) => resumeVersion.is_default) ?? availableResumes[0] ?? null,
     [availableResumes],
@@ -685,7 +687,7 @@ export default function Applications() {
       setForm((current) => ({ ...current, resume_version_id: resumeVersion.id }));
       toast({
         title: "Resume uploaded",
-        description: resumeVersion.parsed_text
+        description: resumeVersion.text_extracted_at
           ? "Attached and ready for ATS scans."
           : "Uploaded successfully. Text extraction was limited for this PDF.",
       });
@@ -983,6 +985,14 @@ export default function Applications() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (resumeLimitReached) {
+      toast({
+        title: "Resume limit reached",
+        description: `You can store up to ${MAX_RESUMES_PER_USER} resumes. Delete an older resume to upload a new PDF.`,
+        variant: "destructive",
+      });
+      return;
+    }
     await uploadResumeMutation.mutateAsync(file);
   };
 
@@ -1640,7 +1650,13 @@ export default function Applications() {
             <div className="grid gap-3">
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="application-resume-choice">Resume used</Label>
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => resumeUploadInputRef.current?.click()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={uploadResumeMutation.isPending || resumeLimitReached}
+                  onClick={() => resumeUploadInputRef.current?.click()}
+                >
                   <Upload className="h-3.5 w-3.5" /> Upload PDF
                 </Button>
               </div>
@@ -1670,6 +1686,12 @@ export default function Applications() {
                 </Link>
                 .
               </p>
+
+              {resumeLimitReached ? (
+                <p className="text-xs text-amber-300">
+                  Resume limit reached ({MAX_RESUMES_PER_USER}). Delete an older resume to upload a new one.
+                </p>
+              ) : null}
 
               {editingApplication?.resume_label && !editingApplication.resume_version_id ? (
                 <p className="text-xs text-muted-foreground">

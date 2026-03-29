@@ -6,6 +6,7 @@ import { toDisplayError } from "@/lib/errors";
 export const RESUME_BUCKET = "resume-files";
 export const MAX_RESUME_FILE_BYTES = 3 * 1024 * 1024;
 export const RESUME_ALLOWED_MIME_TYPES = ["application/pdf"];
+export const MAX_RESUMES_PER_USER = 10;
 
 export type ResumeVersionRow = Tables<"resume_versions">;
 
@@ -91,6 +92,15 @@ export async function uploadResumeVersion({
   const validationError = validateResumeFile(file);
   if (validationError) {
     throw new Error(validationError);
+  }
+
+  const { count: resumeCount, error: countError } = await supabase
+    .from("resume_versions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (countError) throw toDisplayError(countError, "Could not validate resume upload limit.");
+  if ((resumeCount ?? 0) >= MAX_RESUMES_PER_USER) {
+    throw new Error(`Resume limit reached (${MAX_RESUMES_PER_USER}). Delete an older resume before uploading a new one.`);
   }
 
   const resumeId = crypto.randomUUID();
