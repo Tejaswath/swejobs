@@ -7,6 +7,8 @@ const corsHeaders = {
 
 const MAX_HTML_CONTENT_BYTES = 1_000_000;
 const BLOCKED_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+const QUOTA_WINDOW_MINUTES = 60;
+const QUOTA_MAX_REQUESTS = 60;
 
 function isPrivateIpv4(hostname: string): boolean {
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
@@ -126,6 +128,41 @@ Deno.serve(async (request: Request) => {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const { data: quotaResponse, error: quotaError } = await authClient.rpc("consume_edge_quota", {
+      p_user_id: user.id,
+      p_function_name: "extract-job-title",
+      p_window_minutes: QUOTA_WINDOW_MINUTES,
+      p_max_requests: QUOTA_MAX_REQUESTS,
+    });
+
+    const quota = Array.isArray(quotaResponse) ? quotaResponse[0] : quotaResponse;
+    if (quotaError || !quota) {
+      return new Response(JSON.stringify({ error: "Could not validate request quota." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!quota.allowed) {
+      const retryAfterSeconds = Number.isFinite(Number(quota.retry_after_seconds))
+        ? Math.max(1, Number(quota.retry_after_seconds))
+        : 60;
+      return new Response(
+        JSON.stringify({
+          error: "Rate limit exceeded for title extraction. Try again later.",
+          retry_after_seconds: retryAfterSeconds,
+        }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "Retry-After": String(retryAfterSeconds),
+          },
+        },
+      );
     }
 
     const { url } = await request.json();

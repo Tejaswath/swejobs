@@ -679,6 +679,7 @@ export default function Applications() {
         file,
         label: deriveResumeLabel(file.name),
         isDefault: (resumeVersionsQuery.data?.length ?? 0) === 0,
+        extractText: false,
       });
     },
     onSuccess: (resumeVersion) => {

@@ -18,6 +18,7 @@ type UploadResumeParams = {
   targetRole?: string;
   notes?: string;
   isDefault: boolean;
+  extractText?: boolean;
 };
 
 function cleanWhitespace(value: string) {
@@ -88,6 +89,7 @@ export async function uploadResumeVersion({
   targetRole = "",
   notes = "",
   isDefault,
+  extractText = true,
 }: UploadResumeParams) {
   const validationError = validateResumeFile(file);
   if (validationError) {
@@ -108,10 +110,12 @@ export async function uploadResumeVersion({
   const storagePath = `${userId}/${resumeId}-${normalizedFileName}`;
 
   let parsedText = "";
-  try {
-    parsedText = await extractPdfText(file);
-  } catch {
-    parsedText = "";
+  if (extractText) {
+    try {
+      parsedText = await extractPdfText(file);
+    } catch {
+      parsedText = "";
+    }
   }
 
   if (isDefault) {

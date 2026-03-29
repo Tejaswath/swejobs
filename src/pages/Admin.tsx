@@ -27,6 +27,29 @@ function formatMaybeDate(value: string | null): string {
   return parsed.toLocaleString("sv-SE");
 }
 
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+type HealthStatus = "ok" | "warning" | "critical";
+
+function statusBadgeClass(status: HealthStatus): string {
+  if (status === "critical") return "border-red-500/50 text-red-300";
+  if (status === "warning") return "border-amber-500/50 text-amber-300";
+  return "border-emerald-500/40 text-emerald-300";
+}
+
+type ResourceAlertSnapshot = {
+  resume_file_count: number;
+  resume_storage_bytes: number;
+  extract_job_title_calls_24h: number;
+  storage_status: HealthStatus;
+  egress_status: HealthStatus;
+};
+
 export default function Admin() {
   const { user, loading } = useAuth();
 
@@ -45,7 +68,7 @@ export default function Admin() {
   const missingCount =
     coverageCounts.planned + coverageCounts.blocked + coverageCounts.html_fallback_candidate;
 
-  const { data: freshnessState, isLoading, error, refetch } = useQuery({
+  const { data: freshnessState, isLoading, error: freshnessError, refetch } = useQuery({
     queryKey: ["pipeline-freshness"],
     enabled: !!user,
     refetchInterval: REFRESH_MS,
@@ -100,6 +123,20 @@ export default function Admin() {
     },
   });
 
+  const { data: resourceAlerts, error: resourceAlertsError, refetch: refetchResourceAlerts } = useQuery({
+    queryKey: ["system-resource-alerts"],
+    enabled: !!user,
+    refetchInterval: REFRESH_MS,
+    refetchIntervalInBackground: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("system_resource_alerts");
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return null;
+      return row as ResourceAlertSnapshot;
+    },
+  });
+
   const companyCoverageRows = companyRegistry
     .map((company) => {
       const key = normalizeCompanyKey(company.company_canonical);
@@ -144,14 +181,25 @@ export default function Admin() {
           <p className="text-sm text-muted-foreground">Operational sync and source coverage status</p>
         </div>
 
-        {error && (
+        {(freshnessError || resourceAlertsError) && (
           <Card className="border-destructive/40">
             <CardContent className="space-y-3 p-4">
-              <p className="text-sm font-medium text-destructive">Could not load pipeline freshness data.</p>
+              <p className="text-sm font-medium text-destructive">Could not load admin observability data.</p>
               <p className="text-xs text-muted-foreground">
-                {error instanceof Error ? error.message : "Unknown error"}
+                {freshnessError instanceof Error
+                  ? freshnessError.message
+                  : resourceAlertsError instanceof Error
+                    ? resourceAlertsError.message
+                    : "Unknown error"}
               </p>
-              <Button size="sm" variant="outline" onClick={() => void refetch()}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void refetch();
+                  void refetchResourceAlerts();
+                }}
+              >
                 Retry
               </Button>
             </CardContent>
@@ -176,6 +224,33 @@ export default function Admin() {
             </p>
           </div>
         </section>
+
+        {resourceAlerts ? (
+          <section className="rounded-lg border border-border/40 bg-card/60 px-4 py-4">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">System alerts</p>
+            <h2 className="mt-1 text-base font-medium">Storage and egress guardrails</h2>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-md border border-border/50 bg-background/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Resume storage</p>
+                <p className="mt-1 text-sm font-medium">{formatBytes(resourceAlerts.resume_storage_bytes)}</p>
+                <Badge variant="outline" className={`mt-2 font-normal ${statusBadgeClass(resourceAlerts.storage_status)}`}>
+                  {resourceAlerts.storage_status.toUpperCase()}
+                </Badge>
+              </div>
+              <div className="rounded-md border border-border/50 bg-background/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">Resume files</p>
+                <p className="mt-1 text-sm font-medium">{resourceAlerts.resume_file_count}</p>
+              </div>
+              <div className="rounded-md border border-border/50 bg-background/30 px-3 py-2">
+                <p className="text-xs text-muted-foreground">`extract-job-title` calls (24h)</p>
+                <p className="mt-1 text-sm font-medium">{resourceAlerts.extract_job_title_calls_24h}</p>
+                <Badge variant="outline" className={`mt-2 font-normal ${statusBadgeClass(resourceAlerts.egress_status)}`}>
+                  {resourceAlerts.egress_status.toUpperCase()}
+                </Badge>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-lg border border-border/40 bg-card/60 px-4 py-4">
           <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
