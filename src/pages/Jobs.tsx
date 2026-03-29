@@ -890,7 +890,7 @@ export default function Jobs() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tracked_jobs")
-        .select("*")
+        .select("id, status, notes, created_at, updated_at")
         .eq("job_id", selectedId!)
         .eq("user_id", user!.id)
         .maybeSingle();

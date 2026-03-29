@@ -382,7 +382,10 @@ export default function Applications() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("resume_versions")
-        .select("*")
+        .select(
+          "id, user_id, label, is_default, parsed_text, storage_path, file_name, file_size_bytes, mime_type, " +
+            "text_extracted_at, created_at, updated_at",
+        )
         .eq("user_id", user!.id)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: true });
@@ -397,7 +400,10 @@ export default function Applications() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("applications")
-        .select("*")
+        .select(
+          "id, user_id, request_id, job_id, company, job_title, job_url, status, applied_at, notes, resume_label, " +
+            "resume_version_id, ats_score, ats_keywords_json, status_history, created_at, updated_at",
+        )
         .eq("user_id", user!.id)
         .order("applied_at", { ascending: false });
       if (error) throw toDisplayError(error, "Could not load your applications.");

@@ -138,7 +138,10 @@ export async function uploadResumeVersion({
       parsed_text: parsedText || null,
       text_extracted_at: parsedText ? new Date().toISOString() : null,
     })
-    .select("*")
+    .select(
+      "id, user_id, label, target_role, notes, is_default, storage_path, file_name, file_size_bytes, mime_type, " +
+        "text_extracted_at, created_at, updated_at",
+    )
     .single();
 
   if (error) {

@@ -39,7 +39,7 @@ export default function SkillGap() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_skills")
-        .select("*")
+        .select("id, user_id, skill, proficiency, created_at")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: true });
       if (error) throw error;

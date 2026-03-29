@@ -149,7 +149,7 @@ export default function Outreach() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recruiters")
-        .select("*")
+        .select("id, user_id, name, email, company, title, linkedin_url, notes, created_at, updated_at")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -163,7 +163,7 @@ export default function Outreach() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("email_templates")
-        .select("*")
+        .select("id, user_id, name, subject, body, created_at, updated_at")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
       if (error) throw error;

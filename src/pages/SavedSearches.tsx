@@ -41,7 +41,7 @@ export default function SavedSearches() {
     queryFn: async () => {
       const { data } = await supabase
         .from("saved_searches")
-        .select("*")
+        .select("id, user_id, name, keywords, regions, remote_only, english_only, last_checked_at, created_at, updated_at")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
       return data ?? [];

@@ -84,7 +84,10 @@ export default function Profile() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("resume_versions")
-        .select("*")
+        .select(
+          "id, user_id, label, target_role, notes, is_default, storage_path, file_name, file_size_bytes, mime_type, " +
+            "text_extracted_at, created_at, updated_at",
+        )
         .eq("user_id", user!.id)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: true });
@@ -108,7 +111,7 @@ export default function Profile() {
       void invalidateResumeCaches();
       toast({
         title: "Resume uploaded",
-        description: resumeVersion.parsed_text
+        description: resumeVersion.text_extracted_at
           ? "PDF stored and ready for ATS scans."
           : "PDF stored. Text extraction was limited, so ATS scans may be weaker for this file.",
       });
