@@ -374,43 +374,83 @@ export default function Outreach() {
       body: string;
     }) => {
       if (!smtpEnabled) throw new Error("SMTP sending is disabled.");
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl) {
+        throw new Error("Missing VITE_SUPABASE_URL.");
+      }
+      if (!supabaseAnonKey) {
+        throw new Error("Missing VITE_SUPABASE_PUBLISHABLE_KEY.");
+      }
+
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData.session) {
         throw new Error("Not authenticated.");
       }
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      if (!supabaseUrl) {
-        throw new Error("Missing VITE_SUPABASE_URL.");
+      const sendRequest = async (accessToken: string) =>
+        fetch(`${supabaseUrl}/functions/v1/send-email`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            recruiter_id: values.recruiterId,
+            template_id: values.templateId,
+            subject: values.subject,
+            body: values.body,
+          }),
+        });
+
+      const parseError = async (response: Response) => {
+        const raw = await response.text();
+        let payload: Record<string, unknown> = {};
+        try {
+          payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+        } catch {
+          payload = {};
+        }
+        return {
+          raw,
+          message:
+            (typeof payload?.error === "string" && payload.error) ||
+            (typeof payload?.message === "string" && payload.message) ||
+            (raw ? raw.slice(0, 240) : "") ||
+            `Send failed (${response.status})`,
+        };
+      };
+
+      let accessToken = sessionData.session.access_token;
+      const expiresAtMs = (sessionData.session.expires_at ?? 0) * 1000;
+      if (expiresAtMs > 0 && expiresAtMs - Date.now() < 60_000) {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshed.session) {
+          throw new Error("Session expired. Please sign out and sign in again.");
+        }
+        accessToken = refreshed.session.access_token;
       }
-      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionData.session.access_token}`,
-        },
-        body: JSON.stringify({
-          recruiter_id: values.recruiterId,
-          template_id: values.templateId,
-          subject: values.subject,
-          body: values.body,
-        }),
-      });
-      const raw = await response.text();
-      let payload: Record<string, unknown> = {};
-      try {
-        payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      } catch {
-        payload = {};
+
+      let response = await sendRequest(accessToken);
+      if (response.ok) return;
+
+      let { message } = await parseError(response);
+      const shouldRetryAuth =
+        response.status === 401 ||
+        /invalid jwt|invalid token|unauthorized|jwt/i.test(message);
+
+      if (shouldRetryAuth) {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshed.session) {
+          throw new Error("Session expired. Please sign out and sign in again.");
+        }
+        response = await sendRequest(refreshed.session.access_token);
+        if (response.ok) return;
+        ({ message } = await parseError(response));
       }
-      if (!response.ok) {
-        const errorDetail =
-          (typeof payload?.error === "string" && payload.error) ||
-          (typeof payload?.message === "string" && payload.message) ||
-          (raw ? raw.slice(0, 240) : "") ||
-          `Send failed (${response.status})`;
-        throw new Error(errorDetail);
-      }
+
+      throw new Error(message);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["email-logs", user?.id] });
@@ -538,8 +578,7 @@ export default function Outreach() {
   const composePreviewCards = selectedRecruiters.map((recruiter) => {
     const subject = fillPlaceholders(activeSubject, recruiter);
     const body = fillPlaceholders(activeBody, recruiter);
-    const mailto = `mailto:${encodeURIComponent(recruiter.email ?? "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    return { recruiter, subject, body, mailto };
+    return { recruiter, subject, body };
   });
 
   return (
@@ -822,7 +861,7 @@ export default function Outreach() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {composePreviewCards.length > 0 ? (
-                    composePreviewCards.map(({ recruiter, subject, body, mailto }) => (
+                    composePreviewCards.map(({ recruiter, subject, body }) => (
                       <div key={recruiter.id} className="rounded-xl border border-border/50 bg-background/35 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div className="space-y-1">
@@ -841,11 +880,6 @@ export default function Outreach() {
                             </Button>
                             {recruiter.email ? (
                               <>
-                                <Button asChild size="sm" variant="outline">
-                                  <a href={mailto}>
-                                    <Mail className="mr-2 h-4 w-4" /> mailto
-                                  </a>
-                                </Button>
                                 {smtpEnabled ? (
                                   gmailConfigQuery.data ? (
                                     <Button
@@ -1087,7 +1121,7 @@ export default function Outreach() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingTemplate ? "Edit template" : "Add template"}</DialogTitle>
-            <DialogDescription>Templates power both mailto drafts and optional in-app SMTP sending.</DialogDescription>
+            <DialogDescription>Templates power personalized outreach drafts and optional in-app SMTP sending.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-2">
