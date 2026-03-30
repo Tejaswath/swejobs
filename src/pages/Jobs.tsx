@@ -53,16 +53,16 @@ type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_bo
 type DeadlineFocus = "none" | "today" | "week" | "upcoming";
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
-  { id: "best_matches", label: "Best Matches", description: "Top ranked roles for your profile" },
+  { id: "best_matches", label: "Recommended", description: "Top ranked roles for your profile" },
   { id: "all_roles", label: "All Roles", description: "Every active role, no target-role filter" },
   { id: "graduate_trainee", label: "Graduate / Trainee", description: "Early-career and program roles" },
 ];
 
 const JOB_SORT_OPTIONS: Array<{ id: JobSort; label: string }> = [
-  { id: "relevance", label: "Best match (ranked)" },
-  { id: "ats_desc", label: "Keyword match (highest)" },
-  { id: "deadline", label: "Deadline (soonest)" },
-  { id: "newest", label: "Newest posted" },
+  { id: "relevance", label: "Recommended for you" },
+  { id: "ats_desc", label: "Resume match (highest)" },
+  { id: "deadline", label: "Deadline soonest" },
+  { id: "newest", label: "Newest jobs" },
 ];
 
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, C: 2, unknown: 3 };
@@ -245,6 +245,9 @@ export default function Jobs() {
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [tipDismissed, setTipDismissed] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem("swejobs.explore.tip-dismissed") === "true",
+  );
   const debouncedSearch = useDebouncedValue(search, 275);
   const isSearchPending = search.trim() !== debouncedSearch.trim();
   const deadlineFocus: DeadlineFocus =
@@ -1289,10 +1292,91 @@ export default function Jobs() {
           )}
         </div>
 
-        <div className="rounded-lg border border-border/40 bg-primary/5 px-4 py-2.5 text-xs text-muted-foreground">
-          <span className="font-medium text-primary">Tip:</span>{" "}
-          Use the SweJobs Chrome extension to capture jobs from LinkedIn, Greenhouse, Lever, and any career page directly into your Applications.
-        </div>
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {lang !== "all" && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Language: {lang.toUpperCase()}
+                <button type="button" onClick={() => setLang("all")} className="hover:text-foreground" aria-label="Clear language filter">
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+            {remoteOnly && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Remote only
+                <button type="button" onClick={() => setRemoteOnly(false)} className="hover:text-foreground" aria-label="Clear remote-only filter">
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+            {!hideThreePlusYears && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Including 3+ years
+                <button
+                  type="button"
+                  onClick={() => setHideThreePlusYears(true)}
+                  className="hover:text-foreground"
+                  aria-label="Require up to 2 years experience"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+            {!hideConsultancies && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Including consultancies
+                <button
+                  type="button"
+                  onClick={() => setHideConsultancies(true)}
+                  className="hover:text-foreground"
+                  aria-label="Hide consultancy roles"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+            {deadlineFocus !== "none" && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Deadline: {deadlineFocus}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearchParams((current) => {
+                      const next = new URLSearchParams(current);
+                      next.delete("deadline");
+                      return next;
+                    })
+                  }
+                  className="hover:text-foreground"
+                  aria-label="Clear deadline focus"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {!tipDismissed && (
+          <div className="flex items-center justify-between rounded-lg border border-border/40 bg-primary/5 px-4 py-2.5 text-xs text-muted-foreground">
+            <span>
+              <span className="font-medium text-primary">Tip:</span>{" "}
+              Use the SweJobs Chrome extension to capture jobs from LinkedIn, Greenhouse, Lever, and any career page directly into your Applications.
+            </span>
+            <button
+              type="button"
+              className="ml-3 shrink-0 text-muted-foreground/60 hover:text-foreground"
+              onClick={() => {
+                window.localStorage.setItem("swejobs.explore.tip-dismissed", "true");
+                setTipDismissed(true);
+              }}
+              aria-label="Dismiss explore tip"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {sortBy === "ats_desc" && !activeAtsResume?.parsed_text ? (
           <p className="text-[11px] text-muted-foreground">
@@ -1391,7 +1475,7 @@ export default function Jobs() {
                             <div className="flex shrink-0 items-center gap-1">
                               {watched && (
                                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
-                                  Watched
+                                  Following
                                 </Badge>
                               )}
                               {trackedStatus === "saved" ? (
@@ -1416,7 +1500,7 @@ export default function Jobs() {
                               )}
                               {atsSnapshot ? (
                                 <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.displayScore))}>
-                                  KW {atsSnapshot.displayScore}%
+                                  Match {atsSnapshot.displayScore}%
                                 </Badge>
                               ) : null}
                             </div>
@@ -1549,7 +1633,7 @@ export default function Jobs() {
                           className="h-8 gap-1.5 text-xs text-muted-foreground"
                           onClick={() => watchCompany.mutate(detail.company_canonical || detailDisplayEmployer)}
                         >
-                          <Star className="h-3 w-3" /> Watch {detailDisplayEmployer}
+                          <Star className="h-3 w-3" /> Follow {detailDisplayEmployer}
                         </Button>
                       )}
                     </div>

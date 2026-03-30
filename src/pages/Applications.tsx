@@ -353,6 +353,7 @@ export default function Applications() {
   const [searchParams, setSearchParams] = useSearchParams();
   const resumeUploadInputRef = useRef<HTMLInputElement | null>(null);
   const handledPrefillRef = useRef<string | null>(null);
+  const handledStatusParamRef = useRef<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingApplication, setEditingApplication] = useState<ApplicationRow | null>(null);
@@ -376,6 +377,15 @@ export default function Applications() {
   useEffect(() => {
     document.title = "Applications | SweJobs";
   }, []);
+
+  useEffect(() => {
+    const statusParam = searchParams.get("status");
+    if (!statusParam || handledStatusParamRef.current === statusParam) return;
+    handledStatusParamRef.current = statusParam;
+    if (APPLICATION_STATUSES.includes(statusParam as ApplicationStatus)) {
+      setStatusFilter(statusParam as FilterStatus);
+    }
+  }, [searchParams]);
 
   const resumeVersionsQuery = useQuery({
     queryKey: ["resume-versions", user?.id],
@@ -1149,7 +1159,12 @@ export default function Applications() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" onClick={exportApplications} disabled={!applicationsQuery.data?.length}>
+            <Button
+              variant="ghost"
+              className="gap-2 text-muted-foreground hover:text-foreground"
+              onClick={exportApplications}
+              disabled={!applicationsQuery.data?.length}
+            >
               <FileDown className="h-4 w-4" /> Export CSV
             </Button>
             <Button
@@ -1328,6 +1343,7 @@ export default function Applications() {
                     <TableBody>
                       {pageItems.map((application) => {
                         const faviconUrl = application.job_url ? companyFaviconUrl(application.job_url) : null;
+                        const applicationAgeDays = daysSinceApplied(application.applied_at);
                         return (
                         <TableRow
                           key={application.id}
@@ -1371,32 +1387,39 @@ export default function Applications() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Select
-                              value={application.status}
-                              onValueChange={(value) =>
-                                statusMutation.mutate({
-                                  id: application.id,
-                                  status: value as ApplicationStatus,
-                                  statusHistory: application.status_history,
-                                })
-                              }
-                            >
-                              <SelectTrigger
-                                className={cn(
-                                  "w-[124px] border-0 shadow-none",
-                                  STATUS_COLORS[application.status as ApplicationStatus],
-                                )}
+                            <div>
+                              <Select
+                                value={application.status}
+                                onValueChange={(value) =>
+                                  statusMutation.mutate({
+                                    id: application.id,
+                                    status: value as ApplicationStatus,
+                                    statusHistory: application.status_history,
+                                  })
+                                }
                               >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {APPLICATION_STATUSES.map((status) => (
-                                  <SelectItem key={status} value={status}>
-                                    {STATUS_LABELS[status]}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                                <SelectTrigger
+                                  className={cn(
+                                    "w-[124px] border-0 shadow-none",
+                                    STATUS_COLORS[application.status as ApplicationStatus],
+                                  )}
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {APPLICATION_STATUSES.map((status) => (
+                                    <SelectItem key={status} value={status}>
+                                      {STATUS_LABELS[status]}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {application.status === "applied" && applicationAgeDays != null && applicationAgeDays >= 14 ? (
+                                <p className="mt-1 text-[10px] text-amber-400/80">
+                                  {formatDaysSinceApplied(application.applied_at)} — consider following up
+                                </p>
+                              ) : null}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {application.ats_score != null ? (

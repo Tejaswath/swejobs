@@ -1067,7 +1067,9 @@ export default function Outreach() {
                         <TableHead>Subject</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Sent</TableHead>
-                        <TableHead>Opens</TableHead>
+                        <TableHead>
+                          <span title="May undercount — some email clients block tracking images">Tracked opens</span>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

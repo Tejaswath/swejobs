@@ -47,6 +47,8 @@ type RecentCapturedApplication = {
   created_at: string;
 };
 
+type PipelineStatus = "applied" | "oa" | "interviewing" | "offer" | "rejected";
+
 const ONBOARDING_DISMISSED_KEY = "swejobs.overview.onboarding.dismissed.v1";
 const OVERVIEW_LAST_VISIT_KEY = "swejobs.overview.last-visit.v1";
 
@@ -318,6 +320,35 @@ export default function Index() {
     },
   });
 
+  const pipelineQuery = useQuery({
+    queryKey: ["overview-pipeline", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("applications")
+        .select("status")
+        .eq("user_id", user!.id);
+      if (error) throw error;
+
+      const counts: Record<PipelineStatus, number> = {
+        applied: 0,
+        oa: 0,
+        interviewing: 0,
+        offer: 0,
+        rejected: 0,
+      };
+
+      for (const row of data ?? []) {
+        const status = row.status as PipelineStatus;
+        if (status in counts) {
+          counts[status] += 1;
+        }
+      }
+
+      return counts;
+    },
+  });
+
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
       today: [],
@@ -559,12 +590,12 @@ export default function Index() {
               <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                    Watched
+                    Following
                   </p>
                   {watchedCompanyDataQuery.isLoading ? (
                     <span className="text-xs text-muted-foreground">Loading…</span>
                   ) : watchlistHighlights.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">No watched companies yet.</span>
+                    <span className="text-xs text-muted-foreground">Follow companies from Explore to see them here.</span>
                   ) : (
                     watchlistHighlights.slice(0, 5).map((company) => (
                       <Link
@@ -576,6 +607,39 @@ export default function Index() {
                       </Link>
                     ))
                   )}
+                </div>
+              </div>
+            </FadeUp>
+          ) : null}
+
+          {user && pipelineQuery.data && Object.values(pipelineQuery.data).some((count) => count > 0) ? (
+            <FadeUp>
+              <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                  Your pipeline
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { key: "applied" as const, label: "Applied", color: "bg-primary/70" },
+                    { key: "oa" as const, label: "OA", color: "bg-amber-500/70" },
+                    { key: "interviewing" as const, label: "Interview", color: "bg-sky-500/70" },
+                    { key: "offer" as const, label: "Offer", color: "bg-emerald-500/70" },
+                    { key: "rejected" as const, label: "Rejected", color: "bg-rose-500/50" },
+                  ].map((stage) => {
+                    const count = pipelineQuery.data?.[stage.key] ?? 0;
+                    if (count === 0) return null;
+                    return (
+                      <Link
+                        key={stage.key}
+                        to={`/applications?status=${stage.key}`}
+                        className="flex items-center gap-1.5 rounded-full border border-border/50 bg-background/35 px-2.5 py-1 text-xs transition-colors hover:border-primary/30"
+                      >
+                        <span className={cn("h-2 w-2 rounded-full", stage.color)} />
+                        <span className="font-medium text-foreground">{count}</span>
+                        <span className="text-muted-foreground">{stage.label}</span>
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
             </FadeUp>

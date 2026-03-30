@@ -51,12 +51,12 @@ const NAV_ITEMS = [
 ];
 
 const MORE_ITEMS = [
-  { path: "/tracked", label: "Shortlist", icon: Bookmark },
+  { path: "/tracked", label: "Saved Jobs", icon: Bookmark },
   { path: "/resumes", label: "Resume Library", icon: User },
   { path: "/skills", label: "Skill Gap", icon: Target },
   { path: "/searches", label: "Saved Searches", icon: Bookmark },
   { path: "/export", label: "Export Data", icon: Download },
-  { path: "/admin", label: "Admin", icon: Settings },
+  ...(import.meta.env.DEV ? [{ path: "/admin", label: "Admin", icon: Settings }] : []),
 ];
 
 const COMMAND_ITEMS = [
