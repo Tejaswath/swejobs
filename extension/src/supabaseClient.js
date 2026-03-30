@@ -104,6 +104,91 @@ export async function signInWithPassword(client, email, password) {
   return data.user ?? null;
 }
 
+function parseAuthErrorMessage(url) {
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const searchParams = new URLSearchParams(url.search);
+  const rawError =
+    hashParams.get("error_description") ??
+    hashParams.get("error") ??
+    searchParams.get("error_description") ??
+    searchParams.get("error");
+  if (!rawError) return null;
+  try {
+    return decodeURIComponent(rawError);
+  } catch {
+    return rawError;
+  }
+}
+
+function launchWebAuthFlow(url) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url, interactive: true }, (redirectUrl) => {
+      const runtimeError = chrome.runtime?.lastError?.message;
+      if (runtimeError) {
+        reject(new Error(runtimeError));
+        return;
+      }
+      if (!redirectUrl) {
+        reject(new Error("Google sign-in was cancelled."));
+        return;
+      }
+      resolve(redirectUrl);
+    });
+  });
+}
+
+export async function signInWithGoogle(client, config) {
+  const supabaseUrl = String(config?.supabaseUrl ?? "").trim();
+  if (!supabaseUrl) {
+    throw new Error("Supabase URL is missing in extension config.");
+  }
+
+  const redirectTo = chrome.identity.getRedirectURL("supabase-auth");
+  const authUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
+  authUrl.searchParams.set("provider", "google");
+  authUrl.searchParams.set("redirect_to", redirectTo);
+  authUrl.searchParams.set("access_type", "offline");
+  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("scopes", "email profile");
+
+  const redirectUrlRaw = await launchWebAuthFlow(authUrl.toString());
+  const redirectUrl = new URL(redirectUrlRaw);
+  const authError = parseAuthErrorMessage(redirectUrl);
+  if (authError) {
+    throw new Error(authError);
+  }
+
+  const hashParams = new URLSearchParams(redirectUrl.hash.replace(/^#/, ""));
+  const accessToken = hashParams.get("access_token");
+  const refreshToken = hashParams.get("refresh_token");
+
+  if (accessToken && refreshToken) {
+    const { data, error } = await client.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error || !data?.session) {
+      throw error ?? new Error("Could not establish session after Google sign-in.");
+    }
+    await storeSession(data.session);
+    return data.user ?? null;
+  }
+
+  const code = redirectUrl.searchParams.get("code");
+  if (code) {
+    const { data, error } = await client.auth.exchangeCodeForSession(code);
+    if (error || !data?.session) {
+      throw error ?? new Error("Could not exchange Google auth code for a session.");
+    }
+    await storeSession(data.session);
+    return data.user ?? null;
+  }
+
+  throw new Error(
+    `Google sign-in did not return tokens. Add this redirect URL to Supabase Auth: ${redirectTo}`,
+  );
+}
+
 export async function signOutClient(client) {
   await client.auth.signOut();
   await clearStoredSession();

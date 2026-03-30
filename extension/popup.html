@@ -37,6 +37,8 @@
         <div class="panel-header">
           <h2>Sign in</h2>
         </div>
+        <button id="sign-in-google" class="btn btn-primary">Sign in with Google</button>
+        <p class="auth-separator">or use email and password</p>
         <label class="field">
           <span>Email</span>
           <input id="auth-email" type="email" autocomplete="email" />
@@ -45,7 +47,7 @@
           <span>Password</span>
           <input id="auth-password" type="password" autocomplete="current-password" />
         </label>
-        <button id="sign-in" class="btn btn-primary">Sign in</button>
+        <button id="sign-in" class="btn btn-outline">Sign in with password</button>
       </section>
 
       <section id="capture-section" class="panel hidden">
@@ -80,6 +82,33 @@
           <span>Notes (optional)</span>
           <textarea id="notes" rows="3" placeholder="Optional context for your tracker"></textarea>
         </label>
+        <div id="recruiter-section" class="hidden" style="border-top: 1px solid var(--border); padding-top: 10px;">
+          <div class="panel-header">
+            <h2>Recruiter detected</h2>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+            <div style="display: flex; gap: 6px; font-size: 12px;">
+              <span style="color: var(--text-secondary);">Name:</span>
+              <span id="recruiter-name" style="color: var(--text-primary); font-weight: 500;"></span>
+            </div>
+            <div style="display: flex; gap: 6px; font-size: 12px;">
+              <span style="color: var(--text-secondary);">Email:</span>
+              <span id="recruiter-email" style="color: var(--text-primary);"></span>
+            </div>
+            <div style="display: flex; gap: 6px; font-size: 12px;">
+              <span style="color: var(--text-secondary);">Title:</span>
+              <span id="recruiter-title-display" style="color: var(--text-primary);"></span>
+            </div>
+            <div style="display: flex; gap: 6px; font-size: 12px;">
+              <span style="color: var(--text-secondary);">LinkedIn:</span>
+              <span id="recruiter-linkedin" style="color: var(--accent); font-size: 11px; word-break: break-all;"></span>
+            </div>
+          </div>
+          <button id="save-recruiter" class="btn btn-outline" style="margin-top: 8px; width: 100%;">
+            Save to Outreach
+          </button>
+          <p id="recruiter-status" class="hidden" style="font-size: 11px; margin-top: 4px;"></p>
+        </div>
         <div class="row">
           <button id="autofill" class="btn btn-outline">Autofill from page</button>
           <button id="save-application" class="btn btn-primary">Save</button>

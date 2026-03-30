@@ -1289,6 +1289,11 @@ export default function Jobs() {
           )}
         </div>
 
+        <div className="rounded-lg border border-border/40 bg-primary/5 px-4 py-2.5 text-xs text-muted-foreground">
+          <span className="font-medium text-primary">Tip:</span>{" "}
+          Use the SweJobs Chrome extension to capture jobs from LinkedIn, Greenhouse, Lever, and any career page directly into your Applications.
+        </div>
+
         {sortBy === "ats_desc" && !activeAtsResume?.parsed_text ? (
           <p className="text-[11px] text-muted-foreground">
             Keyword sorting needs a resume with extracted text. Upload/select one in Resume Library.

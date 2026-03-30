@@ -329,7 +329,87 @@ async function captureJobPage() {
   };
 }
 
+function extractRecruiterFromLinkedIn() {
+  if (!location.href.includes("linkedin.com")) return null;
+
+  const hiringTeamSection =
+    document.querySelector("[class*='hiring-team']") ??
+    document.querySelector("[class*='hirer-card']") ??
+    document.querySelector("[data-test-id='hirer-card']");
+
+  if (hiringTeamSection) {
+    const nameEl = hiringTeamSection.querySelector("h3, [class*='name'], a[class*='app-aware-link']");
+    const titleEl = hiringTeamSection.querySelector("[class*='headline'], [class*='title'], p");
+    const profileLink = hiringTeamSection.querySelector("a[href*='linkedin.com/in/']");
+    const name = cleanText(nameEl?.textContent ?? "");
+    const title = cleanText(titleEl?.textContent ?? "");
+    if (name && name.length > 2 && name.length < 80) {
+      return {
+        name,
+        title: title || "",
+        company: "",
+        email: "",
+        linkedin_url: profileLink?.href ?? "",
+      };
+    }
+  }
+
+  if (location.href.includes("linkedin.com/in/")) {
+    const profileName = cleanText(
+      document.querySelector("h1.text-heading-xlarge")?.textContent ??
+        document.querySelector("h1[class*='inline']")?.textContent ??
+        "",
+    );
+    const profileTitle = cleanText(
+      document.querySelector("[data-field='headline']")?.textContent ??
+        document.querySelector(".text-body-medium")?.textContent ??
+        "",
+    );
+    if (profileName && profileName.length > 2) {
+      return {
+        name: profileName,
+        title: profileTitle || "",
+        company: "",
+        email: "",
+        linkedin_url: location.href.split("?")[0],
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractRecruiterFromJobPage() {
+  const pageText = document.body?.innerText ?? "";
+  const emailMatch = pageText.match(
+    /(?:kontakta|contact|frågor|questions|recruiter|rekryterare)[\s\S]{0,220}?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+  );
+  const contactMatch = pageText.match(
+    /(?:kontakta|contact person|recruiter|rekryterare|hiring manager)[:\s]*([A-ZÅÄÖ][a-zåäö]+(?:\s[A-ZÅÄÖ][a-zåäö]+){1,3})/i,
+  );
+  if (!emailMatch && !contactMatch) return null;
+  return {
+    name: contactMatch?.[1]?.trim() ?? "",
+    title: "",
+    company: "",
+    email: emailMatch?.[1]?.trim() ?? "",
+    linkedin_url: "",
+  };
+}
+
+function extractRecruiterInfo() {
+  const linkedInRecruiter = extractRecruiterFromLinkedIn();
+  if (linkedInRecruiter) return linkedInRecruiter;
+  const pageRecruiter = extractRecruiterFromJobPage();
+  if (pageRecruiter && (pageRecruiter.name || pageRecruiter.email)) return pageRecruiter;
+  return null;
+}
+
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request?.action === "captureRecruiterInfo") {
+    sendResponse(extractRecruiterInfo());
+    return false;
+  }
   if (request?.action !== "captureJobPage") return undefined;
 
   (async () => {
@@ -349,6 +429,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       }
     }
 
+    result.recruiter_hint = extractRecruiterInfo();
     sendResponse(result);
   })().catch((error) =>
     sendResponse({
@@ -358,6 +439,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       role_title: "",
       company_hint: "",
       warnings: [String(error?.message ?? "Capture failed")],
+      recruiter_hint: null,
     }),
   );
 

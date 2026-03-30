@@ -467,3 +467,315 @@ feeds:
       - cplusplus
       - python
       - machine learning
+
+  # Candidate feeds below were added for expansion; keep disabled until their provider/slug
+  # combination is endpoint-verified (several currently return HTTP 404).
+  - feed_key: volvo_cars_greenhouse
+    display_name: Volvo Cars
+    provider: greenhouse
+    slug_or_url: volvocars
+    company_canonical: volvo cars
+    enabled: false
+    priority: 15
+    location_filters:
+      - Stockholm
+      - Gothenburg
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - data
+      - cloud
+      - java
+      - python
+      - kotlin
+
+  - feed_key: ericsson_greenhouse
+    display_name: Ericsson
+    provider: greenhouse
+    slug_or_url: ericsson
+    company_canonical: ericsson
+    enabled: false
+    priority: 18
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - cloud
+      - platform
+      - java
+      - python
+      - cplusplus
+
+  - feed_key: pleo_greenhouse
+    display_name: Pleo
+    provider: greenhouse
+    slug_or_url: pleo
+    company_canonical: pleo
+    enabled: true
+    priority: 38
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - kotlin
+      - java
+      - python
+
+  - feed_key: embark_studios_greenhouse
+    display_name: Embark Studios
+    provider: greenhouse
+    slug_or_url: embarkstudios
+    company_canonical: embark studios
+    enabled: false
+    priority: 42
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - rust
+      - game
+      - cloud
+      - platform
+
+  - feed_key: sinch_greenhouse
+    display_name: Sinch
+    provider: greenhouse
+    slug_or_url: sinch
+    company_canonical: sinch
+    enabled: false
+    priority: 48
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - java
+      - python
+      - cloud
+
+  - feed_key: kry_lever
+    display_name: Kry / Livi
+    provider: lever
+    slug_or_url: kry
+    company_canonical: kry
+    enabled: false
+    priority: 36
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - mobile
+      - kotlin
+      - java
+      - python
+
+  - feed_key: hemnet_teamtailor
+    display_name: Hemnet
+    provider: teamtailor
+    slug_or_url: https://career.hemnet.se/
+    company_canonical: hemnet
+    enabled: true
+    priority: 32
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - ruby
+      - python
+      - java
+
+  - feed_key: trustly_greenhouse
+    display_name: Trustly
+    provider: greenhouse
+    slug_or_url: trustly
+    company_canonical: trustly
+    enabled: false
+    priority: 46
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - java
+      - python
+      - platform
+
+  - feed_key: betsson_greenhouse
+    display_name: Betsson Group
+    provider: greenhouse
+    slug_or_url: betssongroup
+    company_canonical: betsson
+    enabled: false
+    priority: 52
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - java
+      - python
+      - data
+
+  - feed_key: northvolt_greenhouse
+    display_name: Northvolt
+    provider: greenhouse
+    slug_or_url: northvolt
+    company_canonical: northvolt
+    enabled: false
+    priority: 22
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - cloud
+      - data
+      - python
+      - java
+
+  - feed_key: bambora_lever
+    display_name: Bambora (Worldline)
+    provider: lever
+    slug_or_url: bambora
+    company_canonical: bambora
+    enabled: false
+    priority: 58
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - java
+      - python
+
+  - feed_key: karma_teamtailor
+    display_name: Karma
+    provider: teamtailor
+    slug_or_url: https://karmalife.teamtailor.com/
+    company_canonical: karma
+    enabled: false
+    priority: 88
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - mobile
+      - python
+
+  - feed_key: catena_media_greenhouse
+    display_name: Catena Media
+    provider: greenhouse
+    slug_or_url: catenamedia
+    company_canonical: catena media
+    enabled: false
+    priority: 92
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - java
+      - python
+
+  - feed_key: tobii_greenhouse
+    display_name: Tobii
+    provider: greenhouse
+    slug_or_url: tobii
+    company_canonical: tobii
+    enabled: false
+    priority: 78
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - cplusplus
+      - python
+      - machine learning
+
+  - feed_key: izettle_lever
+    display_name: iZettle (PayPal)
+    provider: lever
+    slug_or_url: izettle
+    company_canonical: izettle
+    enabled: false
+    priority: 44
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - java
+      - kotlin
+      - python

@@ -83,6 +83,95 @@ const PREVIEW_RECRUITER: Recruiter = {
   updated_at: new Date().toISOString(),
 };
 
+const STARTER_TEMPLATES: TemplateFormState[] = [
+  {
+    name: "Introductory – Engineering",
+    subject: "Interested in opportunities at {{company}}",
+    body: `Hi {{firstName}},
+
+My name is [Your name], and I am a software engineer focused on [e.g. backend/fullstack/data engineering]. I have experience with [e.g. Java, Python, distributed systems] and I am currently exploring new opportunities in Stockholm.
+
+I came across {{company}} and would love to learn more about your engineering team and open roles.
+
+Would you be open to a short chat? I can share my CV if helpful.
+
+Best regards,
+[Your name]
+[LinkedIn URL]`,
+  },
+  {
+    name: "Introductory – International Teams",
+    subject: "Software Engineer interested in opportunities at {{company}}",
+    body: `Hi {{firstName}},
+
+I'm a software engineer based in Stockholm with experience in [e.g. Java, TypeScript, cloud infrastructure]. I came across {{company}} and was impressed by [specific thing — product, tech blog, open-source contribution].
+
+I'm currently exploring new roles and would love to learn more about engineering opportunities on your team. Would you be open to a brief chat?
+
+Happy to share my CV or portfolio if helpful.
+
+Best regards,
+[Your name]
+[LinkedIn URL]`,
+  },
+  {
+    name: "Follow-up after applying",
+    subject: "Follow-up on my application to {{company}}",
+    body: `Hi {{firstName}},
+
+I recently applied for a [role name] position at {{company}} and wanted to follow up briefly.
+
+I am genuinely interested in contributing to [specific product/team area], and I believe my background in [your focus area] aligns well with what you are building.
+
+Please let me know if there is an opportunity to discuss further.
+
+Best regards,
+[Your name]`,
+  },
+  {
+    name: "Referral Intro",
+    subject: "Referred by [name] — interested in {{company}}",
+    body: `Hi {{firstName}},
+
+[Referral name] suggested I reach out to you regarding engineering opportunities at {{company}}.
+
+I currently work as a [current role] focused on [technical area], and I am exploring my next career step. The work {{company}} is doing in [area] looks especially interesting.
+
+Would you be open to a short conversation this week?
+
+Thanks,
+[Your name]
+[LinkedIn URL]`,
+  },
+  {
+    name: "Short & Casual",
+    subject: "Quick question about engineering at {{company}}",
+    body: `Hey {{firstName}},
+
+I'm a dev in Stockholm looking at my next move. {{company}} caught my eye — are you hiring for [backend/frontend/etc.] roles right now?
+
+Would love a quick 15-min chat if you're open to it. No pressure either way!
+
+Cheers,
+[Your name]`,
+  },
+  {
+    name: "Internship / Graduate",
+    subject: "Internship or graduate opportunities at {{company}}",
+    body: `Hi {{firstName}},
+
+I am currently studying [program] at [university] and graduating in [term]. I am looking for an internship or graduate opportunity focused on [technical area].
+
+I have heard great things about the engineering culture at {{company}}, and I would love to learn if you are open to intern or graduate candidates. I have experience with [languages/technologies] through coursework and side projects.
+
+Happy to share my CV if relevant.
+
+Kind regards,
+[Your name]
+[LinkedIn URL]`,
+  },
+];
+
 function emptyRecruiterForm(): RecruiterFormState {
   return {
     name: "",
@@ -575,6 +664,22 @@ export default function Outreach() {
     toast({ title: `Imported ${inserts.length} recruiters` });
   };
 
+  const addStarterTemplate = async (starter: TemplateFormState) => {
+    if (!user) return;
+    const { error } = await supabase.from("email_templates").insert({
+      user_id: user.id,
+      name: starter.name,
+      subject: starter.subject,
+      body: starter.body,
+    });
+    if (error) {
+      toast({ title: "Could not add template", description: error.message, variant: "destructive" });
+      return;
+    }
+    void qc.invalidateQueries({ queryKey: ["email-templates", user.id] });
+    toast({ title: `Added "${starter.name}"` });
+  };
+
   const composePreviewCards = selectedRecruiters.map((recruiter) => {
     const subject = fillPlaceholders(activeSubject, recruiter);
     const body = fillPlaceholders(activeBody, recruiter);
@@ -747,6 +852,26 @@ export default function Outreach() {
                       No templates yet.
                     </div>
                   )}
+
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Starter templates</p>
+                    <p className="text-xs text-muted-foreground">
+                      Click to add a pre-written template to your library. Edit placeholders like [Your name] after adding.
+                    </p>
+                    <div className="grid gap-2">
+                      {STARTER_TEMPLATES.map((starter, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className="flex items-center justify-between rounded-lg border border-dashed border-border/50 bg-background/20 px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-background/40"
+                          onClick={() => void addStarterTemplate(starter)}
+                        >
+                          <span className="font-medium">{starter.name}</span>
+                          <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <Card className="border-border/40 bg-background/35">

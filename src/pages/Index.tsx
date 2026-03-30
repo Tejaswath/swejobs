@@ -40,6 +40,13 @@ type RecentActivityItem = {
   href?: string;
 };
 
+type RecentCapturedApplication = {
+  id: string;
+  company: string;
+  job_title: string;
+  created_at: string;
+};
+
 const ONBOARDING_DISMISSED_KEY = "swejobs.overview.onboarding.dismissed.v1";
 const OVERVIEW_LAST_VISIT_KEY = "swejobs.overview.last-visit.v1";
 
@@ -90,6 +97,12 @@ function relativeTime(value: string): string {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   return `${days}d`;
+}
+
+function formatDateTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "Unknown";
+  return new Date(timestamp).toLocaleString();
 }
 
 export default function Index() {
@@ -288,6 +301,23 @@ export default function Index() {
     },
   });
 
+  const recentCapturedQuery = useQuery({
+    queryKey: ["overview-recent-captured", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("applications")
+        .select("id, company, job_title, created_at")
+        .eq("user_id", user!.id)
+        .eq("source", "extension")
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+      return (data ?? []) as RecentCapturedApplication[];
+    },
+  });
+
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
       today: [],
@@ -307,6 +337,7 @@ export default function Index() {
     [watchedCompanyDataQuery.data],
   );
   const recentActivityItems = recentActivityQuery.data ?? [];
+  const recentCapturedApplications = recentCapturedQuery.data ?? [];
 
   const deadlineBuckets: DeadlineBucketViewModel[] = [
     {
@@ -594,6 +625,46 @@ export default function Index() {
                           })}
                         </div>
                       )}
+                    </CardContent>
+                  </Card>
+                </FadeUp>
+              ) : null}
+
+              {user ? (
+                <FadeUp>
+                  <Card className="rounded-[24px] border-border/60 bg-card/80">
+                    <CardContent className="p-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Recently captured</p>
+                      {recentCapturedQuery.isLoading ? (
+                        <p className="mt-3 text-sm text-muted-foreground">Loading captured jobs…</p>
+                      ) : recentCapturedApplications.length === 0 ? (
+                        <p className="mt-3 text-sm text-muted-foreground">
+                          No captured jobs yet. Use the SweJobs extension to save jobs from external sites.
+                        </p>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {recentCapturedApplications.map((item) => (
+                            <Link
+                              key={item.id}
+                              to="/applications"
+                              className="flex items-center justify-between gap-3 rounded-lg border border-border/50 border-l-2 border-l-sky-500/60 bg-background/30 px-3 py-2 transition-colors hover:bg-muted/30 hover:border-primary/30"
+                            >
+                              <div className="min-w-0">
+                                <p className="line-clamp-1 text-sm text-foreground">
+                                  {item.company || "Company"} · {item.job_title || "Role"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
+                              </div>
+                              <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.created_at)}</span>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-3">
+                        <Link to="/applications" className="text-xs text-primary hover:underline">
+                          Open Applications
+                        </Link>
+                      </div>
                     </CardContent>
                   </Card>
                 </FadeUp>

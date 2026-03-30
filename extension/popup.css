@@ -209,6 +209,13 @@ select {
   color: var(--accent);
 }
 
+.auth-separator {
+  color: var(--text-label);
+  font-size: 11px;
+  text-align: center;
+  margin-top: -2px;
+}
+
 .status {
   border-radius: 8px;
   padding: 9px 12px;

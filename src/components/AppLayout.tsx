@@ -46,14 +46,14 @@ import { useState, useEffect } from "react";
 const NAV_ITEMS = [
   { path: "/", label: "Overview", icon: Activity },
   { path: "/jobs", label: "Explore", icon: Compass },
-  { path: "/tracked", label: "Shortlist", icon: Bookmark },
   { path: "/applications", label: "Applications", icon: ClipboardList },
+  { path: "/outreach", label: "Outreach", icon: Mail },
 ];
 
 const MORE_ITEMS = [
+  { path: "/tracked", label: "Shortlist", icon: Bookmark },
   { path: "/resumes", label: "Resume Library", icon: User },
   { path: "/skills", label: "Skill Gap", icon: Target },
-  { path: "/outreach", label: "Outreach", icon: Mail },
   { path: "/searches", label: "Saved Searches", icon: Bookmark },
   { path: "/export", label: "Export Data", icon: Download },
   { path: "/admin", label: "Admin", icon: Settings },
@@ -261,7 +261,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <p className="text-xs text-muted-foreground">SweJobs</p>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Link to="/jobs" className="hover:text-foreground">Explore</Link>
-            <Link to="/tracked" className="hover:text-foreground">Shortlist</Link>
+            <Link to="/applications" className="hover:text-foreground">Applications</Link>
+            <Link to="/outreach" className="hover:text-foreground">Outreach</Link>
           </div>
         </div>
       </footer>

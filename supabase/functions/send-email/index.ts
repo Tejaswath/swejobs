@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,6 +12,176 @@ type SendEmailRequest = {
   subject: string;
   body: string;
 };
+
+type SmtpConnectConfig = {
+  hostname: string;
+  port?: number;
+  username?: string;
+  password?: string;
+};
+
+type SmtpSendConfig = {
+  from: string;
+  to: string;
+  subject: string;
+  content: string;
+  html?: string;
+};
+
+type SmtpCommand = {
+  code: number;
+  args: string;
+};
+
+class SmtpClient {
+  private conn: Deno.Conn | null = null;
+  private decoder = new TextDecoder();
+  private encoder = new TextEncoder();
+  private incoming = "";
+
+  async connectTLS(config: SmtpConnectConfig) {
+    this.conn = await Deno.connectTls({
+      hostname: config.hostname,
+      port: config.port ?? 465,
+    });
+
+    this.assertCode(await this.readCommand(), 220);
+    await this.writeCommand(`EHLO ${config.hostname}`);
+    // Consume EHLO capabilities until last 250 line.
+    while (true) {
+      const cmd = await this.readCommand();
+      if (!cmd || cmd.code !== 250) break;
+      if (!cmd.args.startsWith("-")) break;
+    }
+
+    if (config.username && config.password) {
+      await this.writeCommand("AUTH LOGIN");
+      this.assertCode(await this.readCommand(), 334);
+
+      await this.writeCommand(btoa(config.username));
+      this.assertCode(await this.readCommand(), 334);
+
+      await this.writeCommand(btoa(config.password));
+      this.assertCode(await this.readCommand(), 235);
+    }
+  }
+
+  async send(config: SmtpSendConfig) {
+    const [fromEnvelope, fromHeader] = this.parseAddress(config.from);
+    const [toEnvelope, toHeader] = this.parseAddress(config.to);
+
+    await this.writeCommand(`MAIL FROM:${fromEnvelope}`);
+    this.assertCode(await this.readCommand(), 250);
+
+    await this.writeCommand(`RCPT TO:${toEnvelope}`);
+    this.assertCode(await this.readCommand(), 250);
+
+    await this.writeCommand("DATA");
+    this.assertCode(await this.readCommand(), 354);
+
+    const plainBody = (config.content || "").replaceAll("\r\n", "\n");
+    const htmlBody = (config.html || "").replaceAll("\r\n", "\n");
+    const boundary = "AlternativeBoundary";
+    const message = [
+      `Subject: ${config.subject}`,
+      `From: ${fromHeader}`,
+      `To: ${toHeader}`,
+      `Date: ${new Date().toUTCString()}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/alternative; boundary=${boundary}`,
+      "",
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="utf-8"',
+      "",
+      plainBody,
+      "",
+      `--${boundary}`,
+      'Content-Type: text/html; charset="utf-8"',
+      "",
+      htmlBody,
+      "",
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+
+    // SMTP dot-stuffing: any line starting with "." must be prefixed by another "."
+    const safeMessage = message.replaceAll(/\r\n\./g, "\r\n..");
+    await this.writeRaw(`${safeMessage}\r\n.\r\n`);
+    this.assertCode(await this.readCommand(), 250);
+  }
+
+  async close() {
+    if (!this.conn) return;
+    try {
+      await this.writeCommand("QUIT");
+      await this.readCommand();
+    } catch {
+      // ignore best-effort close failures
+    } finally {
+      this.conn.close();
+      this.conn = null;
+      this.incoming = "";
+    }
+  }
+
+  private parseAddress(input: string): [string, string] {
+    const value = String(input || "").trim();
+    const m = value.match(/(.*)\s<(.*)>/);
+    if (m && m.length === 3) {
+      return [`<${m[2]}>`, value];
+    }
+    return [`<${value}>`, `<${value}>`];
+  }
+
+  private assertCode(command: SmtpCommand | null, expected: number) {
+    if (!command) {
+      throw new Error("SMTP server closed connection unexpectedly");
+    }
+    if (command.code !== expected) {
+      throw new Error(`${command.code}: ${command.args}`);
+    }
+  }
+
+  private async writeCommand(line: string) {
+    await this.writeRaw(`${line}\r\n`);
+  }
+
+  private async writeRaw(value: string) {
+    if (!this.conn) throw new Error("SMTP connection not established");
+    await this.conn.write(this.encoder.encode(value));
+  }
+
+  private async readCommand(): Promise<SmtpCommand | null> {
+    const line = await this.readLine();
+    if (line === null) return null;
+    const code = Number.parseInt(line.slice(0, 3), 10);
+    return {
+      code: Number.isFinite(code) ? code : 0,
+      args: line.slice(3).trim(),
+    };
+  }
+
+  private async readLine(): Promise<string | null> {
+    if (!this.conn) return null;
+    while (true) {
+      const newlineIndex = this.incoming.indexOf("\n");
+      if (newlineIndex >= 0) {
+        const line = this.incoming.slice(0, newlineIndex + 1);
+        this.incoming = this.incoming.slice(newlineIndex + 1);
+        return line.replace(/\r?\n$/, "");
+      }
+      const chunk = new Uint8Array(2048);
+      const read = await this.conn.read(chunk);
+      if (read === null) {
+        if (!this.incoming) return null;
+        const tail = this.incoming;
+        this.incoming = "";
+        return tail;
+      }
+      this.incoming += this.decoder.decode(chunk.subarray(0, read));
+    }
+  }
+}
 
 function jsonResponse(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), {

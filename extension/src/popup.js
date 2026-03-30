@@ -5,6 +5,7 @@ import {
   hasValidConfig,
   initializeClientFromStorage,
   saveExtensionConfig,
+  signInWithGoogle,
   signInWithPassword,
   signOutClient,
 } from "./supabaseClient";
@@ -18,6 +19,7 @@ const elements = {
   authSection: document.getElementById("auth-section"),
   authEmail: document.getElementById("auth-email"),
   authPassword: document.getElementById("auth-password"),
+  signInGoogle: document.getElementById("sign-in-google"),
   signIn: document.getElementById("sign-in"),
   captureSection: document.getElementById("capture-section"),
   signOut: document.getElementById("sign-out"),
@@ -26,6 +28,13 @@ const elements = {
   status: document.getElementById("status"),
   jobUrl: document.getElementById("job-url"),
   notes: document.getElementById("notes"),
+  recruiterSection: document.getElementById("recruiter-section"),
+  recruiterName: document.getElementById("recruiter-name"),
+  recruiterEmail: document.getElementById("recruiter-email"),
+  recruiterTitleDisplay: document.getElementById("recruiter-title-display"),
+  recruiterLinkedin: document.getElementById("recruiter-linkedin"),
+  saveRecruiter: document.getElementById("save-recruiter"),
+  recruiterStatus: document.getElementById("recruiter-status"),
   autofill: document.getElementById("autofill"),
   saveApplication: document.getElementById("save-application"),
   globalStatus: document.getElementById("global-status"),
@@ -33,7 +42,9 @@ const elements = {
 
 let supabaseClient = null;
 let currentUser = null;
+let activeConfig = null;
 let capturedDescription = "";
+let capturedRecruiter = null;
 
 function showStatus(message, type = "success") {
   elements.globalStatus.textContent = message;
@@ -49,6 +60,7 @@ function clearStatus() {
 function setSavingState(isSaving) {
   elements.saveApplication.disabled = isSaving;
   elements.autofill.disabled = isSaving;
+  elements.signInGoogle.disabled = isSaving;
   elements.signIn.disabled = isSaving;
   elements.saveConfig.disabled = isSaving;
 }
@@ -96,6 +108,7 @@ async function initializePopup() {
 
   const { client, config, error } = await initializeClientFromStorage();
   supabaseClient = client;
+  activeConfig = config;
 
   if (error || !hasValidConfig(config)) {
     currentUser = null;
@@ -157,6 +170,25 @@ elements.signIn.addEventListener("click", async () => {
   }
 });
 
+elements.signInGoogle.addEventListener("click", async () => {
+  clearStatus();
+  if (!supabaseClient || !activeConfig) {
+    showStatus("Save Supabase config first.", "error");
+    return;
+  }
+
+  setSavingState(true);
+  try {
+    currentUser = await signInWithGoogle(supabaseClient, activeConfig);
+    toggleAuthAndCapture();
+    showStatus("Signed in with Google.");
+  } catch (error) {
+    showStatus(String(error?.message ?? "Google sign-in failed."), "error");
+  } finally {
+    setSavingState(false);
+  }
+});
+
 elements.signOut.addEventListener("click", async () => {
   clearStatus();
   if (!supabaseClient) return;
@@ -185,6 +217,22 @@ elements.autofill.addEventListener("click", async () => {
     elements.jobTitle.value = String(response.role_title ?? "").trim();
     elements.jobUrl.value = String(response.jd_url ?? activeTab.url ?? "").trim();
     capturedDescription = String(response.jd_text ?? "").slice(0, MAX_CAPTURED_DESCRIPTION_CHARS);
+    capturedRecruiter = response.recruiter_hint ?? null;
+
+    if (capturedRecruiter && (capturedRecruiter.name || capturedRecruiter.email)) {
+      elements.recruiterSection.classList.remove("hidden");
+      elements.recruiterName.textContent = capturedRecruiter.name || "—";
+      elements.recruiterEmail.textContent = capturedRecruiter.email || "—";
+      elements.recruiterTitleDisplay.textContent = capturedRecruiter.title || "—";
+      elements.recruiterLinkedin.textContent = capturedRecruiter.linkedin_url || "—";
+      elements.recruiterStatus.classList.add("hidden");
+      elements.recruiterStatus.textContent = "";
+    } else {
+      capturedRecruiter = null;
+      elements.recruiterSection.classList.add("hidden");
+      elements.recruiterStatus.classList.add("hidden");
+      elements.recruiterStatus.textContent = "";
+    }
 
     if (Array.isArray(response.warnings) && response.warnings.length > 0) {
       showStatus(String(response.warnings[0]), "error");
@@ -256,6 +304,53 @@ elements.saveApplication.addEventListener("click", async () => {
     showStatus(String(error?.message ?? "Save failed."), "error");
   } finally {
     setSavingState(false);
+  }
+});
+
+elements.saveRecruiter?.addEventListener("click", async () => {
+  if (!supabaseClient || !capturedRecruiter) return;
+
+  const user = currentUser ?? (await getCurrentUser(supabaseClient));
+  if (!user) {
+    elements.recruiterStatus.textContent = "Please sign in first.";
+    elements.recruiterStatus.className = "status error";
+    elements.recruiterStatus.classList.remove("hidden");
+    return;
+  }
+
+  const payload = {
+    user_id: user.id,
+    name: capturedRecruiter.name || "Unknown Recruiter",
+    email: capturedRecruiter.email || null,
+    company: elements.company.value.trim() || capturedRecruiter.company || "",
+    title: capturedRecruiter.title || "",
+    linkedin_url: capturedRecruiter.linkedin_url || "",
+    notes: `Captured from ${elements.jobUrl.value.trim() || "extension"} on ${new Date().toLocaleDateString("sv-SE")}`,
+  };
+
+  try {
+    elements.saveRecruiter.disabled = true;
+    const { error } = await supabaseClient.from("recruiters").insert(payload);
+    if (error) {
+      const message = String(error.message ?? "");
+      const isDuplicate = error.code === "23505" || /duplicate|already exists/i.test(message);
+      if (isDuplicate) {
+        elements.recruiterStatus.textContent = "Recruiter already saved.";
+        elements.recruiterStatus.className = "status success";
+      } else {
+        throw error;
+      }
+    } else {
+      elements.recruiterStatus.textContent = "Saved to Outreach!";
+      elements.recruiterStatus.className = "status success";
+    }
+    elements.recruiterStatus.classList.remove("hidden");
+  } catch (error) {
+    elements.recruiterStatus.textContent = String(error?.message ?? "Save failed");
+    elements.recruiterStatus.className = "status error";
+    elements.recruiterStatus.classList.remove("hidden");
+  } finally {
+    elements.saveRecruiter.disabled = false;
   }
 });
 
