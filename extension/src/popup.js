@@ -29,6 +29,8 @@ const elements = {
   jobUrl: document.getElementById("job-url"),
   notes: document.getElementById("notes"),
   recruiterSection: document.getElementById("recruiter-section"),
+  recruiterHeading: document.getElementById("recruiter-heading"),
+  recruiterContext: document.getElementById("recruiter-context"),
   recruiterName: document.getElementById("recruiter-name"),
   recruiterEmail: document.getElementById("recruiter-email"),
   recruiterTitleDisplay: document.getElementById("recruiter-title-display"),
@@ -76,6 +78,91 @@ function handleKeyboardShortcuts(event) {
     event.preventDefault();
     elements.autofill.click();
   }
+}
+
+function toTitleCase(value) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function inferNameFromEmail(email) {
+  const normalizedEmail = String(email ?? "").trim().toLowerCase();
+  if (!normalizedEmail.includes("@")) return "";
+
+  const localPart = normalizedEmail.split("@")[0]?.replace(/\+.*/, "") ?? "";
+  if (!localPart) return "";
+
+  const cleaned = localPart.replace(/[_-]+/g, ".");
+  const pieces = cleaned
+    .split(".")
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+
+  if (pieces.length === 0 || pieces.length > 4) return "";
+
+  const blockedTokens = new Set([
+    "admin",
+    "careers",
+    "contact",
+    "hello",
+    "hr",
+    "info",
+    "jobs",
+    "noreply",
+    "recruiter",
+    "recruiting",
+    "support",
+    "talent",
+    "team",
+  ]);
+  if (pieces.every((piece) => blockedTokens.has(piece))) return "";
+
+  const candidate = toTitleCase(
+    pieces
+      .map((piece) => piece.replace(/[^a-zA-Z]/g, ""))
+      .filter(Boolean)
+      .join(" "),
+  );
+  if (!candidate || candidate.length < 3 || candidate.length > 80) return "";
+  return candidate;
+}
+
+function inferCompanyFromEmailDomain(email) {
+  const normalizedEmail = String(email ?? "").trim().toLowerCase();
+  if (!normalizedEmail.includes("@")) return "";
+
+  const domain = normalizedEmail.split("@")[1]?.trim() ?? "";
+  if (!domain) return "";
+
+  const providerDomains = new Set([
+    "gmail.com",
+    "googlemail.com",
+    "hotmail.com",
+    "icloud.com",
+    "live.com",
+    "msn.com",
+    "outlook.com",
+    "proton.me",
+    "protonmail.com",
+    "yahoo.com",
+  ]);
+  if (providerDomains.has(domain)) return "";
+
+  const domainParts = domain.split(".").filter(Boolean);
+  if (domainParts.length < 2) return "";
+
+  let brandPart = domainParts[0];
+  if (["mail", "m", "mx"].includes(brandPart) && domainParts.length > 2) {
+    brandPart = domainParts[1];
+  }
+
+  const cleaned = brandPart.replace(/[^a-z0-9-]/g, " ").replace(/-/g, " ");
+  const candidate = toTitleCase(cleaned);
+  if (!candidate || candidate.length < 2 || candidate.length > 80) return "";
+  return candidate;
 }
 
 function toggleAuthAndCapture() {
@@ -220,16 +307,30 @@ elements.autofill.addEventListener("click", async () => {
     capturedRecruiter = response.recruiter_hint ?? null;
 
     if (capturedRecruiter && (capturedRecruiter.name || capturedRecruiter.email)) {
+      const inferredName = capturedRecruiter.name || inferNameFromEmail(capturedRecruiter.email);
+      const isEmailOnly = !capturedRecruiter.name && Boolean(capturedRecruiter.email);
       elements.recruiterSection.classList.remove("hidden");
-      elements.recruiterName.textContent = capturedRecruiter.name || "—";
+      elements.recruiterName.textContent = inferredName || "—";
       elements.recruiterEmail.textContent = capturedRecruiter.email || "—";
       elements.recruiterTitleDisplay.textContent = capturedRecruiter.title || "—";
       elements.recruiterLinkedin.textContent = capturedRecruiter.linkedin_url || "—";
+      elements.recruiterHeading.textContent = isEmailOnly ? "Potential contact email found" : "Recruiter detected";
+      if (isEmailOnly) {
+        elements.recruiterContext.textContent = inferredName
+          ? "Name inferred from email format. Verify before saving."
+          : "No clear recruiter name found on this page. Verify before saving.";
+        elements.recruiterContext.classList.remove("hidden");
+      } else {
+        elements.recruiterContext.textContent = "";
+        elements.recruiterContext.classList.add("hidden");
+      }
       elements.recruiterStatus.classList.add("hidden");
       elements.recruiterStatus.textContent = "";
     } else {
       capturedRecruiter = null;
       elements.recruiterSection.classList.add("hidden");
+      elements.recruiterContext.classList.add("hidden");
+      elements.recruiterContext.textContent = "";
       elements.recruiterStatus.classList.add("hidden");
       elements.recruiterStatus.textContent = "";
     }
@@ -320,9 +421,9 @@ elements.saveRecruiter?.addEventListener("click", async () => {
 
   const payload = {
     user_id: user.id,
-    name: capturedRecruiter.name || "Unknown Recruiter",
+    name: capturedRecruiter.name || inferNameFromEmail(capturedRecruiter.email) || "Potential Contact",
     email: capturedRecruiter.email || null,
-    company: elements.company.value.trim() || capturedRecruiter.company || "",
+    company: elements.company.value.trim() || capturedRecruiter.company || inferCompanyFromEmailDomain(capturedRecruiter.email) || "",
     title: capturedRecruiter.title || "",
     linkedin_url: capturedRecruiter.linkedin_url || "",
     notes: `Captured from ${elements.jobUrl.value.trim() || "extension"} on ${new Date().toLocaleDateString("sv-SE")}`,

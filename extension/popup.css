@@ -216,6 +216,12 @@ select {
   margin-top: -2px;
 }
 
+.recruiter-context {
+  color: var(--text-label);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
 .status {
   border-radius: 8px;
   padding: 9px 12px;
