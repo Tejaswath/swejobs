@@ -1,13 +1,13 @@
 :root {
   color-scheme: dark;
   --bg-base: #0c1021;
-  --bg-panel: #111827;
+  --bg-panel: #131b2e;
   --bg-input: #0f172a;
-  --border: #1e293b;
+  --border: #253048;
   --border-focus: #3b82f6;
   --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-label: #64748b;
+  --text-secondary: #b0bec5;
+  --text-label: #8694a8;
   --accent: #3b82f6;
   --accent-hover: #2563eb;
   --success-bg: #052e16;

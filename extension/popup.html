@@ -18,19 +18,16 @@
         </button>
       </header>
 
-      <section class="panel" id="config-section" style="display:none">
+      <section class="panel hidden" id="config-section">
         <div class="panel-header">
-          <h2>Supabase config</h2>
+          <h2>Connection</h2>
         </div>
-        <label class="field">
-          <span>Supabase URL</span>
-          <input id="config-url" type="url" placeholder="https://xxxx.supabase.co" />
-        </label>
-        <label class="field">
-          <span>Anon key</span>
-          <input id="config-anon" type="password" placeholder="sb_publishable_..." />
-        </label>
-        <button id="save-config" class="btn btn-outline">Save config</button>
+        <p style="font-size: 11px; color: var(--text-secondary);">
+          Connected to SweJobs. Configuration is automatic.
+        </p>
+        <p style="font-size: 11px; color: var(--success-text);">
+          Status: <span id="config-status">OK</span>
+        </p>
       </section>
 
       <section id="auth-section" class="panel hidden">
@@ -105,14 +102,22 @@
               <span id="recruiter-linkedin" style="color: var(--accent); font-size: 11px; word-break: break-all;"></span>
             </div>
           </div>
-          <button id="save-recruiter" class="btn btn-outline" style="margin-top: 8px; width: 100%;">
-            Save to Outreach
-          </button>
+          <label
+            class="recruiter-toggle"
+            style="display: flex; align-items: center; gap: 8px; margin-top: 8px; cursor: pointer;"
+          >
+            <input
+              type="checkbox"
+              id="save-recruiter-toggle"
+              style="accent-color: var(--accent); width: 14px; height: 14px;"
+            />
+            <span style="font-size: 11px; color: var(--text-secondary);">Also save recruiter to Outreach</span>
+          </label>
           <p id="recruiter-status" class="hidden" style="font-size: 11px; margin-top: 4px;"></p>
         </div>
-        <div class="row">
-          <button id="autofill" class="btn btn-outline">Autofill from page</button>
-          <button id="save-application" class="btn btn-primary">Save</button>
+        <div class="row" style="grid-template-columns: auto 1fr; margin-top: 6px;">
+          <button id="autofill" class="btn btn-outline" style="font-size: 11px;">Autofill from page</button>
+          <button id="save-application" class="btn btn-primary">Save application</button>
         </div>
       </section>
 

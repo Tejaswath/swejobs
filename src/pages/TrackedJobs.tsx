@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Bookmark, Compass, Trash2 } from "lucide-react";
 
@@ -7,31 +7,15 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-
-const COLUMNS = [
-  { key: "saved", label: "Shortlisted" },
-  { key: "ignored", label: "Passed" },
-] as const;
+import { buildSweJobsApplication } from "@/lib/applications";
 
 const PIPELINE_STATUSES = new Set(["applied", "interviewing", "rejected", "oa", "offer", "withdrawn"]);
-const STATUS_OPTIONS = [
-  { value: "saved", label: "Shortlisted" },
-  { value: "ignored", label: "Passed" },
-  { value: "applied", label: "Applied" },
-  { value: "oa", label: "Online Assessment" },
-  { value: "interviewing", label: "Interviewing" },
-  { value: "offer", label: "Offer" },
-  { value: "rejected", label: "Rejected" },
-  { value: "withdrawn", label: "Withdrawn" },
-] as const;
 
 type TrackedJobWithJob = Tables<"tracked_jobs"> & {
-  jobs: Pick<Tables<"jobs">, "id" | "headline" | "employer_name" | "municipality"> | null;
+  jobs: Pick<Tables<"jobs">, "id" | "headline" | "employer_name" | "municipality" | "source_url"> | null;
 };
 
 export default function TrackedJobs() {
@@ -41,7 +25,7 @@ export default function TrackedJobs() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   useEffect(() => {
-    document.title = "Shortlist | SweJobs";
+    document.title = "Saved Jobs | SweJobs";
   }, []);
 
   const { data: trackedJobs } = useQuery({
@@ -50,24 +34,11 @@ export default function TrackedJobs() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("tracked_jobs")
-        .select("id, user_id, job_id, status, notes, created_at, updated_at, jobs(id, headline, employer_name, municipality)")
+        .select("id, user_id, job_id, status, notes, created_at, updated_at, jobs(id, headline, employer_name, municipality, source_url)")
         .eq("user_id", user!.id)
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as TrackedJobWithJob[];
-    },
-  });
-
-  const updateTrackingStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const { error } = await supabase.from("tracked_jobs").update({ status }).eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["all-tracked", user?.id] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Could not update status", description: error.message, variant: "destructive" });
     },
   });
 
@@ -79,7 +50,7 @@ export default function TrackedJobs() {
     onSuccess: (_data, deletedId) => {
       void qc.invalidateQueries({ queryKey: ["all-tracked", user?.id] });
       setSelectedIds((current) => current.filter((id) => id !== deletedId));
-      toast({ title: "Removed from shortlist" });
+      toast({ title: "Removed from saved jobs" });
     },
     onError: (error: Error) => {
       toast({ title: "Could not remove item", description: error.message, variant: "destructive" });
@@ -94,10 +65,42 @@ export default function TrackedJobs() {
     onSuccess: (_data, ids) => {
       void qc.invalidateQueries({ queryKey: ["all-tracked", user?.id] });
       setSelectedIds([]);
-      toast({ title: `Removed ${ids.length} items` });
+      toast({ title: `Removed ${ids.length} saved job${ids.length === 1 ? "" : "s"}` });
     },
     onError: (error: Error) => {
       toast({ title: "Could not remove selected items", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const moveToApplications = useMutation({
+    mutationFn: async (item: TrackedJobWithJob) => {
+      const job = item.jobs;
+      if (!job) throw new Error("Job details are missing for this saved item.");
+
+      const application = buildSweJobsApplication({
+        userId: user!.id,
+        jobId: item.job_id,
+        company: job.employer_name ?? "Unknown company",
+        jobTitle: job.headline ?? `Job #${item.job_id}`,
+        jobUrl: job.source_url,
+      });
+
+      const { error: insertError } = await supabase.from("applications").insert(application);
+      if (insertError) {
+        const isDuplicate = insertError.code === "23505" || /duplicate|already exists/i.test(insertError.message ?? "");
+        if (!isDuplicate) throw insertError;
+      }
+
+      const { error: deleteError } = await supabase.from("tracked_jobs").delete().eq("id", item.id);
+      if (deleteError) throw deleteError;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["all-tracked", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      toast({ title: "Moved to Applications" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not move to Applications", description: error.message, variant: "destructive" });
     },
   });
 
@@ -129,11 +132,10 @@ export default function TrackedJobs() {
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Shortlist</h1>
-          <p className="text-xs text-muted-foreground">Discovery tracking for jobs you want to follow up on</p>
-          <Link to="/applications" className="mt-2 inline-flex text-xs text-primary hover:underline">
-            Track your full application pipeline →
-          </Link>
+          <h1 className="text-xl font-semibold tracking-tight">Saved Jobs</h1>
+          <p className="text-xs text-muted-foreground">
+            Jobs you saved from Explore. Move them to Applications when you apply.
+          </p>
         </div>
 
         {!isEmpty ? (
@@ -142,7 +144,7 @@ export default function TrackedJobs() {
               <Checkbox
                 checked={allSelected}
                 onCheckedChange={(checked) => toggleSelectAll(Boolean(checked))}
-                aria-label="Select all shortlisted jobs"
+                aria-label="Select all saved jobs"
               />
               <span className="text-xs text-muted-foreground">
                 {selectedIds.length > 0 ? `${selectedIds.length} selected` : "Select items for bulk actions"}
@@ -154,7 +156,7 @@ export default function TrackedJobs() {
                 size="sm"
                 disabled={selectedIds.length === 0 || bulkDeleteTracking.isPending}
                 onClick={() => {
-                  if (!window.confirm(`Remove ${selectedIds.length} selected items from shortlist?`)) return;
+                  if (!window.confirm(`Remove ${selectedIds.length} selected items from saved jobs?`)) return;
                   bulkDeleteTracking.mutate(selectedIds);
                 }}
               >
@@ -167,9 +169,9 @@ export default function TrackedJobs() {
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <Bookmark className="mb-4 h-12 w-12 text-muted-foreground/30" />
-            <h2 className="text-lg font-medium">No shortlist items yet</h2>
+            <h2 className="text-lg font-medium">No saved jobs yet</h2>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Save jobs from Explore to start building your pipeline
+              Save jobs from Explore to keep track of roles you're interested in.
             </p>
             <Link to="/jobs" className="mt-5">
               <Button className="gap-2">
@@ -178,14 +180,14 @@ export default function TrackedJobs() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {pipelineItems.length > 0 ? (
-              <div className="rounded-lg border border-border/50 bg-card/40 p-4">
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-sm font-medium">In your pipeline</h2>
+                    <h2 className="text-sm font-medium">Already in Applications</h2>
                     <p className="text-xs text-muted-foreground">
-                      These roles are already in Applications. Manage interview/reject outcomes there.
+                      {pipelineItems.length} saved job{pipelineItems.length !== 1 ? "s" : ""} already tracked in Applications. You can remove them from this list.
                     </p>
                   </div>
                   <Link to="/applications">
@@ -194,118 +196,60 @@ export default function TrackedJobs() {
                     </Button>
                   </Link>
                 </div>
-                <div className="space-y-2">
-                  {pipelineItems.slice(0, 8).map((item) => {
-                    const job = item.jobs;
-                    return (
-                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-background/40 px-3 py-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Checkbox
-                            checked={selectedSet.has(item.id)}
-                            onCheckedChange={(checked) => toggleSelect(item.id, Boolean(checked))}
-                            aria-label={`Select ${job?.headline ?? `Job ${item.job_id}`}`}
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{job?.headline ?? `Job #${item.job_id}`}</p>
-                            <p className="text-xs text-muted-foreground">{job?.employer_name ?? "Unknown company"}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={item.status}
-                            onValueChange={(status) => updateTrackingStatus.mutate({ id: item.id, status })}
-                          >
-                            <SelectTrigger className="h-8 w-40 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUS_OPTIONS.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button asChild variant="ghost" size="sm" className="gap-1 text-xs">
-                            <Link to="/applications">In Applications</Link>
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             ) : null}
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {COLUMNS.map((col) => {
-                const items = discoveryItems.filter((item) => item.status === col.key) ?? [];
+            <div className="space-y-1.5">
+              {discoveryItems.map((item) => {
+                const job = item.jobs;
                 return (
-                  <div key={col.key}>
-                    <div className="mb-2 flex items-center gap-2">
-                      <h3 className="text-xs font-medium text-muted-foreground">{col.label}</h3>
-                      <Badge variant="secondary" className="text-xs font-normal">
-                        {items.length}
-                      </Badge>
+                  <div
+                    key={item.id}
+                    className="group flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/40 px-4 py-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Checkbox
+                        checked={selectedSet.has(item.id)}
+                        onCheckedChange={(checked) => toggleSelect(item.id, Boolean(checked))}
+                        aria-label={`Select ${job?.headline ?? `Job ${item.job_id}`}`}
+                      />
+                      <Link to={`/jobs/${item.job_id}`} className="min-w-0">
+                        <p className="truncate text-sm font-medium leading-tight hover:text-primary">
+                          {job?.headline ?? `Job #${item.job_id}`}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {job?.employer_name ?? "Unknown company"}
+                          {job?.municipality ? ` · ${job.municipality}` : ""}
+                        </p>
+                      </Link>
                     </div>
-                    <div className="min-h-[200px] space-y-1.5 rounded-lg bg-muted/30 p-2">
-                      {items.map((item) => {
-                        const job = item.jobs;
-                        return (
-                          <div key={item.id} className="group relative rounded-md bg-card p-3">
-                            <div className="mb-2 flex items-start justify-between gap-2">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <Checkbox
-                                  checked={selectedSet.has(item.id)}
-                                  onCheckedChange={(checked) => toggleSelect(item.id, Boolean(checked))}
-                                  aria-label={`Select ${job?.headline ?? `Job ${item.job_id}`}`}
-                                />
-                                <Link to={`/jobs/${item.job_id}`} className="min-w-0">
-                                  <p className="truncate text-sm font-medium leading-tight hover:text-primary">
-                                    {job?.headline ?? `Job #${item.job_id}`}
-                                  </p>
-                                  <p className="mt-0.5 text-xs text-muted-foreground">{job?.employer_name ?? "Unknown company"}</p>
-                                </Link>
-                              </div>
-                            </div>
-
-                            <div className="mb-2">
-                              <Select
-                                value={item.status}
-                                onValueChange={(status) => updateTrackingStatus.mutate({ id: item.id, status })}
-                              >
-                                <SelectTrigger className="h-8 w-full text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STATUS_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            {item.notes ? (
-                              <p className="mt-1 line-clamp-2 text-xs italic text-muted-foreground">{item.notes}</p>
-                            ) : null}
-
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="absolute right-1 top-1 h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
-                              onClick={() => deleteTracking.mutate(item.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        );
-                      })}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={moveToApplications.isPending}
+                        onClick={() => moveToApplications.mutate(item)}
+                      >
+                        Move to Applications
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                        onClick={() => deleteTracking.mutate(item.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
                 );
               })}
+              {discoveryItems.length === 0 && pipelineItems.length > 0 ? (
+                <div className="py-12 text-center">
+                  <p className="text-sm text-muted-foreground">All your saved jobs are already in Applications.</p>
+                </div>
+              ) : null}
             </div>
           </div>
         )}

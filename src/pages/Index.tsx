@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Bookmark, Building, ChevronDown, ChevronUp, FileText, Zap } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
@@ -513,7 +513,7 @@ export default function Index() {
           }}
         />
 
-        <StaggerContainer className="relative space-y-6">
+        <StaggerContainer className="relative space-y-4">
           <FadeUp>
             <OverviewHeroPanel
               signalItems={signalItems}
@@ -589,13 +589,14 @@ export default function Index() {
             <FadeUp>
               <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                  <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    <Building className="h-3 w-3" />
                     Following
                   </p>
                   {watchedCompanyDataQuery.isLoading ? (
                     <span className="text-xs text-muted-foreground">Loading…</span>
                   ) : watchlistHighlights.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">Follow companies from Explore to see them here.</span>
+                    <span className="text-xs text-muted-foreground">Follow companies from Explore to see updates here.</span>
                   ) : (
                     watchlistHighlights.slice(0, 5).map((company) => (
                       <Link
@@ -615,7 +616,7 @@ export default function Index() {
           {user && pipelineQuery.data && Object.values(pipelineQuery.data).some((count) => count > 0) ? (
             <FadeUp>
               <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                   Your pipeline
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -659,7 +660,10 @@ export default function Index() {
                 <FadeUp>
                   <Card className="rounded-[24px] border-border/60 bg-card/80">
                     <CardContent className="p-5">
-                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Recent activity</p>
+                      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        <Zap className="h-3 w-3" />
+                        Recent activity
+                      </p>
                       {recentActivityItems.length === 0 ? (
                         <p className="mt-3 text-sm text-muted-foreground">No activity yet.</p>
                       ) : (
@@ -698,7 +702,7 @@ export default function Index() {
                 <FadeUp>
                   <Card className="rounded-[24px] border-border/60 bg-card/80">
                     <CardContent className="p-5">
-                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Recently captured</p>
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Recently captured</p>
                       {recentCapturedQuery.isLoading ? (
                         <p className="mt-3 text-sm text-muted-foreground">Loading captured jobs…</p>
                       ) : recentCapturedApplications.length === 0 ? (

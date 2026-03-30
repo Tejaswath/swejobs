@@ -52,7 +52,7 @@ export function OverviewHeroPanel({
             </Link>
           </Button>
           {secondaryAction ? (
-            <Button asChild variant="outline" size="lg" className="h-11 rounded-xl px-5 text-base">
+            <Button asChild variant="outline" size="default" className="h-9 rounded-xl px-4 text-sm">
               <Link to={secondaryAction.href}>{secondaryAction.label}</Link>
             </Button>
           ) : null}
