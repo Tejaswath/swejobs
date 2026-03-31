@@ -161,6 +161,55 @@ function inferCompanyFromEmailDomain(email) {
   return candidate;
 }
 
+function inferCompanyFromUrl(url) {
+  try {
+    const hostname = new URL(String(url ?? "")).hostname.toLowerCase();
+    const labels = hostname.split(".").filter(Boolean);
+    if (labels.length === 0) return "";
+
+    const stopWords = new Set(["www", "jobs", "job", "careers", "career", "boards", "apply", "workdayjobs"]);
+    let brand = labels[0];
+    for (const label of labels) {
+      if (!stopWords.has(label) && label.length > 2) {
+        brand = label;
+        break;
+      }
+    }
+
+    const cleaned = brand.replace(/[^a-z0-9-]/g, " ").replace(/-/g, " ").trim();
+    if (!cleaned) return "";
+    return toTitleCase(cleaned);
+  } catch {
+    return "";
+  }
+}
+
+function isAutofillSupportedUrl(url) {
+  try {
+    const parsed = new URL(String(url ?? ""));
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+async function requestCaptureJobPage(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { action: "captureJobPage" });
+  } catch (error) {
+    const message = String(error?.message ?? "");
+    const missingReceiver = /receiving end does not exist/i.test(message);
+    if (!missingReceiver) throw error;
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["dist/content.js"],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    return await chrome.tabs.sendMessage(tabId, { action: "captureJobPage" });
+  }
+}
+
 function toggleAuthAndCapture() {
   if (currentUser) {
     elements.authSection.classList.add("hidden");
@@ -268,16 +317,23 @@ elements.autofill.addEventListener("click", async () => {
       showStatus("No active tab found.", "error");
       return;
     }
+    if (!isAutofillSupportedUrl(activeTab.url)) {
+      showStatus("Autofill works only on regular http/https pages.", "error");
+      return;
+    }
 
-    const response = await chrome.tabs.sendMessage(activeTab.id, { action: "captureJobPage" });
+    const response = await requestCaptureJobPage(activeTab.id);
     if (!response) {
       showStatus("Could not extract job details from this page.", "error");
       return;
     }
 
-    elements.company.value = String(response.company_hint ?? "").trim();
+    const resolvedUrl = String(response.jd_url ?? activeTab.url ?? "").trim();
+    const detectedCompany = String(response.company_hint ?? "").trim();
+    const inferredCompany = detectedCompany || inferCompanyFromUrl(resolvedUrl);
+    elements.company.value = inferredCompany;
     elements.jobTitle.value = String(response.role_title ?? "").trim();
-    elements.jobUrl.value = String(response.jd_url ?? activeTab.url ?? "").trim();
+    elements.jobUrl.value = resolvedUrl;
     capturedDescription = String(response.jd_text ?? "").slice(0, MAX_CAPTURED_DESCRIPTION_CHARS);
     capturedRecruiter = response.recruiter_hint ?? null;
 
@@ -288,7 +344,7 @@ elements.autofill.addEventListener("click", async () => {
     companyField.title = "";
     titleField.title = "";
 
-    const hasCompany = Boolean(response.company_hint?.trim());
+    const hasCompany = Boolean(inferredCompany);
     const hasTitle = Boolean(response.role_title?.trim());
 
     if (!hasCompany && !hasTitle) {
@@ -299,6 +355,8 @@ elements.autofill.addEventListener("click", async () => {
     } else if (!hasCompany) {
       companyField.style.borderColor = "var(--error-border)";
       companyField.title = "Not detected — enter manually";
+    } else if (!detectedCompany && inferredCompany) {
+      companyField.title = "Inferred from website domain";
     } else if (!hasTitle) {
       titleField.style.borderColor = "var(--error-border)";
       titleField.title = "Not detected — enter manually";
@@ -355,7 +413,16 @@ elements.autofill.addEventListener("click", async () => {
       showStatus("Page details extracted.");
     }
   } catch (error) {
-    showStatus(String(error?.message ?? "Autofill failed."), "error");
+    const message = String(error?.message ?? "Autofill failed.");
+    const cannotInject =
+      /cannot access contents of url/i.test(message) ||
+      /extensions gallery cannot be scripted/i.test(message) ||
+      /missing host permission/i.test(message);
+    if (cannotInject) {
+      showStatus("Autofill is blocked on this page. Open the original job page and retry.", "error");
+      return;
+    }
+    showStatus(message, "error");
   }
 });
 

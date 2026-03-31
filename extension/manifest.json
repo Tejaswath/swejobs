@@ -3,7 +3,7 @@
   "name": "SweJobs Capture",
   "version": "1.0.0",
   "description": "Capture job applications to SweJobs from any careers page.",
-  "permissions": ["activeTab", "storage", "alarms", "identity"],
+  "permissions": ["activeTab", "storage", "alarms", "identity", "scripting"],
   "host_permissions": ["<all_urls>", "https://*.supabase.co/*"],
   "action": {
     "default_popup": "popup.html"

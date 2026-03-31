@@ -191,6 +191,33 @@ function inferCompanyFromMeta() {
   return "";
 }
 
+function inferCompanyFromHostname() {
+  try {
+    const hostname = new URL(location.href).hostname.toLowerCase();
+    const labels = hostname.split(".").filter(Boolean);
+    if (labels.length === 0) return "";
+
+    const stopWords = new Set(["www", "jobs", "job", "careers", "career", "boards", "apply", "workdayjobs"]);
+    let brand = labels[0];
+    for (const label of labels) {
+      if (!stopWords.has(label) && label.length > 2) {
+        brand = label;
+        break;
+      }
+    }
+
+    const cleaned = brand.replace(/[^a-z0-9-]/g, " ").replace(/-/g, " ").trim();
+    if (!cleaned) return "";
+    return cleaned
+      .split(" ")
+      .filter(Boolean)
+      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+      .join(" ");
+  } catch {
+    return "";
+  }
+}
+
 async function captureJobPage() {
   const warnings = [];
   const structured = extractFromJsonLd();
@@ -249,6 +276,7 @@ async function captureJobPage() {
     eightfoldData?.company ||
     structured?.company ||
     inferCompanyFromMeta() ||
+    inferCompanyFromHostname() ||
     cleanText(
       document.querySelector("[data-company]")?.textContent ??
         document.querySelector(".company, .company-name, [data-automation-id='jobPostingCompanyName']")?.textContent ??
