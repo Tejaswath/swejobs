@@ -18,6 +18,7 @@ import Export from "./pages/Export";
 import SkillGap from "./pages/SkillGap";
 import Outreach from "./pages/Outreach";
 import Admin from "./pages/Admin";
+import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -58,6 +59,7 @@ function App() {
                 <Route path="/export" element={<Export />} />
                 <Route path="/skills" element={<SkillGap />} />
                 <Route path="/admin" element={<Admin />} />
+                <Route path="/privacy" element={<Privacy />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </ErrorBoundary>

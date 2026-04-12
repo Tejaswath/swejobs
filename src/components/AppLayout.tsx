@@ -263,6 +263,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <Link to="/jobs" className="hover:text-foreground">Explore</Link>
             <Link to="/applications" className="hover:text-foreground">Applications</Link>
             <Link to="/outreach" className="hover:text-foreground">Outreach</Link>
+            <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
           </div>
         </div>
       </footer>
