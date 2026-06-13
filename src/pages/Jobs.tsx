@@ -17,15 +17,14 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
-  ChevronsUpDown,
   ExternalLink,
   Building,
-  Bookmark,
   X,
   Star,
   TrendingUp,
   Search,
   SlidersHorizontal,
+  EyeOff,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -46,15 +45,16 @@ const LIST_FETCH_LIMIT = 300;
 const REFRESH_MS = 600_000;
 const WATCHED_COMPANY_BOOST = 35;
 const CAREER_STAGE_CONFIDENCE_THRESHOLD = 0.6;
+const SENIOR_TITLE_PATTERN = /\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president)\b/i;
 
-type Lens = "best_matches" | "all_roles" | "graduate_trainee";
+type Lens = "high_signal" | "broad" | "graduate_trainee";
 type JobSort = "relevance" | "deadline" | "newest" | "ats_desc";
 type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_both" | "show_both_best_matches";
 type DeadlineFocus = "none" | "today" | "week" | "upcoming";
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
-  { id: "best_matches", label: "Recommended", description: "Top ranked roles for your profile" },
-  { id: "all_roles", label: "All Roles", description: "Every active role, no target-role filter" },
+  { id: "high_signal", label: "High Signal", description: "ATS-first, high-confidence relevant roles" },
+  { id: "broad", label: "Broad Discovery", description: "Wider active discovery while still filtering noise" },
   { id: "graduate_trainee", label: "Graduate / Trainee", description: "Early-career and program roles" },
 ];
 
@@ -131,7 +131,39 @@ function atsBadgeClass(score: number) {
   return "border-red-500/20 text-red-400/80";
 }
 
-function requiresThreePlusYears(job: { years_required_min?: unknown; reason_codes?: unknown }): boolean {
+type SeniorSignalContext = {
+  headline?: string | null;
+  career_stage?: unknown;
+  career_stage_confidence?: unknown;
+  years_required_min?: unknown;
+  reason_codes?: unknown;
+};
+
+function hasSeniorRoleSignal(context: SeniorSignalContext): boolean {
+  const title = String(context.headline ?? "");
+  if (SENIOR_TITLE_PATTERN.test(title)) return true;
+
+  const stage = effectiveCareerStage(context.career_stage, context.career_stage_confidence);
+  if (stage === "senior" || stage === "lead" || stage === "staff" || stage === "principal") return true;
+
+  const years = numberValue(context.years_required_min, -1);
+  if (years >= 3) return true;
+
+  if (Array.isArray(context.reason_codes)) {
+    const reasons = context.reason_codes.map((value) => String(value).toLowerCase());
+    if (reasons.includes("career_stage_senior") || reasons.includes("years_required_3plus")) return true;
+  }
+  return false;
+}
+
+function requiresThreePlusYears(job: {
+  headline?: string | null;
+  career_stage?: unknown;
+  career_stage_confidence?: unknown;
+  years_required_min?: unknown;
+  reason_codes?: unknown;
+}): boolean {
+  if (hasSeniorRoleSignal(job)) return true;
   const years = numberValue(job.years_required_min, -1);
   if (years >= 3) return true;
   if (!Array.isArray(job.reason_codes)) return false;
@@ -232,19 +264,38 @@ export default function Jobs() {
     document.title = "Explore Jobs | SweJobs";
   }, []);
 
-  const [lens, setLens] = useState<Lens>("best_matches");
+  const [lens, setLens] = useState<Lens>(() => {
+    const value = searchParams.get("lens");
+    if (value === "broad" || value === "graduate_trainee" || value === "high_signal") {
+      return value;
+    }
+    return "high_signal";
+  });
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
-  const [lang, setLang] = useState("all");
-  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [lang, setLang] = useState(() => searchParams.get("lang") ?? "all");
+  const [remoteOnly, setRemoteOnly] = useState(() => searchParams.get("remote") === "1");
   const [hideSwedishRequired, setHideSwedishRequired] = useState(true);
   const [hideCitizenshipRestricted, setHideCitizenshipRestricted] = useState(true);
   const [hideThreePlusYears, setHideThreePlusYears] = useState(true);
   const [hideConsultancies, setHideConsultancies] = useState(true);
+  const [includeJobtechInHighSignal, setIncludeJobtechInHighSignal] = useState(
+    () => searchParams.get("jobtech") === "1",
+  );
   const [sortBy, setSortBy] = useState<JobSort>("relevance");
   const [selectedAtsResumeId, setSelectedAtsResumeId] = useState<string>("auto");
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [hiddenJobIds, setHiddenJobIds] = useState<Set<number>>(() => {
+    if (typeof window === "undefined") return new Set<number>();
+    try {
+      const raw = window.localStorage.getItem("swejobs.jobs.hidden-ids");
+      const parsed = raw ? (JSON.parse(raw) as number[]) : [];
+      return new Set(parsed.filter((value) => Number.isFinite(value)));
+    } catch {
+      return new Set<number>();
+    }
+  });
   const [tipDismissed, setTipDismissed] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("swejobs.explore.tip-dismissed") === "true",
   );
@@ -260,6 +311,13 @@ export default function Jobs() {
           : "none";
 
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("jobtech") === "1") return;
+    const saved = window.localStorage.getItem("swejobs.high-signal.include-jobtech");
+    setIncludeJobtechInHighSignal(saved === "true");
+  }, [searchParams]);
 
   const { data: watchedCompanies } = useQuery({
     queryKey: ["watched-companies", user?.id],
@@ -279,8 +337,47 @@ export default function Jobs() {
     return new Set(names.filter(Boolean));
   }, [watchedCompanies]);
 
+  const { data: userRankingState } = useQuery({
+    queryKey: ["user-ranking-state", user?.id],
+    enabled: !!user,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_ranking_state")
+        .select(
+          "high_signal_score_delta,preferred_companies,demoted_companies,preferred_role_families,demoted_role_families",
+        )
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const pushFeedbackEvent = async (payload: {
+    signalType: "apply" | "save" | "follow_company" | "hide" | "skip";
+    jobId: number;
+    employerName?: string | null;
+    roleFamily?: string | null;
+    sourceUrl?: string | null;
+  }) => {
+    if (!user) return;
+    const jobExternalKey = payload.sourceUrl?.trim() || `job:${payload.jobId}`;
+    const { error } = await supabase.from("job_feedback_events").insert({
+      user_id: user.id,
+      job_id: payload.jobId,
+      job_external_key: jobExternalKey,
+      signal_type: payload.signalType,
+      employer_name: payload.employerName ?? null,
+      role_family: payload.roleFamily ?? null,
+    });
+    if (error) {
+      console.warn("job_feedback_events insert failed", error.message);
+    }
+  };
+
   const { data: rawJobsData, isLoading, isFetching, error: jobsError } = useQuery({
-    queryKey: ["jobs-v3", lens, debouncedSearch, lang, remoteOnly, deadlineFocus],
+    queryKey: ["jobs-v3", lens, includeJobtechInHighSignal, debouncedSearch, lang, remoteOnly, deadlineFocus],
     staleTime: 300_000,
     placeholderData: (previous) => previous,
     refetchInterval: REFRESH_MS,
@@ -291,21 +388,32 @@ export default function Jobs() {
       const today = new Date();
       const todayIso = formatLocalDate(today);
       const weekEndIso = formatLocalDate(endOfCurrentWeek(today));
+      const useHighSignalFeedJoin = lens === "high_signal" && !includeJobtechInHighSignal;
+      const feedSelect = useHighSignalFeedJoin
+        ? "source_feed_registry!inner(quality_band,high_signal_eligible,enabled)"
+        : "source_feed_registry(quality_band,high_signal_eligible,enabled)";
       let query = supabase
         .from("jobs")
         .select(
           "id, headline, headline_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
-          "published_at, application_deadline, employment_type, working_hours, occupation_label, " +
+          "published_at, application_deadline, employment_type, working_hours, occupation_label, source_url, " +
             "relevance_score, role_family, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
             "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, " +
-            "source_provider, source_kind, is_direct_company_source, is_target_role, is_noise",
+            "source_provider, source_kind, source_feed_key, is_direct_company_source, is_target_role, is_noise, " +
+            feedSelect,
         )
         .eq("is_active", true)
         .limit(LIST_FETCH_LIMIT);
 
-      if (lens !== "all_roles") {
-        query = query.eq("is_target_role", true);
-      } else {
+      if (useHighSignalFeedJoin) {
+        query = query
+          .eq("is_target_role", true)
+          .eq("is_noise", false)
+          .gte("relevance_score", 30)
+          .eq("source_feed_registry.enabled", true)
+          .eq("source_feed_registry.high_signal_eligible", true)
+          .in("source_feed_registry.quality_band", ["trusted", "verified"]);
+      } else if (lens === "broad" || lens === "graduate_trainee") {
         query = query.eq("is_noise", false);
       }
 
@@ -422,6 +530,50 @@ export default function Jobs() {
     const sourceJobs = [...(rawJobsData ?? [])];
     const normalizedSearchTerm = debouncedSearch.trim();
 
+    const feedFor = (job: (typeof sourceJobs)[number]) =>
+      (
+        job as {
+          source_feed_registry?: {
+            quality_band?: string | null;
+            high_signal_eligible?: boolean | null;
+            enabled?: boolean | null;
+          } | null;
+        }
+      ).source_feed_registry;
+
+    const passesLens = (job: (typeof sourceJobs)[number], currentLens: Lens) => {
+      const relevance = numberValue(job.relevance_score);
+      const isNoise = boolValue(job.is_noise);
+      const sourceKind = String(job.source_kind || "").toLowerCase();
+
+      if (currentLens === "broad") {
+        return !isNoise;
+      }
+
+      if (currentLens === "graduate_trainee") {
+        const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
+        const years = numberValue(job.years_required_min, 999);
+        const seniorSignal = hasSeniorRoleSignal(job);
+        return (
+          !isNoise &&
+          !seniorSignal &&
+          relevance >= 15 &&
+          (boolValue(job.is_grad_program) || ["graduate", "trainee", "junior"].includes(stage) || years <= 1)
+        );
+      }
+
+      const feed = feedFor(job);
+      const qualityBand = String(feed?.quality_band || "unrated").toLowerCase();
+      const highSignalEligible = boolValue(feed?.high_signal_eligible);
+      const feedEnabled = boolValue(feed?.enabled);
+      const sourcePasses =
+        sourceKind === "jobtech"
+          ? includeJobtechInHighSignal
+          : feedEnabled && highSignalEligible && (qualityBand === "trusted" || qualityBand === "verified");
+
+      return boolValue(job.is_target_role) && !isNoise && relevance >= 30 && sourcePasses;
+    };
+
     const applyFilters = (
       jobs: typeof sourceJobs,
       options: {
@@ -432,14 +584,7 @@ export default function Jobs() {
         hideConsultancies: boolean;
       },
     ) => {
-      const hasSearch = normalizedSearchTerm.length > 0;
-      let rows = jobs.filter((job) => {
-        if (options.currentLens === "all_roles") return true;
-        const isTarget = boolValue((job as { is_target_role?: unknown }).is_target_role);
-        const isNoise = boolValue((job as { is_noise?: unknown }).is_noise);
-        if (!hasSearch) return isTarget;
-        return isTarget || !isNoise;
-      });
+      let rows = jobs.filter((job) => passesLens(job, options.currentLens));
 
       if (options.hideSwedish) {
         rows = rows.filter((job) => !boolValue(job.swedish_required));
@@ -454,13 +599,6 @@ export default function Jobs() {
       }
       if (options.hideConsultancies) {
         rows = rows.filter((job) => !effectiveConsultancyFlag(job));
-      }
-
-      if (options.currentLens === "graduate_trainee") {
-        rows = rows.filter((job) => {
-          const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
-          return boolValue(job.is_grad_program) || ["graduate", "trainee", "junior"].includes(stage);
-        });
       }
 
       return rows;
@@ -479,20 +617,9 @@ export default function Jobs() {
       const fallbacks: Array<{
         mode: SearchFallbackMode;
         options: { currentLens: Lens; hideSwedish: boolean; hideCitizenship: boolean; hideYears: boolean };
-      }> = [
-        {
-          mode: "show_swedish",
-          options: {
-            currentLens: lens,
-            hideSwedish: false,
-            hideCitizenship: hideCitizenshipRestricted,
-            hideYears: hideThreePlusYears,
-            hideConsultancies,
-          },
-        },
-      ];
+      }> = [];
 
-      if (!hideThreePlusYears) {
+      if (hideThreePlusYears) {
         fallbacks.push(
           {
             mode: "show_experience",
@@ -508,7 +635,7 @@ export default function Jobs() {
             mode: "show_both",
             options: {
               currentLens: lens,
-              hideSwedish: false,
+              hideSwedish: hideSwedishRequired,
               hideCitizenship: hideCitizenshipRestricted,
               hideYears: false,
               hideConsultancies,
@@ -517,12 +644,12 @@ export default function Jobs() {
         );
       }
 
-      if (lens !== "best_matches") {
+      if (lens !== "high_signal") {
         fallbacks.push({
           mode: "show_both_best_matches",
           options: {
-            currentLens: "best_matches",
-            hideSwedish: false,
+            currentLens: "high_signal",
+            hideSwedish: hideSwedishRequired,
             hideCitizenship: hideCitizenshipRestricted,
             hideYears: hideThreePlusYears,
             hideConsultancies,
@@ -556,10 +683,34 @@ export default function Jobs() {
       if (canonical.includes(normalizedSearch)) return 35;
       return 0;
     };
+    const preferredCompanies = new Set(
+      (userRankingState?.preferred_companies ?? []).map((value) => normalizeCompanyName(value)),
+    );
+    const demotedCompanies = new Set(
+      (userRankingState?.demoted_companies ?? []).map((value) => normalizeCompanyName(value)),
+    );
+    const preferredRoleFamilies = new Set(
+      (userRankingState?.preferred_role_families ?? []).map((value) => String(value).toLowerCase()),
+    );
+    const demotedRoleFamilies = new Set(
+      (userRankingState?.demoted_role_families ?? []).map((value) => String(value).toLowerCase()),
+    );
+    const userRankingDelta = numberValue(userRankingState?.high_signal_score_delta, 0);
+    const userRankingAdjustment = (job: RankedJob) => {
+      const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
+      const roleFamily = String(job.role_family || "").toLowerCase();
+      let delta = 0;
+      if (canonical && preferredCompanies.has(canonical)) delta += 12;
+      if (canonical && demotedCompanies.has(canonical)) delta -= 12;
+      if (roleFamily && preferredRoleFamilies.has(roleFamily)) delta += 10;
+      if (roleFamily && demotedRoleFamilies.has(roleFamily)) delta -= 10;
+      if (lens === "high_signal") delta += userRankingDelta;
+      return delta;
+    };
 
     rows.sort((a, b) => {
       const targetDiff =
-        lens === "all_roles"
+        lens === "broad"
           ? 0
           : Number(boolValue((b as { is_target_role?: unknown }).is_target_role)) -
             Number(boolValue((a as { is_target_role?: unknown }).is_target_role));
@@ -568,18 +719,20 @@ export default function Jobs() {
       const watchedDiff = Number(isWatched(b)) - Number(isWatched(a));
       const stageA = effectiveCareerStage(a.career_stage, a.career_stage_confidence);
       const stageB = effectiveCareerStage(b.career_stage, b.career_stage_confidence);
-      const stageAdjustmentA = lens === "best_matches" ? careerStageAdjustment(stageA) : 0;
-      const stageAdjustmentB = lens === "best_matches" ? careerStageAdjustment(stageB) : 0;
+      const stageAdjustmentA = lens === "high_signal" ? careerStageAdjustment(stageA) : 0;
+      const stageAdjustmentB = lens === "high_signal" ? careerStageAdjustment(stageB) : 0;
       const boostedA =
         numberValue(a.relevance_score) +
         (isWatched(a) ? WATCHED_COMPANY_BOOST : 0) +
         stageAdjustmentA +
-        companySearchBoost(a);
+        companySearchBoost(a) +
+        userRankingAdjustment(a);
       const boostedB =
         numberValue(b.relevance_score) +
         (isWatched(b) ? WATCHED_COMPANY_BOOST : 0) +
         stageAdjustmentB +
-        companySearchBoost(b);
+        companySearchBoost(b) +
+        userRankingAdjustment(b);
       const relevanceDiff = boostedB - boostedA;
       if (relevanceDiff !== 0) return relevanceDiff;
 
@@ -605,6 +758,18 @@ export default function Jobs() {
       return numberValue(b.id) - numberValue(a.id);
     });
 
+    const seenKeys = new Set<string>();
+    rows = rows.filter((job) => {
+      const canonicalCompany = normalizeCompanyName(job.company_canonical || job.employer_name);
+      const headline = String(job.headline || "").trim().toLowerCase();
+      const published = String(job.published_at || "").slice(0, 10);
+      const dedupeKey = String(job.source_url || `${canonicalCompany}::${headline}::${published}`).toLowerCase();
+      if (!dedupeKey) return true;
+      if (seenKeys.has(dedupeKey)) return false;
+      seenKeys.add(dedupeKey);
+      return true;
+    });
+
     return { rows, fallbackMode };
   }, [
     rawJobsData,
@@ -615,6 +780,8 @@ export default function Jobs() {
     lens,
     watchedSet,
     debouncedSearch,
+    includeJobtechInHighSignal,
+    userRankingState,
   ]);
 
   const rankAndFilterJobs = rankedJobsView.rows;
@@ -748,13 +915,18 @@ export default function Jobs() {
     });
   }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, sortBy]);
 
-  const total = sortedJobs.length;
+  const visibleJobs = useMemo(
+    () => sortedJobs.filter((job) => !hiddenJobIds.has(job.id)),
+    [sortedJobs, hiddenJobIds],
+  );
+
+  const total = visibleJobs.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const jobs = useMemo(() => {
     const start = page * PAGE_SIZE;
-    return sortedJobs.slice(start, start + PAGE_SIZE);
-  }, [page, sortedJobs]);
+    return visibleJobs.slice(start, start + PAGE_SIZE);
+  }, [page, visibleJobs]);
 
   useEffect(() => {
     setPage(0);
@@ -764,6 +936,7 @@ export default function Jobs() {
     hideCitizenshipRestricted,
     hideThreePlusYears,
     hideConsultancies,
+    includeJobtechInHighSignal,
     search,
     lang,
     remoteOnly,
@@ -792,7 +965,7 @@ export default function Jobs() {
 
   const hasActiveFilters =
     deadlineFocus !== "none" ||
-    lens !== "best_matches" ||
+    lens !== "high_signal" ||
     sortBy !== "relevance" ||
     lang !== "all" ||
     remoteOnly ||
@@ -800,6 +973,8 @@ export default function Jobs() {
     !hideCitizenshipRestricted ||
     !hideThreePlusYears ||
     !hideConsultancies ||
+    includeJobtechInHighSignal ||
+    hiddenJobIds.size > 0 ||
     search.trim().length > 0;
 
   const activeFilterCount =
@@ -808,10 +983,12 @@ export default function Jobs() {
     Number(!hideThreePlusYears) +
     Number(!hideConsultancies) +
     Number(!hideSwedishRequired) +
-    Number(!hideCitizenshipRestricted);
+    Number(!hideCitizenshipRestricted) +
+    Number(includeJobtechInHighSignal) +
+    Number(hiddenJobIds.size > 0);
 
   const clearFilters = () => {
-    setLens("best_matches");
+    setLens("high_signal");
     setSearch("");
     setLang("all");
     setRemoteOnly(false);
@@ -819,13 +996,23 @@ export default function Jobs() {
     setHideCitizenshipRestricted(true);
     setHideThreePlusYears(true);
     setHideConsultancies(true);
+    setIncludeJobtechInHighSignal(false);
+    setHiddenJobIds(new Set());
     setSortBy("relevance");
     setPage(0);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("swejobs.high-signal.include-jobtech", "false");
+      window.localStorage.setItem("swejobs.jobs.hidden-ids", "[]");
+    }
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.delete("deadline");
       next.delete("search");
       next.delete("coverage");
+      next.delete("lang");
+      next.delete("remote");
+      next.delete("lens");
+      next.delete("jobtech");
       return next;
     });
   };
@@ -985,6 +1172,15 @@ export default function Jobs() {
     onSuccess: (_data, values) => {
       qc.invalidateQueries({ queryKey: ["tracked", selectedId] });
       qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      if (selectedId && detail) {
+        void pushFeedbackEvent({
+          signalType: values.status === "applied" ? "apply" : "save",
+          jobId: selectedId,
+          employerName: detail.employer_name,
+          roleFamily: detail.role_family,
+          sourceUrl: detail.source_url,
+        });
+      }
       if (values.status === "applied") {
         setAppliedFeedbackJobId(selectedId ?? null);
         toast({ title: "Added to Applications" });
@@ -999,17 +1195,29 @@ export default function Jobs() {
 
   const watchCompany = useMutation({
     mutationFn: async (name: string) => {
-      const { error } = await supabase.from("watched_companies").insert({
-        user_id: user!.id,
-        employer_name: name,
-      });
+      const { error } = await supabase.from("watched_companies").upsert(
+        {
+          user_id: user!.id,
+          employer_name: name,
+        },
+        { onConflict: "user_id,employer_name", ignoreDuplicates: true },
+      );
       if (error) throw error;
     },
     onSuccess: (_data, name) => {
-      qc.invalidateQueries({ queryKey: ["watched-companies"] });
+      qc.invalidateQueries({ queryKey: ["watched-companies", user?.id] });
+      if (selectedId && detail) {
+        void pushFeedbackEvent({
+          signalType: "follow_company",
+          jobId: selectedId,
+          employerName: detail.employer_name,
+          roleFamily: detail.role_family,
+          sourceUrl: detail.source_url,
+        });
+      }
       toast({
-        title: `Watching ${name}`,
-        description: "This company now gets extra ranking priority for your account.",
+        title: `Following ${name}`,
+        description: "This company now gets extra ranking priority.",
       });
     },
     onError: (error: Error) => {
@@ -1232,6 +1440,20 @@ export default function Jobs() {
                   <span className="text-xs">Hide 3+ years (strict)</span>
                   <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} />
                 </div>
+                {lens === "high_signal" && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Include JobTech in High Signal</span>
+                    <Switch
+                      checked={includeJobtechInHighSignal}
+                      onCheckedChange={(next) => {
+                        setIncludeJobtechInHighSignal(next);
+                        if (typeof window !== "undefined") {
+                          window.localStorage.setItem("swejobs.high-signal.include-jobtech", String(next));
+                        }
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs">Hide consultancies</span>
                   <Switch checked={hideConsultancies} onCheckedChange={setHideConsultancies} />
@@ -1323,6 +1545,24 @@ export default function Jobs() {
                 </button>
               </Badge>
             )}
+            {includeJobtechInHighSignal && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                JobTech pass-through enabled
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIncludeJobtechInHighSignal(false);
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem("swejobs.high-signal.include-jobtech", "false");
+                    }
+                  }}
+                  className="hover:text-foreground"
+                  aria-label="Disable JobTech pass-through"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
             {!hideConsultancies && (
               <Badge variant="secondary" className="gap-1 text-[10px]">
                 Including consultancies
@@ -1331,6 +1571,24 @@ export default function Jobs() {
                   onClick={() => setHideConsultancies(true)}
                   className="hover:text-foreground"
                   aria-label="Hide consultancy roles"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+            {hiddenJobIds.size > 0 && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                {hiddenJobIds.size} hidden
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHiddenJobIds(new Set());
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem("swejobs.jobs.hidden-ids", "[]");
+                    }
+                  }}
+                  className="hover:text-foreground"
+                  aria-label="Unhide all jobs"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -1503,6 +1761,32 @@ export default function Jobs() {
                                   Match {atsSnapshot.displayScore}%
                                 </Badge>
                               ) : null}
+                              <button
+                                type="button"
+                                className="inline-flex h-4 items-center rounded border border-border/50 px-1 text-[9px] text-muted-foreground hover:text-foreground"
+                                aria-label="Hide this job"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setHiddenJobIds((previous) => {
+                                    const next = new Set(previous);
+                                    next.add(job.id);
+                                    if (typeof window !== "undefined") {
+                                      window.localStorage.setItem("swejobs.jobs.hidden-ids", JSON.stringify(Array.from(next)));
+                                    }
+                                    return next;
+                                  });
+                                  void pushFeedbackEvent({
+                                    signalType: "hide",
+                                    jobId: job.id,
+                                    employerName: job.employer_name,
+                                    roleFamily: job.role_family,
+                                    sourceUrl: job.source_url,
+                                  });
+                                }}
+                              >
+                                <EyeOff className="mr-0.5 h-2.5 w-2.5" />
+                                Hide
+                              </button>
                             </div>
                           </div>
 

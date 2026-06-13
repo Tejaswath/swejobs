@@ -130,10 +130,31 @@ class SupabaseStorage:
         )
         return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
 
+    def fetch_inactive_job_ids_before_with_cursor(
+        self,
+        *,
+        cutoff_iso: str,
+        after_id: int = 0,
+        limit: int = 500,
+    ) -> list[int]:
+        """Fetch inactive jobs before cutoff by ascending id cursor."""
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id")
+            .eq("is_active", False)
+            .lt("published_at", cutoff_iso)
+            .gt("id", int(after_id))
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch inactive job ids before cutoff with cursor",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
     def fetch_active_jobs_past_deadline(self, *, deadline_before: str, limit: int = 500) -> list[dict[str, Any]]:
         response = self._execute(
             lambda: self.client.table("jobs")
-            .select("id,raw_json,application_deadline_date")
+            .select("id,application_deadline_date")
             .eq("is_active", True)
             .lt("application_deadline_date", deadline_before)
             .order("id")
@@ -236,6 +257,70 @@ class SupabaseStorage:
                 if source_url:
                     by_url[source_url] = row
         return by_url
+
+    # ------------------------------------------------------------------
+    # Safety helpers for FK-aware inactive-job purge
+    # ------------------------------------------------------------------
+
+    def fetch_referenced_job_ids(self, job_ids: list[int]) -> set[int]:
+        """Return job ids referenced by tracked_jobs or applications.
+
+        This helper is fail-safe: if a reference query fails for a chunk, that
+        whole chunk is treated as referenced and therefore preserved.
+        """
+        if not job_ids:
+            return set()
+
+        referenced: set[int] = set()
+        chunk_size = max(1, self.batch_size)
+        for start in range(0, len(job_ids), chunk_size):
+            ids = [int(value) for value in job_ids[start : start + chunk_size]]
+
+            try:
+                tracked = self._execute(
+                    lambda ids=ids: self.client.table("tracked_jobs")
+                    .select("job_id")
+                    .in_("job_id", ids)
+                    .execute(),
+                    context="fetch tracked_jobs references",
+                )
+                for row in tracked.data or []:
+                    if row.get("job_id") is not None:
+                        referenced.add(int(row["job_id"]))
+            except Exception:
+                referenced.update(ids)
+                continue
+
+            try:
+                applications = self._execute(
+                    lambda ids=ids: self.client.table("applications")
+                    .select("job_id")
+                    .in_("job_id", ids)
+                    .not_.is_("job_id", "null")
+                    .execute(),
+                    context="fetch applications references",
+                )
+                for row in applications.data or []:
+                    if row.get("job_id") is not None:
+                        referenced.add(int(row["job_id"]))
+            except Exception:
+                referenced.update(ids)
+
+        return referenced
+
+    def fetch_inactive_job_ids_after(self, *, after_id: int = 0, limit: int = 500) -> list[int]:
+        """Fetch inactive jobs by ascending id cursor (id > after_id)."""
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id")
+            .eq("is_active", False)
+            .gt("id", after_id)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch inactive job ids after cursor",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
 
     def fetch_active_jobs_for_company_source(
         self,
@@ -491,9 +576,20 @@ class SupabaseStorage:
         limit: int = 200,
         active_only: bool = False,
     ) -> list[dict[str, Any]]:
+        # Include core normalized columns so reclassification can fall back even when raw_json
+        # has been compacted to NULL.
+        select_fields = (
+            "id,raw_json,is_active,"
+            "headline,description,employer_name,employer_id,"
+            "municipality,municipality_code,region,region_code,"
+            "occupation_id,occupation_label,ssyk_code,"
+            "employment_type,working_hours,source_url,application_deadline,"
+            "published_at,updated_at,lang,remote_flag,"
+            "source_name,source_provider,source_kind,source_company_key,is_direct_company_source,source_feed_key"
+        )
         query = (
             self.client.table("jobs")
-            .select("id,raw_json,is_active")
+            .select(select_fields)
             .gt("id", int(after_id))
             .order("id")
             .limit(int(limit))
@@ -553,3 +649,154 @@ class SupabaseStorage:
             lambda: self.client.table("ingestion_state").delete().neq("key", "__none__").execute(),
             context="delete ingestion_state",
         )
+
+    # ------------------------------------------------------------------
+    # V3 source-registry / alerts / precision helpers
+    # ------------------------------------------------------------------
+
+    def upsert_source_feed_registry_rows(self, rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        now_iso = datetime.now(UTC).isoformat()
+        prepared: list[dict[str, Any]] = []
+        for row in rows:
+            feed_key = str(row.get("feed_key") or "").strip().lower()
+            provider = str(row.get("provider") or "").strip().lower()
+            company_canonical = str(row.get("company_canonical") or "").strip().lower()
+            if not feed_key or not provider or not company_canonical:
+                continue
+            prepared.append(
+                {
+                    "feed_key": feed_key,
+                    "provider": provider,
+                    "company_canonical": company_canonical,
+                    "enabled": bool(row.get("enabled", True)),
+                    "high_signal_eligible": bool(row.get("high_signal_eligible", False)),
+                    "quality_band": str(row.get("quality_band") or "unrated").strip().lower(),
+                    "updated_at": now_iso,
+                }
+            )
+        if not prepared:
+            return 0
+
+        for chunk in self._chunked(prepared):
+            self._execute(
+                lambda chunk=chunk: self.client.table("source_feed_registry").upsert(
+                    chunk, on_conflict="feed_key"
+                ).execute(),
+                context="upsert source_feed_registry",
+            )
+        return len(prepared)
+
+    def fetch_source_feed_registry(self, *, feed_keys: list[str] | None = None) -> list[dict[str, Any]]:
+        query = self.client.table("source_feed_registry").select(
+            "feed_key,provider,company_canonical,enabled,high_signal_eligible,quality_band,updated_at,created_at"
+        )
+        if feed_keys:
+            normalized = [str(key).strip().lower() for key in feed_keys if str(key).strip()]
+            if normalized:
+                query = query.in_("feed_key", normalized)
+        response = self._execute(lambda: query.limit(10000).execute(), context="fetch source_feed_registry")
+        return response.data or []
+
+    def insert_source_feed_probe_runs(self, rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        prepared: list[dict[str, Any]] = []
+        now_iso = datetime.now(UTC).isoformat()
+        for row in rows:
+            feed_key = str(row.get("feed_key") or "").strip().lower()
+            provider = str(row.get("provider") or "").strip().lower()
+            if not feed_key or not provider:
+                continue
+            prepared.append(
+                {
+                    "feed_key": feed_key,
+                    "provider": provider,
+                    "run_at": str(row.get("run_at") or now_iso),
+                    "http_status": row.get("http_status"),
+                    "http_requests": int(row.get("http_requests") or 0),
+                    "fetched_rows": int(row.get("fetched_rows") or 0),
+                    "persisted_rows": int(row.get("persisted_rows") or 0),
+                    "target_rows": int(row.get("target_rows") or 0),
+                    "removed_rows": int(row.get("removed_rows") or 0),
+                    "location_filtering_supported": bool(row.get("location_filtering_supported", True)),
+                    "error_text": str(row.get("error_text") or "") or None,
+                }
+            )
+        if not prepared:
+            return 0
+        for chunk in self._chunked(prepared):
+            self._execute(
+                lambda chunk=chunk: self.client.table("source_feed_probe_runs").insert(chunk).execute(),
+                context="insert source_feed_probe_runs",
+            )
+        return len(prepared)
+
+    def fetch_source_feed_probe_runs_since(
+        self,
+        *,
+        since_iso: str,
+        feed_keys: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = self.client.table("source_feed_probe_runs").select(
+            "feed_key,provider,run_at,http_status,http_requests,fetched_rows,persisted_rows,target_rows,removed_rows,location_filtering_supported,error_text"
+        ).gte("run_at", since_iso)
+        if feed_keys:
+            normalized = [str(key).strip().lower() for key in feed_keys if str(key).strip()]
+            if normalized:
+                query = query.in_("feed_key", normalized)
+        response = self._execute(lambda: query.limit(100000).execute(), context="fetch source_feed_probe_runs since")
+        return response.data or []
+
+    def call_generate_saved_search_alerts(self, *, frequency: str) -> dict[str, Any]:
+        payload = {"p_frequency": str(frequency).strip().lower()}
+        response = self._execute(
+            lambda payload=payload: self.client.rpc("generate_saved_search_alerts", payload).execute(),
+            context="rpc generate_saved_search_alerts",
+        )
+        data = response.data or []
+        if isinstance(data, list) and data:
+            first = data[0]
+            if isinstance(first, dict):
+                return first
+        return {"processed_searches": 0, "inserted_alerts": 0}
+
+    def upsert_relevance_labels(self, rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        prepared: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                prepared.append(
+                    {
+                        "job_id": int(row["job_id"]),
+                        "lens": str(row["lens"]).strip().lower(),
+                        "label": int(row["label"]),
+                        "reviewer_key": str(row["reviewer_key"]).strip(),
+                        "rationale": (str(row["rationale"]).strip() if row.get("rationale") else None),
+                    }
+                )
+            except Exception:
+                continue
+        if not prepared:
+            return 0
+        for chunk in self._chunked(prepared):
+            self._execute(
+                lambda chunk=chunk: self.client.table("relevance_labels").upsert(
+                    chunk, on_conflict="job_id,lens,reviewer_key"
+                ).execute(),
+                context="upsert relevance_labels",
+            )
+        return len(prepared)
+
+    def fetch_relevance_labels(
+        self,
+        *,
+        lens: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = self.client.table("relevance_labels").select("job_id,lens,label,reviewer_key,rationale,created_at")
+        if lens:
+            query = query.eq("lens", str(lens).strip().lower())
+        response = self._execute(lambda: query.limit(100000).execute(), context="fetch relevance_labels")
+        return response.data or []

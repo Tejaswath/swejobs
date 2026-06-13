@@ -170,7 +170,10 @@ class IngestionPipeline:
             return 0
 
     def _classify_and_prepare(self, raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-        job_row, tags = normalize_job(raw)
+        raw_for_normalize = dict(raw)
+        is_reclassify_fallback = bool(raw_for_normalize.pop("__reclassify_fallback__", False))
+
+        job_row, tags = normalize_job(raw_for_normalize)
         classification = classify_job(job_row, self.profile)
         job_row.update(
             {
@@ -193,9 +196,46 @@ class IngestionPipeline:
                 "is_relevant": classification.is_target_role,
             }
         )
+        if is_reclassify_fallback:
+            # Keep compacted rows compacted. We only need current normalized columns
+            # for reclassification; do not repopulate raw_json blobs.
+            job_row["raw_json"] = None
         if classification.role_family != "noise":
             tags = sorted(set(tags + [classification.role_family]))
         return job_row, tags
+
+    @staticmethod
+    def _build_reclassify_fallback_record(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "__reclassify_fallback__": True,
+            "id": row.get("id"),
+            "headline": row.get("headline"),
+            "description": row.get("description"),
+            "employer_name": row.get("employer_name"),
+            "employer_id": row.get("employer_id"),
+            "municipality": row.get("municipality"),
+            "municipality_code": row.get("municipality_code"),
+            "region": row.get("region"),
+            "region_code": row.get("region_code"),
+            "occupation_id": row.get("occupation_id"),
+            "occupation_label": row.get("occupation_label"),
+            "ssyk_code": row.get("ssyk_code"),
+            "employment_type": row.get("employment_type"),
+            "working_hours": row.get("working_hours"),
+            "source_url": row.get("source_url"),
+            "application_deadline": row.get("application_deadline"),
+            "published_at": row.get("published_at"),
+            "updated_at": row.get("updated_at"),
+            "lang": row.get("lang"),
+            "remote_flag": row.get("remote_flag"),
+            "source_name": row.get("source_name"),
+            "source_provider": row.get("source_provider"),
+            "source_kind": row.get("source_kind"),
+            "source_company_key": row.get("source_company_key"),
+            "is_direct_company_source": row.get("is_direct_company_source"),
+            "source_feed_key": row.get("source_feed_key"),
+            "is_removed": not bool(row.get("is_active", True)),
+        }
 
     def _build_events(
         self,
@@ -406,6 +446,7 @@ class IngestionPipeline:
         jobs: list[dict[str, Any]] = []
         tags_by_job_id: dict[int, list[str]] = {}
         target_count = 0
+        seen_job_ids: set[int] = set()
         for job_row, tags in semantic_deduped_rows:
             source_url = str(job_row.get("source_url") or "").strip()
             if source_url:
@@ -414,6 +455,14 @@ class IngestionPipeline:
                     job_row["id"] = int(existing["id"])
 
             job_id = int(job_row["id"])
+            if job_id in seen_job_ids:
+                logger.warning(
+                    "Skipping duplicate normalized job id=%s source_url=%s",
+                    job_id,
+                    source_url or "none",
+                )
+                continue
+            seen_job_ids.add(job_id)
             jobs.append(job_row)
             tags_by_job_id[job_id] = tags
             if bool(job_row.get("is_target_role")):
@@ -451,6 +500,7 @@ class IngestionPipeline:
     def reclassify_existing(self, *, limit: int | None = None, active_only: bool = True) -> int:
         processed = 0
         cursor = 0
+        fallback_count = 0
 
         while True:
             if limit is not None and processed >= limit:
@@ -475,7 +525,9 @@ class IngestionPipeline:
                 if isinstance(raw, dict):
                     records.append(raw)
                 else:
-                    logger.warning("Skipping reclassify row id=%s due to invalid raw_json", row.get("id"))
+                    fallback_count += 1
+                    records.append(self._build_reclassify_fallback_record(row))
+                    logger.debug("Reclassify fallback from normalized row id=%s (raw_json missing)", row.get("id"))
 
             if records:
                 processed += self._persist_records(records=records, checkpoint_update=None)
@@ -485,7 +537,12 @@ class IngestionPipeline:
             except (KeyError, TypeError, ValueError):
                 break
 
-        logger.info("Reclassification complete. rows=%s active_only=%s", processed, active_only)
+        logger.info(
+            "Reclassification complete. rows=%s fallback_rows=%s active_only=%s",
+            processed,
+            fallback_count,
+            active_only,
+        )
         return processed
 
     def run_stream_once(self, *, limit: int | None = None) -> int:
@@ -535,72 +592,122 @@ class IngestionPipeline:
         logger.info("Stream poll processed rows=%s", processed)
         return processed
 
-    def compact_storage(self, *, confirm: bool = False, batch_size: int = 500) -> dict[str, Any]:
+    def compact_storage(
+        self,
+        *,
+        confirm: bool = False,
+        batch_size: int = 500,
+        max_batches_per_phase: int = 5,
+    ) -> dict[str, Any]:
         now = datetime.now(UTC)
         raw_json_cutoff = (now - timedelta(days=self.compaction_raw_json_days)).isoformat()
         inactive_job_cutoff = (now - timedelta(days=self.compaction_inactive_job_days)).isoformat()
         job_event_cutoff = (now - timedelta(days=self.compaction_job_event_days)).isoformat()
         weekly_digest_cutoff = (now - timedelta(days=self.compaction_weekly_digest_days)).isoformat()
 
-        counts = {
-            "raw_json_rows_older_than_cutoff": self.storage.count_jobs_with_raw_json_before(raw_json_cutoff),
-            "inactive_jobs_older_than_cutoff": self.storage.count_inactive_jobs_before(inactive_job_cutoff),
-            "job_events_older_than_cutoff": self.storage.count_job_events_before(job_event_cutoff),
-            "weekly_digests_older_than_cutoff": self.storage.count_weekly_digests_before(weekly_digest_cutoff),
-        }
+        batch_size = max(1, int(batch_size))
+        max_batches_per_phase = max(1, int(max_batches_per_phase))
 
         report: dict[str, Any] = {
             "generated_at": now.isoformat(),
             "confirm": bool(confirm),
-            "batch_size": int(batch_size),
+            "batch_size": batch_size,
+            "max_batches_per_phase": max_batches_per_phase,
             "cutoffs": {
                 "raw_json_before": raw_json_cutoff,
                 "inactive_jobs_before": inactive_job_cutoff,
                 "job_events_before": job_event_cutoff,
                 "weekly_digests_before": weekly_digest_cutoff,
             },
-            "counts": counts,
         }
 
         if not confirm:
+            report["counts"] = {
+                "raw_json_rows_older_than_cutoff": self.storage.count_jobs_with_raw_json_before(raw_json_cutoff),
+                "inactive_jobs_older_than_cutoff": self.storage.count_inactive_jobs_before(inactive_job_cutoff),
+                "job_events_older_than_cutoff": self.storage.count_job_events_before(job_event_cutoff),
+                "weekly_digests_older_than_cutoff": self.storage.count_weekly_digests_before(weekly_digest_cutoff),
+            }
             report["status"] = "dry_run"
             return report
 
         summary = {
             "raw_json_cleared": 0,
             "inactive_jobs_deleted": 0,
+            "inactive_jobs_referenced_preserved": 0,
             "job_events_deleted": 0,
             "weekly_digests_deleted": 0,
         }
+        batches = {
+            "raw_json": 0,
+            "job_events": 0,
+            "weekly_digests": 0,
+            "inactive_jobs": 0,
+        }
+        phases_at_limit: list[str] = []
 
-        while True:
+        for _ in range(max_batches_per_phase):
             job_ids = self.storage.fetch_job_ids_with_raw_json_before(cutoff_iso=raw_json_cutoff, limit=batch_size)
             if not job_ids:
                 break
+            batches["raw_json"] += 1
             summary["raw_json_cleared"] += self.storage.clear_raw_json_for_job_ids(job_ids)
+            if len(job_ids) < batch_size:
+                break
+        else:
+            phases_at_limit.append("raw_json")
 
-        while True:
+        for _ in range(max_batches_per_phase):
             event_ids = self.storage.fetch_job_event_ids_before(cutoff_iso=job_event_cutoff, limit=batch_size)
             if not event_ids:
                 break
+            batches["job_events"] += 1
             summary["job_events_deleted"] += self.storage.delete_job_events_by_ids(event_ids)
+            if len(event_ids) < batch_size:
+                break
+        else:
+            phases_at_limit.append("job_events")
 
-        while True:
+        for _ in range(max_batches_per_phase):
             digest_ids = self.storage.fetch_weekly_digest_ids_before(cutoff_iso=weekly_digest_cutoff, limit=batch_size)
             if not digest_ids:
                 break
+            batches["weekly_digests"] += 1
             summary["weekly_digests_deleted"] += self.storage.delete_weekly_digests_by_ids(digest_ids)
+            if len(digest_ids) < batch_size:
+                break
+        else:
+            phases_at_limit.append("weekly_digests")
 
-        while True:
-            job_ids = self.storage.fetch_inactive_job_ids_before(cutoff_iso=inactive_job_cutoff, limit=batch_size)
+        inactive_cursor = 0
+        for _ in range(max_batches_per_phase):
+            job_ids = self.storage.fetch_inactive_job_ids_before_with_cursor(
+                cutoff_iso=inactive_job_cutoff,
+                after_id=inactive_cursor,
+                limit=batch_size,
+            )
             if not job_ids:
                 break
-            summary["inactive_jobs_deleted"] += self.storage.delete_jobs_by_ids(job_ids)
+
+            batches["inactive_jobs"] += 1
+            inactive_cursor = max(job_ids)
+            referenced = self.storage.fetch_referenced_job_ids(job_ids)
+            deletable = [job_id for job_id in job_ids if job_id not in referenced]
+            summary["inactive_jobs_referenced_preserved"] += len(job_ids) - len(deletable)
+
+            if deletable:
+                summary["inactive_jobs_deleted"] += self.storage.delete_jobs_by_ids(deletable)
+            if len(job_ids) < batch_size:
+                break
+        else:
+            phases_at_limit.append("inactive_jobs")
 
         finished_at = datetime.now(UTC).isoformat()
         self.storage.upsert_ingestion_state({"last_compaction_at": finished_at})
-        report["status"] = "applied"
+        report["status"] = "applied_partial" if phases_at_limit else "applied"
         report["summary"] = summary
+        report["batches"] = batches
+        report["phases_at_limit"] = phases_at_limit
         return report
 
     def maybe_run_compaction(self) -> bool:
@@ -613,21 +720,32 @@ class IngestionPipeline:
 
         report = self.compact_storage(confirm=True)
         logger.info(
-            "Storage compaction complete. raw_json_cleared=%s inactive_jobs_deleted=%s job_events_deleted=%s weekly_digests_deleted=%s",
+            "Storage compaction complete. raw_json_cleared=%s inactive_jobs_deleted=%s inactive_jobs_referenced_preserved=%s job_events_deleted=%s weekly_digests_deleted=%s",
             report.get("summary", {}).get("raw_json_cleared", 0),
             report.get("summary", {}).get("inactive_jobs_deleted", 0),
+            report.get("summary", {}).get("inactive_jobs_referenced_preserved", 0),
             report.get("summary", {}).get("job_events_deleted", 0),
             report.get("summary", {}).get("weekly_digests_deleted", 0),
         )
         return True
 
-    def expire_jobs_past_deadline(self, *, today_local: date | None = None, batch_size: int = 500) -> dict[str, Any]:
+    def expire_jobs_past_deadline(
+        self,
+        *,
+        today_local: date | None = None,
+        batch_size: int = 500,
+        max_batches: int = 10,
+    ) -> dict[str, Any]:
         local_day = today_local or datetime.now(self.local_timezone).date()
         deadline_before = local_day.isoformat()
         generated_at = datetime.now(UTC).isoformat()
         expired_rows = 0
+        batches = 0
+        last_batch_size = 0
+        batch_size = max(1, int(batch_size))
+        max_batches = max(1, int(max_batches))
 
-        while True:
+        for _ in range(max_batches):
             rows = self.storage.fetch_active_jobs_past_deadline(deadline_before=deadline_before, limit=batch_size)
             if not rows:
                 break
@@ -636,6 +754,8 @@ class IngestionPipeline:
             if not expired_ids:
                 break
 
+            batches += 1
+            last_batch_size = len(expired_ids)
             removed_at = datetime.now(UTC).isoformat()
             self.storage.deactivate_jobs(expired_ids, removed_at=removed_at)
             self.storage.insert_job_events(self._build_removed_events_from_existing(rows=rows, event_time=removed_at))
@@ -643,12 +763,15 @@ class IngestionPipeline:
 
             if len(expired_ids) < batch_size:
                 break
+        limit_reached = batches >= max_batches and last_batch_size >= batch_size
 
         report = {
             "generated_at": generated_at,
             "deadline_before": deadline_before,
             "expired_rows": expired_rows,
-            "status": "ok",
+            "batches": batches,
+            "limit_reached": limit_reached,
+            "status": "partial" if limit_reached else "ok",
         }
         self.storage.upsert_ingestion_state(
             {
@@ -658,9 +781,30 @@ class IngestionPipeline:
         )
         return report
 
-    def maybe_expire_jobs_past_deadline(self, *, today_local: date | None = None, batch_size: int = 500) -> dict[str, Any]:
+    def maybe_expire_jobs_past_deadline(
+        self,
+        *,
+        today_local: date | None = None,
+        batch_size: int = 500,
+        max_batches: int = 10,
+    ) -> dict[str, Any]:
         local_day = today_local or datetime.now(self.local_timezone).date()
-        return self.expire_jobs_past_deadline(today_local=local_day, batch_size=batch_size)
+        deadline_before = local_day.isoformat()
+        state = self.storage.get_ingestion_state(["last_deadline_expiration_date"])
+        if state.get("last_deadline_expiration_date") == deadline_before:
+            return {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "deadline_before": deadline_before,
+                "expired_rows": 0,
+                "batches": 0,
+                "limit_reached": False,
+                "status": "skipped_already_ran_today",
+            }
+        return self.expire_jobs_past_deadline(
+            today_local=local_day,
+            batch_size=batch_size,
+            max_batches=max_batches,
+        )
 
     @staticmethod
     def _feed_state_key(feed_key: str, suffix: str) -> str:
@@ -723,6 +867,22 @@ class IngestionPipeline:
             )
         raise RuntimeError(f"Unsupported feed provider: {feed.provider}")
 
+    @staticmethod
+    def _with_feed_metadata(feed: CompanyFeed, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not rows:
+            return []
+        enriched: list[dict[str, Any]] = []
+        for row in rows:
+            payload = dict(row)
+            payload.setdefault("source_name", feed.provider)
+            payload.setdefault("source_provider", feed.provider)
+            payload.setdefault("source_kind", "direct_company_ats")
+            payload.setdefault("source_company_key", feed.company_canonical)
+            payload.setdefault("source_feed_key", feed.feed_key)
+            payload.setdefault("is_direct_company_source", True)
+            enriched.append(payload)
+        return enriched
+
     def run_company_feeds_once(
         self,
         *,
@@ -730,6 +890,7 @@ class IngestionPipeline:
         max_http: int,
         only_keys: list[str] | None = None,
         clear_auto_disable: bool = False,
+        start_after_key: str | None = None,
     ) -> dict[str, Any]:
         feeds = load_company_feeds(self.company_feed_config_path)
         if not feeds:
@@ -746,6 +907,14 @@ class IngestionPipeline:
         selected_keys = {key.strip().lower() for key in (only_keys or []) if key.strip()}
         if selected_keys:
             feeds = [feed for feed in feeds if feed.feed_key in selected_keys]
+        elif start_after_key:
+            normalized_cursor = str(start_after_key).strip().lower()
+            cursor_index = next(
+                (index for index, feed in enumerate(feeds) if feed.feed_key == normalized_cursor),
+                None,
+            )
+            if cursor_index is not None:
+                feeds = feeds[cursor_index + 1 :] + feeds[: cursor_index + 1]
 
         feed_state_keys: list[str] = []
         for feed in feeds:
@@ -775,6 +944,7 @@ class IngestionPipeline:
         target_rows = 0
         http_requests = 0
         feed_results: list[dict[str, Any]] = []
+        probe_rows: list[dict[str, Any]] = []
 
         for feed in feeds:
             if remaining_rows <= 0 or remaining_http <= 0:
@@ -811,7 +981,8 @@ class IngestionPipeline:
                 self._feed_state_key(feed.feed_key, "last_http_status"): str(fetch_result.http_status or "none"),
             }
 
-            prepared_jobs, prepared_tags, prepared_target_count = self._prepare_records(fetch_result.rows)
+            enriched_rows = self._with_feed_metadata(feed, fetch_result.rows)
+            prepared_jobs, prepared_tags, prepared_target_count = self._prepare_records(enriched_rows)
             persisted_rows = 0
             persisted_target_count = 0
             persist_error: str | None = None
@@ -889,6 +1060,28 @@ class IngestionPipeline:
                 }
             )
 
+            probe_rows.append(
+                {
+                    "feed_key": feed.feed_key,
+                    "provider": feed.provider,
+                    "run_at": datetime.now(UTC).isoformat(),
+                    "http_status": fetch_result.http_status,
+                    "http_requests": int(fetch_result.http_requests),
+                    "fetched_rows": len(fetch_result.rows),
+                    "persisted_rows": persisted_rows,
+                    "target_rows": persisted_target_count,
+                    "removed_rows": removed_rows,
+                    "location_filtering_supported": bool(fetch_result.location_filtering_supported),
+                    "error_text": persist_error or fetch_result.error,
+                }
+            )
+
+        if probe_rows:
+            try:
+                self.storage.insert_source_feed_probe_runs(probe_rows)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to persist source_feed_probe_runs: %s", exc)
+
         return {
             "enabled": bool(self.enable_company_feeds),
             "processed_rows": processed_rows,
@@ -897,6 +1090,22 @@ class IngestionPipeline:
             "feeds_run": len(feed_results),
             "feed_results": feed_results,
         }
+
+    def run_company_feed_cycle(self) -> dict[str, Any]:
+        cursor_key = "last_company_feed_cursor"
+        state = self.storage.get_ingestion_state([cursor_key])
+        report = self.run_company_feeds_once(
+            max_rows=self.feed_row_budget,
+            max_http=self.feed_http_budget,
+            start_after_key=state.get(cursor_key),
+        )
+        feed_results = report.get("feed_results") or []
+        if feed_results:
+            last_feed_key = str(feed_results[-1].get("feed_key") or "").strip()
+            if last_feed_key:
+                self.storage.upsert_ingestion_state({cursor_key: last_feed_key})
+                report["last_company_feed_cursor"] = last_feed_key
+        return report
 
     def verify_company_sources(
         self,
@@ -1176,23 +1385,18 @@ class IngestionPipeline:
         while True:
             started_at = time.monotonic()
             try:
-                stream_rows = self.run_stream_once(limit=self.batch_size)
+                self.run_stream_once(limit=self.batch_size)
                 self._poll_counter += 1
 
                 if self.enable_company_feeds and (self._poll_counter % self.feed_interval_polls == 0):
-                    leftover_row_budget = max(0, self.batch_size - int(stream_rows))
-                    company_rows_budget = min(leftover_row_budget, self.feed_row_budget)
-                    if company_rows_budget > 0:
-                        feed_report = self.run_company_feeds_once(
-                            max_rows=company_rows_budget,
-                            max_http=self.feed_http_budget,
-                        )
-                        logger.info(
-                            "Company feed sync complete. processed_rows=%s target_rows=%s http_requests=%s",
-                            feed_report.get("processed_rows", 0),
-                            feed_report.get("target_rows", 0),
-                            feed_report.get("http_requests", 0),
-                        )
+                    feed_report = self.run_company_feed_cycle()
+                    logger.info(
+                        "Company feed sync complete. processed_rows=%s target_rows=%s http_requests=%s cursor=%s",
+                        feed_report.get("processed_rows", 0),
+                        feed_report.get("target_rows", 0),
+                        feed_report.get("http_requests", 0),
+                        feed_report.get("last_company_feed_cursor"),
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Stream poll failed: %s", exc)
             else:

@@ -6,12 +6,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .company_registry import DEFAULT_COMPANY_REGISTRY_PATH
+from .db_audit import run_db_audit
 from .ingest import IngestionPipeline
 from .jobtech import JobTechClient
 from .logging_utils import configure_logging
+from .purge_inactive_jobs import purge_inactive_jobs
 from .settings import load_settings
 from .storage import SupabaseStorage
 from .target_profile import load_target_profile
+from .v3_runtime import (
+    evaluate_precision_export,
+    evaluate_precision_ingest_labels,
+    evaluate_precision_report,
+    promote_company_feeds,
+    recalculate_user_ranking,
+    refresh_feed_quality,
+    send_alerts,
+    sync_feed_registry_from_yaml,
+    verify_company_sources_batch,
+    write_report_files,
+)
 from .validation import launch_readiness_report, precision_review_phase15, usefulness_report
 
 
@@ -108,6 +122,86 @@ def parse_args() -> argparse.Namespace:
         default="docs/company_source_verification.md",
     )
 
+    verify_sources_batch = sub.add_parser(
+        "verify-company-sources-batch",
+        help="Batch probe providers for companies in registry by status filter",
+    )
+    verify_sources_batch.add_argument(
+        "--statuses",
+        default="planned,blocked,html_fallback_candidate",
+        help="Comma-separated company statuses to verify",
+    )
+    verify_sources_batch.add_argument("--max-companies", type=int, default=25)
+    verify_sources_batch.add_argument("--max-rows", type=int, default=20)
+    verify_sources_batch.add_argument("--max-http-per-provider", type=int, default=1)
+    verify_sources_batch.add_argument("--registry-path", default=DEFAULT_COMPANY_REGISTRY_PATH)
+    verify_sources_batch.add_argument("--report-json", default="pipeline/reports/company_source_verification_batch.json")
+    verify_sources_batch.add_argument("--report-md", default="docs/company_source_verification_batch.md")
+
+    sync_feed_registry = sub.add_parser(
+        "sync-feed-registry-from-yaml",
+        help="Seed/update DB feed registry from immutable YAML config",
+    )
+    sync_feed_registry.add_argument(
+        "--config-path",
+        default="pipeline/config/company_feeds.yaml",
+    )
+    sync_feed_registry.add_argument("--only", type=str, default=None, help="Comma-separated feed keys")
+
+    refresh_quality = sub.add_parser(
+        "refresh-feed-quality",
+        help="Compute 14-day feed quality metrics from probe history and update registry bands",
+    )
+    refresh_quality.add_argument("--lookback-days", type=int, default=14)
+    refresh_quality.add_argument("--min-runs", type=int, default=None)
+    refresh_quality.add_argument(
+        "--threshold-profile",
+        choices=["strict", "balanced", "lenient"],
+        default="strict",
+        help="Quality profile used for feed band decisions",
+    )
+    refresh_quality.add_argument(
+        "--thresholds-path",
+        default="pipeline/config/feed_quality_thresholds.yaml",
+        help="YAML file with feed quality threshold profiles",
+    )
+    refresh_quality.add_argument("--apply", action="store_true", help="Persist recommended quality updates")
+    refresh_quality.add_argument("--report-json", default=None)
+    refresh_quality.add_argument("--report-md", default=None)
+
+    promote_feeds = sub.add_parser(
+        "promote-company-feeds",
+        help="Promote eligible feeds to high-signal in DB registry (never mutates YAML)",
+    )
+    promote_feeds.add_argument("--mode", choices=["report", "apply"], default="report")
+    promote_feeds.add_argument("--only", type=str, default=None, help="Comma-separated feed keys")
+
+    send_alerts_cmd = sub.add_parser(
+        "send-alerts",
+        help="Manual alert generation entrypoint (cron uses same DB function in production)",
+    )
+    send_alerts_cmd.add_argument("--frequency", choices=["daily", "weekly"], default="daily")
+
+    recalc_ranking = sub.add_parser(
+        "recalculate-user-ranking",
+        help="Recompute per-user ranking state from feedback events",
+    )
+    recalc_ranking.add_argument("--lookback-days", type=int, default=90)
+    recalc_ranking.add_argument("--user-id", default=None)
+    recalc_ranking.add_argument("--apply", action="store_true")
+
+    eval_precision = sub.add_parser(
+        "evaluate-precision",
+        help="Export samples, ingest labels, and report precision from human labels",
+    )
+    eval_precision.add_argument("--mode", choices=["export", "ingest-labels", "report"], required=True)
+    eval_precision.add_argument("--lens", choices=["high_signal", "broad", "graduate_trainee"], default="high_signal")
+    eval_precision.add_argument("--top-n", type=int, default=100)
+    eval_precision.add_argument("--period-days", type=int, default=14)
+    eval_precision.add_argument("--output-csv", default="pipeline/reports/precision_labels_sample.csv")
+    eval_precision.add_argument("--input-csv", default="pipeline/reports/precision_labels_sample.csv")
+    eval_precision.add_argument("--reviewer-key", default="manual-reviewer")
+
     validate = sub.add_parser("validate-usefulness", help="Check feed usefulness thresholds")
     validate.add_argument("--sample-size", type=int, default=50)
     validate.add_argument("--min-relevant-pct", type=int, default=70)
@@ -138,9 +232,24 @@ def parse_args() -> argparse.Namespace:
     compact = sub.add_parser("compact-storage", help="Bound table growth by clearing/deleting old rows")
     compact.add_argument("--confirm", action="store_true", help="Apply compaction changes; default is dry-run")
     compact.add_argument("--batch-size", type=int, default=500)
+    compact.add_argument("--max-batches-per-phase", type=int, default=5)
 
     expire = sub.add_parser("expire-deadlines", help="Deactivate active jobs whose application deadline has passed")
     expire.add_argument("--batch-size", type=int, default=500)
+    expire.add_argument("--max-batches", type=int, default=10)
+
+    sub.add_parser("db-audit", help="Read-only audit of pipeline table counts and retention eligibility")
+
+    purge = sub.add_parser(
+        "purge-inactive-jobs",
+        help="Delete inactive unreferenced jobs by id cursor pagination (dry-run by default)",
+    )
+    purge.add_argument("--confirm", action="store_true", help="Apply deletions; default is dry-run")
+    purge.add_argument("--batch-size", type=int, default=500)
+    purge.add_argument("--max-batches", type=int, default=100)
+    purge.add_argument("--start-after-id", type=int, default=0)
+    purge.add_argument("--stop-after-deleted", type=int, default=None)
+    purge.add_argument("--sleep-ms", type=int, default=100)
 
     sub.add_parser("state", help="Print ingestion state")
 
@@ -259,6 +368,99 @@ def main() -> None:
         print(json.dumps(report, indent=2))
         return
 
+    if args.command == "verify-company-sources-batch":
+        status_filters = [part.strip() for part in str(args.statuses).split(",") if part.strip()]
+        report = verify_company_sources_batch(
+            pipeline,
+            statuses=status_filters,
+            max_companies=int(args.max_companies),
+            max_rows=int(args.max_rows),
+            max_http_per_provider=int(args.max_http_per_provider),
+            registry_path=str(args.registry_path),
+        )
+        write_report_files(
+            report=report,
+            json_path=args.report_json,
+            markdown_path=args.report_md,
+            title="Company Source Verification (Batch)",
+        )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "sync-feed-registry-from-yaml":
+        only_keys = [part.strip() for part in (args.only or "").split(",") if part.strip()]
+        report = sync_feed_registry_from_yaml(
+            storage,
+            config_path=str(args.config_path),
+            only_keys=only_keys or None,
+        )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "refresh-feed-quality":
+        report = refresh_feed_quality(
+            storage,
+            lookback_days=int(args.lookback_days),
+            min_runs=(int(args.min_runs) if args.min_runs is not None else None),
+            threshold_profile=str(args.threshold_profile),
+            thresholds_path=str(args.thresholds_path),
+            apply=bool(args.apply),
+        )
+        write_report_files(
+            report=report,
+            json_path=args.report_json,
+            markdown_path=args.report_md,
+            title="Feed Quality Refresh",
+        )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "promote-company-feeds":
+        only_keys = [part.strip() for part in (args.only or "").split(",") if part.strip()]
+        report = promote_company_feeds(
+            storage,
+            mode=str(args.mode),
+            feed_keys=only_keys or None,
+        )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "send-alerts":
+        report = send_alerts(storage, frequency=str(args.frequency))
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "recalculate-user-ranking":
+        report = recalculate_user_ranking(
+            storage,
+            lookback_days=int(args.lookback_days),
+            user_id=(str(args.user_id).strip() or None) if args.user_id is not None else None,
+            apply=bool(args.apply),
+        )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "evaluate-precision":
+        mode = str(args.mode)
+        if mode == "export":
+            report = evaluate_precision_export(
+                storage,
+                lens=str(args.lens),
+                top_n=int(args.top_n),
+                period_days=int(args.period_days),
+                output_csv=str(args.output_csv),
+            )
+        elif mode == "ingest-labels":
+            report = evaluate_precision_ingest_labels(
+                storage,
+                input_csv=str(args.input_csv),
+                default_reviewer_key=str(args.reviewer_key),
+            )
+        else:
+            report = evaluate_precision_report(storage, lens=str(args.lens))
+        print(json.dumps(report, indent=2))
+        return
+
     if args.command == "validate-usefulness":
         profile = load_target_profile(load_settings().target_profile_path)
         report = usefulness_report(
@@ -313,12 +515,38 @@ def main() -> None:
         return
 
     if args.command == "compact-storage":
-        report = pipeline.compact_storage(confirm=bool(args.confirm), batch_size=int(args.batch_size))
+        report = pipeline.compact_storage(
+            confirm=bool(args.confirm),
+            batch_size=int(args.batch_size),
+            max_batches_per_phase=int(args.max_batches_per_phase),
+        )
         print(json.dumps(report, indent=2))
         return
 
     if args.command == "expire-deadlines":
-        report = pipeline.expire_jobs_past_deadline(batch_size=int(args.batch_size))
+        report = pipeline.expire_jobs_past_deadline(
+            batch_size=int(args.batch_size),
+            max_batches=int(args.max_batches),
+        )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "db-audit":
+        settings = load_settings()
+        report = run_db_audit(storage, settings)
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "purge-inactive-jobs":
+        report = purge_inactive_jobs(
+            storage,
+            confirm=bool(args.confirm),
+            batch_size=int(args.batch_size),
+            max_batches=int(args.max_batches),
+            start_after_id=int(args.start_after_id),
+            stop_after_deleted=args.stop_after_deleted,
+            sleep_ms=int(args.sleep_ms),
+        )
         print(json.dumps(report, indent=2))
         return
 

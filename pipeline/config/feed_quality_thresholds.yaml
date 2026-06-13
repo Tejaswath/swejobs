@@ -1,0 +1,48 @@
+version: 1
+default_profile: strict
+
+profiles:
+  strict:
+    min_runs: 4
+    trusted:
+      min_success_rate: 0.95
+      min_target_hit_rate: 0.70
+      min_total_target_rows: 8
+      min_target_share_of_persisted: 0.55
+    verified:
+      min_success_rate: 0.85
+      min_target_hit_rate: 0.45
+      min_total_target_rows: 4
+      min_target_share_of_persisted: 0.35
+    candidate:
+      min_success_rate: 0.60
+
+  balanced:
+    min_runs: 4
+    trusted:
+      min_success_rate: 0.90
+      min_target_hit_rate: 0.60
+      min_total_target_rows: 6
+      min_target_share_of_persisted: 0.45
+    verified:
+      min_success_rate: 0.75
+      min_target_hit_rate: 0.35
+      min_total_target_rows: 3
+      min_target_share_of_persisted: 0.25
+    candidate:
+      min_success_rate: 0.50
+
+  lenient:
+    min_runs: 3
+    trusted:
+      min_success_rate: 0.85
+      min_target_hit_rate: 0.45
+      min_total_target_rows: 4
+      min_target_share_of_persisted: 0.35
+    verified:
+      min_success_rate: 0.65
+      min_target_hit_rate: 0.20
+      min_total_target_rows: 2
+      min_target_share_of_persisted: 0.15
+    candidate:
+      min_success_rate: 0.40

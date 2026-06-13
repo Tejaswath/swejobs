@@ -95,6 +95,57 @@ export type Database = {
           },
         ]
       }
+      alert_delivery_events: {
+        Row: {
+          channel: string
+          created_at: string
+          delivered_at: string
+          id: number
+          job_external_key: string
+          job_id: number | null
+          saved_search_id: number
+          status: string
+          user_id: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          delivered_at?: string
+          id?: number
+          job_external_key: string
+          job_id?: number | null
+          saved_search_id: number
+          status?: string
+          user_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          delivered_at?: string
+          id?: number
+          job_external_key?: string
+          job_id?: number | null
+          saved_search_id?: number
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_delivery_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_delivery_events_saved_search_id_fkey"
+            columns: ["saved_search_id"]
+            isOneToOne: false
+            referencedRelation: "saved_searches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_templates: {
         Row: {
           body: string
@@ -123,7 +174,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "jobs_source_feed_key_fkey"
+            columns: ["source_feed_key"]
+            isOneToOne: false
+            referencedRelation: "source_feed_registry"
+            referencedColumns: ["feed_key"]
+          },
+        ]
       }
       email_config: {
         Row: {
@@ -230,6 +289,60 @@ export type Database = {
         }
         Relationships: []
       }
+      in_app_alerts: {
+        Row: {
+          alert_frequency: string
+          body: string
+          created_at: string
+          id: number
+          job_external_key: string
+          job_id: number | null
+          read_at: string | null
+          saved_search_id: number
+          title: string
+          user_id: string
+        }
+        Insert: {
+          alert_frequency?: string
+          body: string
+          created_at?: string
+          id?: number
+          job_external_key: string
+          job_id?: number | null
+          read_at?: string | null
+          saved_search_id: number
+          title: string
+          user_id: string
+        }
+        Update: {
+          alert_frequency?: string
+          body?: string
+          created_at?: string
+          id?: number
+          job_external_key?: string
+          job_id?: number | null
+          read_at?: string | null
+          saved_search_id?: number
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "in_app_alerts_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "in_app_alerts_saved_search_id_fkey"
+            columns: ["saved_search_id"]
+            isOneToOne: false
+            referencedRelation: "saved_searches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_events: {
         Row: {
           event_time: string
@@ -253,6 +366,47 @@ export type Database = {
           payload_hash?: string | null
         }
         Relationships: []
+      }
+      job_feedback_events: {
+        Row: {
+          created_at: string
+          employer_name: string | null
+          id: number
+          job_external_key: string
+          job_id: number | null
+          role_family: string | null
+          signal_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          employer_name?: string | null
+          id?: number
+          job_external_key: string
+          job_id?: number | null
+          role_family?: string | null
+          signal_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          employer_name?: string | null
+          id?: number
+          job_external_key?: string
+          job_id?: number | null
+          role_family?: string | null
+          signal_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_feedback_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       job_tags: {
         Row: {
@@ -320,6 +474,7 @@ export type Database = {
           source_company_key: string | null
           source_kind: string | null
           source_provider: string | null
+          source_feed_key: string | null
           source_url: string | null
           swedish_required: boolean
           ssyk_code: string | null
@@ -369,6 +524,7 @@ export type Database = {
           source_company_key?: string | null
           source_kind?: string | null
           source_provider?: string | null
+          source_feed_key?: string | null
           source_url?: string | null
           swedish_required?: boolean
           ssyk_code?: string | null
@@ -418,6 +574,7 @@ export type Database = {
           source_company_key?: string | null
           source_kind?: string | null
           source_provider?: string | null
+          source_feed_key?: string | null
           source_url?: string | null
           swedish_required?: boolean
           ssyk_code?: string | null
@@ -517,6 +674,44 @@ export type Database = {
         }
         Relationships: []
       }
+      relevance_labels: {
+        Row: {
+          created_at: string
+          id: number
+          job_id: number
+          label: number
+          lens: string
+          rationale: string | null
+          reviewer_key: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          job_id: number
+          label: number
+          lens: string
+          rationale?: string | null
+          reviewer_key: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          job_id?: number
+          label?: number
+          lens?: string
+          rationale?: string | null
+          reviewer_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relevance_labels_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       resume_versions: {
         Row: {
           created_at: string
@@ -570,11 +765,16 @@ export type Database = {
       }
       saved_searches: {
         Row: {
+          alert_frequency: string
+          alert_last_sent_at: string | null
+          alerts_enabled: boolean
           created_at: string | null
           english_only: boolean | null
           id: number
+          include_jobtech_in_high_signal: boolean
           keywords: string[] | null
           last_checked_at: string | null
+          lens: string
           name: string
           regions: string[] | null
           remote_only: boolean | null
@@ -582,11 +782,16 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          alert_frequency?: string
+          alert_last_sent_at?: string | null
+          alerts_enabled?: boolean
           created_at?: string | null
           english_only?: boolean | null
           id?: number
+          include_jobtech_in_high_signal?: boolean
           keywords?: string[] | null
           last_checked_at?: string | null
+          lens?: string
           name: string
           regions?: string[] | null
           remote_only?: boolean | null
@@ -594,16 +799,107 @@ export type Database = {
           user_id: string
         }
         Update: {
+          alert_frequency?: string
+          alert_last_sent_at?: string | null
+          alerts_enabled?: boolean
           created_at?: string | null
           english_only?: boolean | null
           id?: number
+          include_jobtech_in_high_signal?: boolean
           keywords?: string[] | null
           last_checked_at?: string | null
+          lens?: string
           name?: string
           regions?: string[] | null
           remote_only?: boolean | null
           updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      source_feed_probe_runs: {
+        Row: {
+          error_text: string | null
+          feed_key: string
+          fetched_rows: number
+          http_requests: number
+          http_status: number | null
+          id: number
+          location_filtering_supported: boolean
+          persisted_rows: number
+          provider: string
+          removed_rows: number
+          run_at: string
+          target_rows: number
+        }
+        Insert: {
+          error_text?: string | null
+          feed_key: string
+          fetched_rows?: number
+          http_requests?: number
+          http_status?: number | null
+          id?: number
+          location_filtering_supported?: boolean
+          persisted_rows?: number
+          provider: string
+          removed_rows?: number
+          run_at?: string
+          target_rows?: number
+        }
+        Update: {
+          error_text?: string | null
+          feed_key?: string
+          fetched_rows?: number
+          http_requests?: number
+          http_status?: number | null
+          id?: number
+          location_filtering_supported?: boolean
+          persisted_rows?: number
+          provider?: string
+          removed_rows?: number
+          run_at?: string
+          target_rows?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_feed_probe_runs_feed_key_fkey"
+            columns: ["feed_key"]
+            isOneToOne: false
+            referencedRelation: "source_feed_registry"
+            referencedColumns: ["feed_key"]
+          },
+        ]
+      }
+      source_feed_registry: {
+        Row: {
+          company_canonical: string
+          created_at: string
+          enabled: boolean
+          feed_key: string
+          high_signal_eligible: boolean
+          provider: string
+          quality_band: string
+          updated_at: string
+        }
+        Insert: {
+          company_canonical: string
+          created_at?: string
+          enabled?: boolean
+          feed_key: string
+          high_signal_eligible?: boolean
+          provider: string
+          quality_band?: string
+          updated_at?: string
+        }
+        Update: {
+          company_canonical?: string
+          created_at?: string
+          enabled?: boolean
+          feed_key?: string
+          high_signal_eligible?: boolean
+          provider?: string
+          quality_band?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -671,6 +967,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_ranking_state: {
+        Row: {
+          demoted_companies: string[]
+          demoted_role_families: string[]
+          high_signal_score_delta: number
+          preferred_companies: string[]
+          preferred_role_families: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          demoted_companies?: string[]
+          demoted_role_families?: string[]
+          high_signal_score_delta?: number
+          preferred_companies?: string[]
+          preferred_role_families?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          demoted_companies?: string[]
+          demoted_role_families?: string[]
+          high_signal_score_delta?: number
+          preferred_companies?: string[]
+          preferred_role_families?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_profile: {
         Row: {
@@ -782,7 +1108,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_saved_search_alerts: {
+        Args: {
+          p_frequency: string
+        }
+        Returns: {
+          inserted_alerts: number
+          processed_searches: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

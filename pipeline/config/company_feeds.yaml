@@ -468,6 +468,228 @@ feeds:
       - python
       - machine learning
 
+  - feed_key: funnel_teamtailor
+    display_name: Funnel
+    provider: teamtailor
+    slug_or_url: https://jobs.funnel.io/
+    company_canonical: funnel
+    enabled: false
+    priority: 112
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - data
+      - analytics
+      - python
+
+  - feed_key: voi_teamtailor
+    display_name: Voi Technology
+    provider: teamtailor
+    slug_or_url: https://careers.voi.com/
+    company_canonical: voi technology
+    enabled: false
+    priority: 114
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - data
+      - python
+
+  - feed_key: tibber_teamtailor
+    display_name: Tibber
+    provider: teamtailor
+    slug_or_url: https://jobs.tibber.com/
+    company_canonical: tibber
+    enabled: false
+    priority: 116
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - cloud
+      - data
+      - python
+
+  - feed_key: quinyx_teamtailor
+    display_name: Quinyx
+    provider: teamtailor
+    slug_or_url: https://careers.quinyx.com/
+    company_canonical: quinyx
+    enabled: false
+    priority: 118
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - cloud
+      - data
+      - python
+
+  - feed_key: qasa_teamtailor
+    display_name: Qasa
+    provider: teamtailor
+    slug_or_url: https://careers.qasa.se/
+    company_canonical: qasa
+    enabled: true
+    priority: 120
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - data
+      - analytics
+      - python
+      - java
+
+  - feed_key: inriver_teamtailor
+    display_name: inriver
+    provider: teamtailor
+    slug_or_url: https://career.inriver.com/
+    company_canonical: inriver
+    enabled: false
+    priority: 122
+    location_filters:
+      - Stockholm
+      - Sweden
+      - Malmö
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - cloud
+      - data
+      - python
+
+  - feed_key: zenseact_teamtailor
+    display_name: Zenseact
+    provider: teamtailor
+    slug_or_url: https://career.zenseact.com/
+    company_canonical: zenseact
+    enabled: true
+    priority: 124
+    location_filters:
+      - Gothenburg
+      - Göteborg
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - machine learning
+      - computer vision
+      - python
+      - cplusplus
+
+  - feed_key: arrive_teamtailor
+    display_name: Arrive (EasyPark Group)
+    provider: teamtailor
+    slug_or_url: https://careers.arrive.com/
+    company_canonical: arrive
+    enabled: false
+    priority: 126
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - cloud
+      - data
+      - python
+
+  - feed_key: recorded_future_greenhouse
+    display_name: Recorded Future
+    provider: greenhouse
+    slug_or_url: recordedfuture
+    company_canonical: recorded future
+    enabled: true
+    priority: 128
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - security
+      - machine learning
+      - data
+      - backend
+      - python
+      - cloud
+
+  - feed_key: adyen_greenhouse
+    display_name: Adyen
+    provider: greenhouse
+    slug_or_url: adyen
+    company_canonical: adyen
+    enabled: false
+    priority: 130
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - data
+      - java
+      - python
+
   # Candidate feeds below were added for expansion; keep disabled until their provider/slug
   # combination is endpoint-verified (several currently return HTTP 404).
   - feed_key: volvo_cars_greenhouse

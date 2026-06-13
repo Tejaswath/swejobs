@@ -79,7 +79,7 @@ class DeadlineExpiryTests(unittest.TestCase):
         self.assertEqual(job["application_deadline"], "2026-03-15")
         self.assertEqual(job["application_deadline_date"], "2026-03-15")
 
-    def test_maybe_expire_jobs_past_deadline_deactivates_overdue_rows_and_is_safe_to_rerun(self) -> None:
+    def test_maybe_expire_jobs_past_deadline_runs_once_per_local_day(self) -> None:
         storage = DeadlineStorageFake()
         storage.expired_rows = [
             {"id": 101, "raw_json": {"headline": "Expired A"}, "application_deadline_date": "2026-03-15"},
@@ -92,12 +92,32 @@ class DeadlineExpiryTests(unittest.TestCase):
 
         self.assertEqual(first_report["status"], "ok")
         self.assertEqual(first_report["expired_rows"], 2)
-        self.assertEqual(second_report["status"], "ok")
+        self.assertEqual(second_report["status"], "skipped_already_ran_today")
         self.assertEqual(second_report["expired_rows"], 0)
         self.assertEqual(len(storage.deactivated_calls), 1)
         self.assertEqual(storage.deactivated_calls[0][0], [101, 202])
         self.assertEqual([event["event_type"] for event in storage.inserted_events], ["removed", "removed"])
         self.assertEqual(storage.state["last_deadline_expiration_date"], "2026-03-17")
+
+    def test_expire_jobs_past_deadline_stops_at_batch_limit(self) -> None:
+        storage = DeadlineStorageFake()
+        storage.expired_rows = [
+            {"id": job_id, "application_deadline_date": "2026-03-16"}
+            for job_id in range(1, 7)
+        ]
+        pipeline = self._build_pipeline(storage)
+
+        report = pipeline.expire_jobs_past_deadline(
+            today_local=date(2026, 3, 17),
+            batch_size=2,
+            max_batches=2,
+        )
+
+        self.assertEqual(report["status"], "partial")
+        self.assertTrue(report["limit_reached"])
+        self.assertEqual(report["expired_rows"], 4)
+        self.assertEqual(len(storage.expired_rows), 2)
+        self.assertTrue(all(event["payload_hash"] is None for event in storage.inserted_events))
 
 
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ describe("Jobs page", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByRole("heading", { name: "Explore" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Recommended" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "All Roles" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "High Signal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Broad Discovery" })).toBeInTheDocument();
   });
 });

@@ -169,11 +169,20 @@ STAFFING_IDENTITY_PATTERNS: tuple[str, ...] = (
 
 SWEDISH_REQUIRED_PATTERNS: tuple[str, ...] = (
     r"\bfluent swedish\b",
+    r"\bfluent in swedish\b",
+    r"\bfluency in swedish\b",
+    r"\bproficien(?:cy|t) in swedish\b",
     r"\bswedish (is )?required\b",
+    r"\bswedish language skills (are )?required\b",
+    r"\bwritten and spoken swedish\b",
+    r"\bnative swedish\b",
     r"\brequired language[: ]+swedish\b",
     r"\bsvenska (i tal och skrift|krävs|är ett krav)\b",
+    r"\bsvenska språkkunskaper krävs\b",
     r"\bkrav[: ]+svenska\b",
     r"\bgoda kunskaper i svenska\b",
+    r"\bgod svenska i tal och skrift\b",
+    r"\bflytande svenska\b",
     r"\bmåste tala svenska\b",
 )
 
@@ -181,8 +190,17 @@ CITIZENSHIP_REQUIRED_PATTERNS: tuple[str, ...] = (
     r"\bswedish citizenship\b",
     r"\beu citizenship\b",
     r"\bcitizenship is required\b",
+    r"\bonly candidates with (?:swedish|eu) citizenship\b",
     r"\bmust be (?:a )?swedish citizen\b",
+    r"\bmust have (?:a )?valid work permit\b",
+    r"\bwork permit (?:in sweden )?required\b",
     r"\bmust be eligible to work in sweden without sponsorship\b",
+    r"\bmust be authorized to work in sweden without sponsorship\b",
+    r"\bno visa sponsorship\b",
+    r"\bvisa sponsorship (?:is )?not (?:available|provided)\b",
+    r"\bwithout visa sponsorship\b",
+    r"\bunable to sponsor\b",
+    r"\bno sponsorship\b",
     r"\bsvenskt medborgarskap\b",
     r"\bsvensk medborgare\b",
 )
@@ -296,19 +314,30 @@ def _extract_years_required(text: str) -> int | None:
 
 def _detect_career_stage(
     *,
+    headline: str,
     text: str,
     years_required_min: int | None,
     grad_hits: int,
     trainee_hits: int,
 ) -> tuple[str, float]:
+    senior_headline_hits = _matches(SENIOR_PATTERNS, headline)
+    junior_headline_hits = _matches(JUNIOR_PATTERNS, headline)
+    senior_text_hits = _matches(SENIOR_PATTERNS, text)
+    junior_text_hits = _matches(JUNIOR_PATTERNS, text)
+
+    if senior_headline_hits > 0 and junior_headline_hits == 0:
+        return "senior", 0.95
     if trainee_hits > 0:
         return "trainee", 0.95
     if grad_hits > 0:
         return "graduate", 0.95
-    if _matches(JUNIOR_PATTERNS, text) > 0:
-        return "junior", 0.85
-    if _matches(SENIOR_PATTERNS, text) > 0:
+
+    if senior_text_hits > 0 and junior_text_hits == 0:
         return "senior", 0.90
+    if junior_headline_hits > 0:
+        return "junior", 0.85
+    if junior_text_hits > 0 and senior_text_hits == 0:
+        return "junior", 0.80
     if _matches(MID_PATTERNS, text) > 0:
         return "mid", 0.75
     if years_required_min is not None:
@@ -415,6 +444,7 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
     security_clearance_required = _matches(SECURITY_CLEARANCE_REQUIRED_PATTERNS, text) > 0
     suppression_penalty_total = 0
     career_stage, career_stage_confidence = _detect_career_stage(
+        headline=headline.lower(),
         text=text,
         years_required_min=years_required_min,
         grad_hits=grad_hits,
@@ -509,6 +539,10 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
         suppression_penalty_total += clearance_penalty
         _add_reason(reason_codes, "security_clearance_required")
 
+    restricted_market_role = swedish_required or citizenship_required or security_clearance_required
+    if restricted_market_role:
+        _add_reason(reason_codes, "restricted_market")
+
     if consultancy_flag:
         consultancy_penalty = scoring.get("consultancy_penalty", 0)
         relevance_score -= consultancy_penalty
@@ -527,10 +561,12 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
         role_family in profile.include_role_families
         and target_gate_score >= scoring.get("minimum_target_score", 18)
         and not has_exclusion
+        and not restricted_market_role
     )
 
     is_noise = (
         has_exclusion
+        or restricted_market_role
         or role_family == "noise"
         or target_gate_score <= scoring.get("noise_threshold", -20)
     )

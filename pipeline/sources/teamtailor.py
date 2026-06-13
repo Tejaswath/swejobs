@@ -367,7 +367,7 @@ def _fetch_teamtailor_custom_site_jobs(
 
         rows.append(
             {
-                "id": f"teamtailor:{feed.feed_key}:{index}",
+                "id": f"teamtailor:{feed.feed_key}:{job.get('source_url') or index}",
                 "headline": headline,
                 "description": description,
                 "employer_name": feed.company_canonical,

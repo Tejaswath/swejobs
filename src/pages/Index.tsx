@@ -138,7 +138,11 @@ export default function Index() {
         .from("jobs")
         .select("id", { count: "exact", head: true })
         .eq("is_active", true)
-        .eq("is_target_role", true);
+        .eq("is_target_role", true)
+        .eq("is_noise", false)
+        .eq("swedish_required", false)
+        .eq("citizenship_required", false)
+        .eq("security_clearance_required", false);
       if (error) throw error;
       return count ?? 0;
     },
@@ -155,6 +159,10 @@ export default function Index() {
         .select("id", { count: "exact", head: true })
         .eq("is_active", true)
         .eq("is_target_role", true)
+        .eq("is_noise", false)
+        .eq("swedish_required", false)
+        .eq("citizenship_required", false)
+        .eq("security_clearance_required", false)
         .gte("published_at", weekAgoIso);
       if (error) throw error;
       return count ?? 0;
@@ -169,6 +177,10 @@ export default function Index() {
         .select("id, application_deadline")
         .eq("is_active", true)
         .eq("is_target_role", true)
+        .eq("is_noise", false)
+        .eq("swedish_required", false)
+        .eq("citizenship_required", false)
+        .eq("security_clearance_required", false)
         .not("application_deadline", "is", null)
         .gte("application_deadline", new Date().toISOString().slice(0, 10))
         .order("application_deadline", { ascending: true });
@@ -193,7 +205,11 @@ export default function Index() {
         .from("jobs")
         .select("employer_name")
         .in("employer_name", employerNames)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .eq("is_noise", false)
+        .eq("swedish_required", false)
+        .eq("citizenship_required", false)
+        .eq("security_clearance_required", false);
       if (jobsError) throw jobsError;
 
       const counts = new Map<string, number>();
@@ -216,6 +232,10 @@ export default function Index() {
         .select("id", { count: "exact", head: true })
         .eq("is_active", true)
         .eq("is_target_role", true)
+        .eq("is_noise", false)
+        .eq("swedish_required", false)
+        .eq("citizenship_required", false)
+        .eq("security_clearance_required", false)
         .gt("published_at", previousVisitIso!);
       if (error) throw error;
       return count ?? 0;

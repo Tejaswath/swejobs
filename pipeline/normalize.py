@@ -266,6 +266,7 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     source_kind = _to_text(_first(raw, "source_kind")) or (
         "jobtech" if source_name == "jobtech" else "direct_company_ats"
     )
+    source_feed_key = _to_text(_first(raw, "source_feed_key"))
     source_company_key = _to_text(_first(raw, "source_company_key", "company_canonical"))
     direct_source_value = _first(raw, "is_direct_company_source")
     if isinstance(direct_source_value, bool):
@@ -278,6 +279,7 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         "source_name": source_name,
         "source_provider": source_provider,
         "source_kind": source_kind,
+        "source_feed_key": source_feed_key,
         "source_company_key": source_company_key,
         "is_direct_company_source": is_direct_company_source,
         "headline": headline,
