@@ -156,6 +156,16 @@ function hasSeniorRoleSignal(context: SeniorSignalContext): boolean {
   return false;
 }
 
+// Exported for the focused lens regression test.
+// eslint-disable-next-line react-refresh/only-export-components
+export function isGraduateTraineeCandidate(context: SeniorSignalContext & { is_grad_program?: unknown }): boolean {
+  if (hasSeniorRoleSignal(context)) return false;
+
+  const stage = effectiveCareerStage(context.career_stage, context.career_stage_confidence);
+  const years = yearsValue(context.years_required_min);
+  return boolValue(context.is_grad_program) || ["graduate", "trainee", "junior"].includes(stage) || years <= 1;
+}
+
 function requiresThreePlusYears(job: {
   headline?: string | null;
   career_stage?: unknown;
@@ -413,7 +423,12 @@ export default function Jobs() {
           .eq("source_feed_registry.enabled", true)
           .eq("source_feed_registry.high_signal_eligible", true)
           .in("source_feed_registry.quality_band", ["trusted", "verified"]);
-      } else if (lens === "broad" || lens === "graduate_trainee") {
+      } else if (lens === "graduate_trainee") {
+        query = query
+          .eq("is_noise", false)
+          .gte("relevance_score", 15)
+          .or("is_grad_program.eq.true,career_stage.in.(graduate,trainee,junior),years_required_min.lte.1");
+      } else if (lens === "broad") {
         query = query.eq("is_noise", false);
       }
 
@@ -551,14 +566,10 @@ export default function Jobs() {
       }
 
       if (currentLens === "graduate_trainee") {
-        const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
-        const years = numberValue(job.years_required_min, 999);
-        const seniorSignal = hasSeniorRoleSignal(job);
         return (
           !isNoise &&
-          !seniorSignal &&
           relevance >= 15 &&
-          (boolValue(job.is_grad_program) || ["graduate", "trainee", "junior"].includes(stage) || years <= 1)
+          isGraduateTraineeCandidate(job)
         );
       }
 

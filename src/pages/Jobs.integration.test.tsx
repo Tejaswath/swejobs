@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import Jobs from "@/pages/Jobs";
+import Jobs, { isGraduateTraineeCandidate } from "@/pages/Jobs";
 
 const supabase = vi.hoisted(() => {
   const createThenableBuilder = (result: { data: unknown; error: null; count?: number }) => {
@@ -67,6 +67,28 @@ vi.mock("@/integrations/supabase/client", () => ({
 }));
 
 describe("Jobs page", () => {
+  it("does not treat missing experience metadata as graduate eligible", () => {
+    expect(
+      isGraduateTraineeCandidate({
+        headline: "DevOps Engineer",
+        career_stage: "unknown",
+        career_stage_confidence: 0,
+        years_required_min: null,
+        is_grad_program: false,
+      }),
+    ).toBe(false);
+
+    expect(
+      isGraduateTraineeCandidate({
+        headline: "Junior Backend Engineer",
+        career_stage: "junior",
+        career_stage_confidence: 0.85,
+        years_required_min: null,
+        is_grad_program: false,
+      }),
+    ).toBe(true);
+  });
+
   it("renders explore shell without crashing", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
