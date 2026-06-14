@@ -9,6 +9,10 @@ class Settings:
     supabase_url: str
     supabase_service_role_key: str
     jobtech_api_key: str | None
+    worker_mode: str
+    ats_sync_interval_seconds: int
+    ats_sync_http_budget: int
+    ats_sync_row_budget: int
     poll_seconds: int
     digest_window_days: int
     digest_refresh_minutes: int
@@ -57,6 +61,10 @@ def _bool(name: str, default: bool) -> bool:
 
 
 def load_settings() -> Settings:
+    worker_mode = os.getenv("WORKER_MODE", "ats_only").strip().lower()
+    if worker_mode not in {"ats_only", "jobtech_poll"}:
+        raise RuntimeError("WORKER_MODE must be one of: ats_only, jobtech_poll")
+
     translation_provider = os.getenv("TRANSLATION_PROVIDER", "google_cloud").strip().lower()
     translation_api_url = os.getenv("TRANSLATION_API_URL", "").strip()
     if not translation_api_url:
@@ -70,6 +78,10 @@ def load_settings() -> Settings:
         supabase_url=_required("SUPABASE_URL"),
         supabase_service_role_key=_required("SUPABASE_SERVICE_ROLE_KEY"),
         jobtech_api_key=os.getenv("JOBTECH_API_KEY"),
+        worker_mode=worker_mode,
+        ats_sync_interval_seconds=max(60, int(os.getenv("ATS_SYNC_INTERVAL_SECONDS", "3600"))),
+        ats_sync_http_budget=max(1, int(os.getenv("ATS_SYNC_HTTP_BUDGET", "100"))),
+        ats_sync_row_budget=max(1, int(os.getenv("ATS_SYNC_ROW_BUDGET", "2000"))),
         poll_seconds=int(os.getenv("POLL_SECONDS", "60")),
         digest_window_days=int(os.getenv("DIGEST_WINDOW_DAYS", "30")),
         digest_refresh_minutes=int(os.getenv("DIGEST_REFRESH_MINUTES", "60")),

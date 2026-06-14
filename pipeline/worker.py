@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
+from typing import Any, Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .logging_utils import configure_logging
 from .main import build_pipeline
 from .settings import load_settings
+
+logger = logging.getLogger(__name__)
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
@@ -41,6 +45,52 @@ def start_health_server(port: int) -> HTTPServer:
     return server
 
 
+def run_ats_only_cycle(pipeline: Any, *, max_rows: int, max_http: int) -> dict[str, Any]:
+    report: dict[str, Any] = {}
+
+    try:
+        feed_report = pipeline.run_company_feeds_once(max_rows=max_rows, max_http=max_http)
+        report["company_feeds"] = feed_report
+        logger.info(
+            "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s",
+            feed_report.get("processed_rows", 0),
+            feed_report.get("target_rows", 0),
+            feed_report.get("http_requests", 0),
+            feed_report.get("feeds_run", 0),
+        )
+    except Exception as exc:  # noqa: BLE001
+        report["company_feeds_error"] = str(exc)
+        logger.exception("ATS sync unexpectedly failed: %s", exc)
+
+    for report_key, operation in (
+        ("translation", pipeline.maybe_translate_jobs),
+        ("deadline_expiry", pipeline.maybe_expire_jobs_past_deadline),
+        ("compaction", pipeline.maybe_run_compaction),
+    ):
+        try:
+            report[report_key] = operation()
+        except Exception as exc:  # noqa: BLE001
+            report[f"{report_key}_error"] = str(exc)
+            logger.exception("ATS worker %s unexpectedly failed: %s", report_key, exc)
+
+    return report
+
+
+def run_ats_only_forever(
+    pipeline: Any,
+    *,
+    interval_seconds: int,
+    max_rows: int,
+    max_http: int,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    while True:
+        started_at = time.monotonic()
+        run_ats_only_cycle(pipeline, max_rows=max_rows, max_http=max_http)
+        elapsed = time.monotonic() - started_at
+        sleep(max(0, interval_seconds - elapsed))
+
+
 def main() -> None:
     settings = load_settings()
     configure_logging(settings.log_level)
@@ -53,6 +103,18 @@ def main() -> None:
         port = 8000
 
     start_health_server(port)
+    logger.info("Starting worker mode=%s", settings.worker_mode)
+    if settings.worker_mode == "ats_only":
+        if not settings.enable_company_feeds:
+            raise RuntimeError("ATS-only worker requires ENABLE_COMPANY_FEEDS=true")
+        run_ats_only_forever(
+            pipeline,
+            interval_seconds=settings.ats_sync_interval_seconds,
+            max_rows=settings.ats_sync_row_budget,
+            max_http=settings.ats_sync_http_budget,
+        )
+        return
+
     pipeline.run_poll_forever()
 
 
