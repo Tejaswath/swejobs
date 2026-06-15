@@ -12,6 +12,11 @@ class RelevanceContractTests(unittest.TestCase):
         jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
         self.assertIn('"id, is_active, headline, headline_en, employer_name', jobs_page)
 
+    def test_explore_imports_detail_panel_icons(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        lucide_import = jobs_page.split('from "lucide-react";', 1)[0]
+        self.assertIn("ChevronsUpDown", lucide_import)
+
     def test_shared_eligibility_fixtures(self) -> None:
         fixtures = json.loads(Path("tests/fixtures/eligibility_cases.json").read_text(encoding="utf-8"))
         registry = {
