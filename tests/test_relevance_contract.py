@@ -8,6 +8,10 @@ from pipeline.v3_runtime import lens_matches
 
 
 class RelevanceContractTests(unittest.TestCase):
+    def test_explore_query_selects_active_state_required_by_eligibility(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        self.assertIn('"id, is_active, headline, headline_en, employer_name', jobs_page)
+
     def test_shared_eligibility_fixtures(self) -> None:
         fixtures = json.loads(Path("tests/fixtures/eligibility_cases.json").read_text(encoding="utf-8"))
         registry = {

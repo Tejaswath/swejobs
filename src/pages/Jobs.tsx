@@ -408,7 +408,7 @@ export default function Jobs() {
       let query = supabase
         .from("jobs")
         .select(
-          "id, headline, headline_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
+          "id, is_active, headline, headline_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
           "published_at, application_deadline, employment_type, working_hours, occupation_label, source_url, " +
             "relevance_score, role_family, role_family_confidence, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
             "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, " +
