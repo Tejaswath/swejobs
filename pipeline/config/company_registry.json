@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-03-26",
+  "updated_at": "2026-06-14",
   "companies": [
     {
       "company_canonical": "spotify",
@@ -1191,6 +1191,627 @@
       ],
       "aliases": [],
       "notes": "Consultancy/integrator batch"
+    },
+    {
+      "company_canonical": "paradox interactive",
+      "display_name": "Paradox Interactive",
+      "priority_tier": "A",
+      "category": "gaming",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "mojang",
+      "display_name": "Mojang Studios",
+      "priority_tier": "A",
+      "category": "gaming",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "truecaller",
+      "display_name": "Truecaller",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "mentimeter",
+      "display_name": "Mentimeter",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "connected",
+      "provider": "greenhouse",
+      "provider_identifier": "mentimeter",
+      "provider_order": [
+        "greenhouse",
+        "workday",
+        "smartrecruiters",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Greenhouse source verified 2026-06-14 with complete fields and relevant Sweden rows"
+    },
+    {
+      "company_canonical": "einride",
+      "display_name": "Einride",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "detectify",
+      "display_name": "Detectify",
+      "priority_tier": "B",
+      "category": "security",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "yubico",
+      "display_name": "Yubico",
+      "priority_tier": "B",
+      "category": "security",
+      "status": "connected",
+      "provider": "greenhouse",
+      "provider_identifier": "yubico",
+      "provider_order": [
+        "greenhouse",
+        "workday",
+        "smartrecruiters",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Greenhouse source verified 2026-06-14 with complete fields and relevant Sweden rows"
+    },
+    {
+      "company_canonical": "instabee",
+      "display_name": "Instabee / Budbee",
+      "priority_tier": "B",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "anyfin",
+      "display_name": "Anyfin",
+      "priority_tier": "B",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "juni",
+      "display_name": "Juni",
+      "priority_tier": "B",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "doktor.se",
+      "display_name": "Doktor.se",
+      "priority_tier": "B",
+      "category": "healthtech",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "sana labs",
+      "display_name": "Sana Labs",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "normative",
+      "display_name": "Normative",
+      "priority_tier": "B",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "mathem",
+      "display_name": "Mathem",
+      "priority_tier": "B",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "lovable",
+      "display_name": "Lovable",
+      "priority_tier": "A",
+      "category": "product",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "ikea",
+      "display_name": "IKEA / Ingka Tech",
+      "priority_tier": "A",
+      "category": "retail",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "h&m",
+      "display_name": "H&M Group Tech",
+      "priority_tier": "A",
+      "category": "retail",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "abb",
+      "display_name": "ABB",
+      "priority_tier": "A",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "axis",
+      "display_name": "Axis Communications",
+      "priority_tier": "A",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "polestar",
+      "display_name": "Polestar",
+      "priority_tier": "A",
+      "category": "industrial",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "handelsbanken",
+      "display_name": "Handelsbanken",
+      "priority_tier": "A",
+      "category": "finance",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "telia",
+      "display_name": "Telia",
+      "priority_tier": "A",
+      "category": "telecom",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "google sweden",
+      "display_name": "Google Stockholm",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "microsoft sweden",
+      "display_name": "Microsoft Sweden",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "nvidia",
+      "display_name": "NVIDIA Sweden",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "apple",
+      "display_name": "Apple Sweden",
+      "priority_tier": "A",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
+    },
+    {
+      "company_canonical": "synopsys",
+      "display_name": "Synopsys Sweden",
+      "priority_tier": "B",
+      "category": "platform",
+      "status": "planned",
+      "provider": null,
+      "provider_identifier": null,
+      "provider_order": [
+        "workday",
+        "smartrecruiters",
+        "greenhouse",
+        "lever",
+        "teamtailor",
+        "html_fallback"
+      ],
+      "markets": [
+        "stockholm",
+        "sweden"
+      ],
+      "aliases": [],
+      "notes": "Curated target; provider verification pending"
     }
   ]
 }

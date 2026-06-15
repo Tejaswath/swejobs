@@ -1,5 +1,5 @@
-version: 4
-updated_at: "2026-03-26"
+version: 5
+updated_at: "2026-06-14"
 
 role_families:
   include:
@@ -71,6 +71,19 @@ role_families:
     - saljare
     - sales
     - support
+    - biomedical
+    - biomed
+    - chemistry
+    - chemical
+    - electronics engineer
+    - electrical engineer
+    - power systems
+    - researcher
+    - research scientist
+    - coordinator
+    - technical writer
+    - documentation specialist
+    - marketing engineer
 
 regions:
   # Empty = all Sweden by default.
@@ -133,9 +146,9 @@ scoring:
   title_allowlist_weight: 18
   role_family_weight: 14
   soft_role_family_weight: 6
-  company_watch_weight: 20
-  main_company_tier_a_weight: 25
-  main_company_tier_b_weight: 15
+  company_watch_weight: 10
+  main_company_tier_a_weight: 12
+  main_company_tier_b_weight: 8
   main_company_tier_c_weight: 6
   entry_graduate_weight: 22
   entry_trainee_weight: 22

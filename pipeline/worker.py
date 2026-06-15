@@ -5,12 +5,14 @@ import logging
 import os
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .logging_utils import configure_logging
 from .main import build_pipeline
 from .settings import load_settings
+from .v3_runtime import recalculate_user_ranking
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +47,58 @@ def start_health_server(port: int) -> HTTPServer:
     return server
 
 
+def maybe_recalculate_user_ranking(pipeline: Any, *, interval_hours: int = 24) -> bool:
+    storage = getattr(pipeline, "storage", None)
+    if storage is None:
+        return False
+    state_key = "last_user_ranking_recalculation_at"
+    state = storage.get_ingestion_state([state_key])
+    raw_last_run = state.get(state_key)
+    if raw_last_run:
+        try:
+            last_run = datetime.fromisoformat(str(raw_last_run).replace("Z", "+00:00"))
+            if last_run.tzinfo is None:
+                last_run = last_run.replace(tzinfo=UTC)
+            if datetime.now(UTC) - last_run.astimezone(UTC) < timedelta(hours=max(1, interval_hours)):
+                return False
+        except ValueError:
+            pass
+
+    report = recalculate_user_ranking(storage, lookback_days=90, apply=True)
+    storage.upsert_ingestion_state({state_key: datetime.now(UTC).isoformat()})
+    logger.info(
+        "User ranking recalculation complete. rows_scanned=%s users=%s applied=%s",
+        report.get("rows_scanned", 0),
+        report.get("users_computed", 0),
+        report.get("applied_count", 0),
+    )
+    return True
+
+
 def run_ats_only_cycle(pipeline: Any, *, max_rows: int, max_http: int) -> dict[str, Any]:
     report: dict[str, Any] = {}
 
     try:
         feed_report = pipeline.run_company_feeds_once(max_rows=max_rows, max_http=max_http)
         report["company_feeds"] = feed_report
+        feed_results = feed_report.get("feed_results") or []
+        failures = [row for row in feed_results if str(row.get("status") or "") != "ok"]
+        storage = getattr(pipeline, "storage", None)
+        if storage is not None:
+            storage.upsert_ingestion_state(
+                {
+                    "worker:last_success_at": datetime.now(UTC).isoformat(),
+                    "worker:last_feed_failure_count": str(len(failures)),
+                    "worker:last_feed_failures": ",".join(str(row.get("feed_key") or "") for row in failures[:20]),
+                }
+            )
         logger.info(
-            "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s",
+            "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s failures=%s",
             feed_report.get("processed_rows", 0),
             feed_report.get("target_rows", 0),
             feed_report.get("http_requests", 0),
             feed_report.get("feeds_run", 0),
+            len(failures),
         )
     except Exception as exc:  # noqa: BLE001
         report["company_feeds_error"] = str(exc)
@@ -66,6 +108,7 @@ def run_ats_only_cycle(pipeline: Any, *, max_rows: int, max_http: int) -> dict[s
         ("translation", pipeline.maybe_translate_jobs),
         ("deadline_expiry", pipeline.maybe_expire_jobs_past_deadline),
         ("compaction", pipeline.maybe_run_compaction),
+        ("user_ranking", lambda: maybe_recalculate_user_ranking(pipeline)),
     ):
         try:
             report[report_key] = operation()

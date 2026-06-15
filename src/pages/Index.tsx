@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { cn } from "@/lib/utils";
+import { jobPassesLens } from "@/lib/jobEligibility";
 
 import type {
   DeadlineBucketViewModel,
@@ -148,24 +149,38 @@ export default function Index() {
     },
   });
 
-  const newThisWeekQuery = useQuery({
-    queryKey: ["new-this-week"],
+  const highSignalSnapshotQuery = useQuery({
+    queryKey: ["overview-high-signal-snapshot"],
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      const weekAgoIso = new Date(Date.now() - 7 * 86_400_000).toISOString();
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from("jobs")
-        .select("id", { count: "exact", head: true })
+        .select(
+          "is_active,is_target_role,is_noise,relevance_score,headline,career_stage,career_stage_confidence," +
+            "years_required_min,swedish_required,citizenship_required,security_clearance_required,reason_codes," +
+            "source_kind,source_feed_key,published_at,source_feed_registry(enabled,high_signal_eligible,quality_band)",
+        )
         .eq("is_active", true)
-        .eq("is_target_role", true)
-        .eq("is_noise", false)
-        .eq("swedish_required", false)
-        .eq("citizenship_required", false)
-        .eq("security_clearance_required", false)
-        .gte("published_at", weekAgoIso);
+        .limit(300);
       if (error) throw error;
-      return count ?? 0;
+      const weekAgo = Date.now() - 7 * 86_400_000;
+      const rows = (data ?? []).filter((job) =>
+        jobPassesLens(
+          job,
+          "high_signal",
+          (
+            job as {
+              source_feed_registry?: { enabled?: unknown; high_signal_eligible?: unknown; quality_band?: unknown } | null;
+            }
+          ).source_feed_registry,
+          false,
+        ),
+      );
+      return {
+        total: rows.length,
+        newThisWeek: rows.filter((job) => Date.parse(String(job.published_at || "")) >= weekAgo).length,
+      };
     },
   });
 
@@ -419,9 +434,9 @@ export default function Index() {
 
   const signalItems: OverviewSignalStripItem[] = [
     {
-      label: "Live roles",
-      value: <AnimatedNumber value={jobCountQuery.data ?? 0} />,
-      href: "/jobs",
+      label: "High signal",
+      value: <AnimatedNumber value={highSignalSnapshotQuery.data?.total ?? 0} />,
+      href: "/jobs?lens=high_signal",
       accentClassName: "text-foreground",
       tone: "live",
     },
@@ -434,10 +449,10 @@ export default function Index() {
       pulse: groupedDeadlines.today.length > 0,
     },
     {
-      label: "New this week",
-      value: <AnimatedNumber value={newThisWeekQuery.data ?? 0} />,
-      href: "/jobs",
-      fullLabel: `${newThisWeekQuery.data ?? 0} roles posted in the last 7 days`,
+      label: "New high signal",
+      value: <AnimatedNumber value={highSignalSnapshotQuery.data?.newThisWeek ?? 0} />,
+      href: "/jobs?lens=high_signal",
+      fullLabel: `${highSignalSnapshotQuery.data?.newThisWeek ?? 0} High Signal roles posted in the last 7 days`,
     },
   ];
 
@@ -499,10 +514,10 @@ export default function Index() {
       : undefined;
 
   const showHeroSignalsLoading = useDelayedVisibility(
-    jobCountQuery.isLoading || newThisWeekQuery.isLoading || upcomingDeadlinesQuery.isLoading,
+    highSignalSnapshotQuery.isLoading || upcomingDeadlinesQuery.isLoading,
   );
   const showUpcomingDeadlineLoading = useDelayedVisibility(upcomingDeadlinesQuery.isLoading);
-  const heroSignalsUnavailable = jobCountQuery.isError || upcomingDeadlinesQuery.isError || newThisWeekQuery.isError;
+  const heroSignalsUnavailable = highSignalSnapshotQuery.isError || upcomingDeadlinesQuery.isError;
 
   if (!jobCountQuery.isLoading && !jobCountQuery.isError && (jobCountQuery.data ?? 0) === 0) {
     return (

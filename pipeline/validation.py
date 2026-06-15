@@ -8,6 +8,7 @@ from typing import Any
 
 from .storage import SupabaseStorage
 from .target_profile import TargetProfile
+from .v3_runtime import passes_default_eligibility
 
 
 def _pct(numerator: int, denominator: int) -> int:
@@ -118,7 +119,7 @@ def launch_readiness_report(
     top_early_career_size: int = 50,
     top_consultancy_size: int = 20,
     noise_sample_size: int = 200,
-    min_top_20_relevant_pct: int = 85,
+    min_top_20_relevant_pct: int = 90,
     min_top_50_early_career_pct: int = 40,
     max_top_20_consultancy_share_pct: int = 25,
     max_noise_sample_200_pct: int = 5,
@@ -141,14 +142,19 @@ def launch_readiness_report(
         1
         for row in top_relevant_rows
         if row.get("role_family") in include_set
+        and float(row.get("role_family_confidence") or 0) >= 0.7
         and not bool(row.get("is_noise"))
+        and passes_default_eligibility(row)
         and int(row.get("relevance_score") or 0) >= minimum_target_score
     )
     top_50_early_career_count = sum(
         1
         for row in top_early_career_rows
-        if bool(row.get("is_grad_program"))
-        or str(row.get("career_stage") or "unknown").strip().lower() in early_career_stages
+        if passes_default_eligibility(row)
+        and (
+            bool(row.get("is_grad_program"))
+            or str(row.get("career_stage") or "unknown").strip().lower() in early_career_stages
+        )
     )
     top_20_consultancy_count = sum(1 for row in top_consultancy_rows if bool(row.get("consultancy_flag")))
     noise_sample_count = sum(
@@ -193,8 +199,8 @@ def launch_readiness_report(
             "noise_sample_200_total": len(noise_sample_rows),
         },
         "definitions": {
-            "top_20_relevant_pct": "Rows in top-20 where role_family is included, is_noise is false, and relevance_score >= minimum_target_score.",
-            "top_50_early_career_pct": "Rows in top-50 where is_grad_program is true OR career_stage is graduate/trainee/junior.",
+            "top_20_relevant_pct": "Rows in top-20 that pass default eligibility, have a confident included role family, are not noise, and meet minimum_target_score.",
+            "top_50_early_career_pct": "Eligible rows in top-50 where is_grad_program is true OR career_stage is graduate/trainee/junior.",
             "top_20_consultancy_share_pct": "Rows in top-20 where consultancy_flag is true.",
             "noise_sample_200_pct": "Rows in top-200 where is_noise is true OR role_family is noise.",
         },
@@ -272,14 +278,17 @@ def precision_review_phase15(
         1
         for row in top20
         if row.get("role_family") in include_set
+        and float(row.get("role_family_confidence") or 0) >= 0.7
         and not bool(row.get("is_noise"))
+        and passes_default_eligibility(row)
         and int(row.get("relevance_score") or 0) >= profile.scoring.get("minimum_target_score", 18)
     )
     top20_precision_estimate = int(round((auto_relevant_top20 / len(top20)) * 100)) if top20 else 0
     early_career_hits = sum(
         1
         for row in sample
-        if bool(row.get("is_grad_program")) or str(row.get("career_stage") or "unknown") in early_career_stages
+        if passes_default_eligibility(row)
+        and (bool(row.get("is_grad_program")) or str(row.get("career_stage") or "unknown") in early_career_stages)
     )
     early_career_hit_rate = int(round((early_career_hits / len(sample)) * 100)) if sample else 0
     clear_noise_count = sum(

@@ -232,7 +232,7 @@ class SupabaseStorage:
             return {}
 
         response = self._execute(
-            lambda: self.client.table("jobs").select("id,raw_json,is_active").in_("id", job_ids).execute(),
+            lambda: self.client.table("jobs").select("id,raw_json,payload_hash,is_active").in_("id", job_ids).execute(),
             context="select existing jobs",
         )
         return {int(row["id"]): row for row in (response.data or [])}
@@ -556,8 +556,9 @@ class SupabaseStorage:
             lambda: self.client.table("jobs")
             .select(
                 "id,headline,employer_name,company_canonical,company_tier,role_family,"
-                "career_stage,is_grad_program,years_required_min,swedish_required,consultancy_flag,"
-                "is_target_role,is_noise,relevance_score,reason_codes,published_at"
+                "role_family_confidence,career_stage,is_grad_program,years_required_min,swedish_required,consultancy_flag,"
+                "citizenship_required,security_clearance_required,is_target_role,is_noise,relevance_score,"
+                "reason_codes,published_at,is_active"
             )
             .eq("is_active", True)
             .eq("is_target_role", True)
@@ -566,6 +567,20 @@ class SupabaseStorage:
             .limit(limit)
             .execute(),
             context="sample target jobs",
+        )
+        return response.data or []
+
+    def fetch_active_jobs_for_coverage(self, *, limit: int = 10000) -> list[dict[str, Any]]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select(
+                "id,company_canonical,employer_name,source_kind,source_feed_key,source_url,"
+                "is_target_role,is_noise,is_direct_company_source"
+            )
+            .eq("is_active", True)
+            .limit(max(1, int(limit)))
+            .execute(),
+            context="fetch active jobs for useful coverage",
         )
         return response.data or []
 
@@ -579,7 +594,7 @@ class SupabaseStorage:
         # Include core normalized columns so reclassification can fall back even when raw_json
         # has been compacted to NULL.
         select_fields = (
-            "id,raw_json,is_active,"
+            "id,raw_json,payload_hash,is_active,"
             "headline,description,employer_name,employer_id,"
             "municipality,municipality_code,region,region_code,"
             "occupation_id,occupation_label,ssyk_code,"

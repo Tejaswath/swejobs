@@ -20,7 +20,8 @@ if TYPE_CHECKING:
 _HIGH_SIGNAL_BANDS = {"trusted", "verified"}
 _GRAD_STAGES = {"graduate", "trainee", "junior"}
 _SENIOR_TITLE_PATTERN = re.compile(
-    r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president)\b",
+    r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|"
+    r"experienced|expert|seasoned|erfaren|erfarenhet|flerårig|flerarig|gedigen erfarenhet)\b",
     flags=re.IGNORECASE,
 )
 _DEFAULT_FEED_QUALITY_THRESHOLDS_PATH = "pipeline/config/feed_quality_thresholds.yaml"
@@ -222,6 +223,15 @@ def _senior_role_signal(job: dict[str, Any]) -> bool:
     return False
 
 
+def passes_default_eligibility(job: dict[str, Any]) -> bool:
+    return (
+        _bool(job.get("is_active"))
+        and not _bool(job.get("is_noise"))
+        and not _restricted_market_role(job)
+        and not _senior_role_signal(job)
+    )
+
+
 def lens_matches(
     job: dict[str, Any],
     *,
@@ -229,17 +239,16 @@ def lens_matches(
     feed_registry: dict[str, dict[str, Any]],
     include_jobtech_in_high_signal: bool,
 ) -> bool:
-    if not _bool(job.get("is_active")):
-        return False
-
     relevance = _to_int(job.get("relevance_score"), 0)
     is_noise = _bool(job.get("is_noise"))
     stage = str(job.get("career_stage") or "").strip().lower()
     years_required = job.get("years_required_min")
-    restricted_market = _restricted_market_role(job)
 
     if lens == "broad":
-        return not is_noise and not restricted_market
+        return _bool(job.get("is_active")) and not is_noise and not _restricted_market_role(job)
+
+    if not passes_default_eligibility(job):
+        return False
 
     if lens == "graduate_trainee":
         years_value = None
@@ -250,10 +259,7 @@ def lens_matches(
                 years_value = None
 
         return (
-            not is_noise
-            and not restricted_market
-            and not _senior_role_signal(job)
-            and relevance >= 15
+            relevance >= 15
             and (
                 _bool(job.get("is_grad_program"))
                 or stage in _GRAD_STAGES
@@ -263,12 +269,6 @@ def lens_matches(
 
     # high_signal (default)
     if not _bool(job.get("is_target_role")):
-        return False
-    if is_noise:
-        return False
-    if restricted_market:
-        return False
-    if _senior_role_signal(job):
         return False
     if relevance < 30:
         return False
@@ -590,17 +590,17 @@ def verify_company_sources_batch(
     registry = company_registry_map(registry_path)
     status_filter = {status.strip().lower() for status in statuses if status.strip()}
 
-    companies: list[str] = []
+    companies: set[str] = set()
     for canonical, entry in registry.items():
         if status_filter and entry.status not in status_filter:
             continue
-        companies.append(canonical)
+        companies.add(entry.company_canonical or canonical)
 
-    companies.sort()
+    ordered_companies = sorted(companies)
     if max_companies > 0:
-        companies = companies[:max_companies]
+        ordered_companies = ordered_companies[:max_companies]
 
-    if not companies:
+    if not ordered_companies:
         return {
             "generated_at": datetime.now(UTC).isoformat(),
             "companies_requested": 0,
@@ -608,12 +608,12 @@ def verify_company_sources_batch(
         }
 
     report = pipeline.verify_company_sources(
-        company_names=companies,
+        company_names=ordered_companies,
         max_rows=max_rows,
         max_http_per_provider=max_http_per_provider,
         registry_path=registry_path,
     )
-    report["companies_requested"] = len(companies)
+    report["companies_requested"] = len(ordered_companies)
     return report
 
 
@@ -624,6 +624,78 @@ def send_alerts(storage: SupabaseStorage, *, frequency: str) -> dict[str, Any]:
         "frequency": str(frequency).strip().lower(),
         "processed_searches": _to_int(result.get("processed_searches"), 0),
         "inserted_alerts": _to_int(result.get("inserted_alerts"), 0),
+    }
+
+
+def useful_coverage_report(
+    storage: SupabaseStorage,
+    *,
+    target_companies: set[str] | None = None,
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    registry_rows = storage.fetch_source_feed_registry()
+    active_jobs = storage.fetch_active_jobs_for_coverage()
+    registry = {str(row.get("feed_key") or "").strip().lower(): row for row in registry_rows}
+
+    by_feed: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "active_jobs": 0,
+            "target_jobs": 0,
+            "jobs_with_apply_link": 0,
+            "direct_jobs": 0,
+        }
+    )
+    covered_companies: set[str] = set()
+    for job in active_jobs:
+        feed_key = str(job.get("source_feed_key") or "").strip().lower() or "jobtech_or_unknown"
+        bucket = by_feed[feed_key]
+        bucket["active_jobs"] += 1
+        if _bool(job.get("is_target_role")) and not _bool(job.get("is_noise")):
+            bucket["target_jobs"] += 1
+            canonical = str(job.get("company_canonical") or job.get("employer_name") or "").strip().lower()
+            if canonical:
+                covered_companies.add(canonical)
+        if str(job.get("source_url") or "").strip():
+            bucket["jobs_with_apply_link"] += 1
+        if _bool(job.get("is_direct_company_source")) or str(job.get("source_kind") or "") == "direct_company_ats":
+            bucket["direct_jobs"] += 1
+
+    feeds: list[dict[str, Any]] = []
+    useful_feed_count = 0
+    for feed_key, counts in sorted(by_feed.items()):
+        feed = registry.get(feed_key, {})
+        useful = (
+            feed_key != "jobtech_or_unknown"
+            and _bool(feed.get("enabled"))
+            and str(feed.get("quality_band") or "").lower() in _HIGH_SIGNAL_BANDS
+            and counts["target_jobs"] > 0
+            and counts["jobs_with_apply_link"] == counts["active_jobs"]
+        )
+        useful_feed_count += int(useful)
+        feeds.append(
+            {
+                "feed_key": feed_key,
+                "company_canonical": feed.get("company_canonical"),
+                "quality_band": feed.get("quality_band"),
+                "enabled": _bool(feed.get("enabled")),
+                "useful_verified": useful,
+                **counts,
+            }
+        )
+
+    normalized_targets = {str(value).strip().lower() for value in (target_companies or set()) if str(value).strip()}
+    missing_targets = sorted(normalized_targets - covered_companies)
+    missing_rate = int(round((len(missing_targets) / len(normalized_targets)) * 100)) if normalized_targets else 0
+    return {
+        "generated_at": now.isoformat(),
+        "active_jobs_scanned": len(active_jobs),
+        "registry_feeds": len(registry_rows),
+        "useful_verified_feeds": useful_feed_count,
+        "target_companies_total": len(normalized_targets),
+        "target_companies_with_relevant_active_jobs": len(normalized_targets & covered_companies),
+        "missing_target_company_rate_pct": missing_rate,
+        "missing_target_companies": missing_targets,
+        "feeds": feeds,
     }
 
 

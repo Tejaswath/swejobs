@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from pipeline.v3_runtime import lens_matches, promote_company_feeds, refresh_feed_quality
+from pipeline.company_registry import CompanyRegistryEntry
+from pipeline.v3_runtime import (
+    lens_matches,
+    promote_company_feeds,
+    refresh_feed_quality,
+    useful_coverage_report,
+    verify_company_sources_batch,
+)
 
 
 class V3StorageFake:
@@ -102,6 +110,28 @@ class V3StorageFake:
     def upsert_source_feed_registry_rows(self, rows):
         self.upsert_rows.extend(rows)
         return len(rows)
+
+    def fetch_active_jobs_for_coverage(self):
+        return [
+            {
+                "source_feed_key": "trusted_feed",
+                "source_kind": "direct_company_ats",
+                "is_direct_company_source": True,
+                "is_target_role": True,
+                "is_noise": False,
+                "source_url": "https://example.com/apply",
+                "company_canonical": "example",
+            },
+            {
+                "source_feed_key": "weak_feed",
+                "source_kind": "direct_company_ats",
+                "is_direct_company_source": True,
+                "is_target_role": False,
+                "is_noise": True,
+                "source_url": "",
+                "company_canonical": "weakco",
+            },
+        ]
 
 
 class V3RuntimeTests(unittest.TestCase):
@@ -245,6 +275,45 @@ class V3RuntimeTests(unittest.TestCase):
         self.assertEqual(report["applied_count"], 1)
         self.assertEqual(storage.upsert_rows[0]["feed_key"], "trusted_feed")
         self.assertTrue(storage.upsert_rows[0]["high_signal_eligible"])
+
+    def test_useful_coverage_counts_verified_yield_not_enabled_feeds(self) -> None:
+        report = useful_coverage_report(V3StorageFake(), target_companies={"example", "missingco"})
+        self.assertEqual(report["useful_verified_feeds"], 1)
+        self.assertEqual(report["missing_target_company_rate_pct"], 50)
+        self.assertEqual(report["missing_target_companies"], ["missingco"])
+
+    def test_verify_batch_deduplicates_registry_aliases(self) -> None:
+        entry = CompanyRegistryEntry(
+            company_canonical="amazon",
+            display_name="Amazon",
+            priority_tier="A",
+            category="platform",
+            status="planned",
+            provider=None,
+            provider_identifier=None,
+            provider_order=("workday",),
+            markets=("sweden",),
+            notes="",
+            aliases=("aws",),
+        )
+
+        class Pipeline:
+            def verify_company_sources(self, **kwargs):
+                self.names = kwargs["company_names"]
+                return {"companies": []}
+
+        pipeline = Pipeline()
+        with patch("pipeline.v3_runtime.company_registry_map", return_value={"amazon": entry, "aws": entry}):
+            report = verify_company_sources_batch(
+                pipeline,
+                statuses=["planned"],
+                max_companies=10,
+                max_rows=1,
+                max_http_per_provider=1,
+                registry_path="ignored",
+            )
+        self.assertEqual(pipeline.names, ["amazon"])
+        self.assertEqual(report["companies_requested"], 1)
 
 
 if __name__ == "__main__":

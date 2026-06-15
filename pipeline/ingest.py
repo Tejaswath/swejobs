@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from .classify import classify_job
 from .jobtech import JobTechClient
 from .normalize import normalize_job
-from .company_registry import company_registry_map, load_company_registry
+from .company_registry import CompanyRegistryEntry, company_registry_map, load_company_registry
 from .sources.base import CompanyFeed, FeedFetchResult, load_company_feeds
 from .sources.greenhouse import fetch_greenhouse_jobs
 from .sources.jobs2web import fetch_jobs2web_jobs
@@ -172,12 +172,15 @@ class IngestionPipeline:
     def _classify_and_prepare(self, raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         raw_for_normalize = dict(raw)
         is_reclassify_fallback = bool(raw_for_normalize.pop("__reclassify_fallback__", False))
+        preserved_payload_hash = raw_for_normalize.pop("__payload_hash__", None)
 
         job_row, tags = normalize_job(raw_for_normalize)
         classification = classify_job(job_row, self.profile)
         job_row.update(
             {
+                "payload_hash": preserved_payload_hash or payload_hash(job_row.get("raw_json") or {}),
                 "role_family": classification.role_family,
+                "role_family_confidence": classification.role_family_confidence,
                 "relevance_score": classification.relevance_score,
                 "reason_codes": classification.reason_codes,
                 "is_target_role": classification.is_target_role,
@@ -234,6 +237,7 @@ class IngestionPipeline:
             "source_company_key": row.get("source_company_key"),
             "is_direct_company_source": row.get("is_direct_company_source"),
             "source_feed_key": row.get("source_feed_key"),
+            "__payload_hash__": row.get("payload_hash"),
             "is_removed": not bool(row.get("is_active", True)),
         }
 
@@ -248,10 +252,12 @@ class IngestionPipeline:
         for job in jobs:
             job_id = int(job["id"])
             previous = existing.get(job_id)
-            current_hash = payload_hash(job.get("raw_json") or {})
+            current_hash = str(job.get("payload_hash") or payload_hash(job.get("raw_json") or {}))
             prev_hash = None
-            if previous and previous.get("raw_json"):
-                prev_hash = payload_hash(previous["raw_json"])
+            if previous:
+                prev_hash = previous.get("payload_hash")
+                if not prev_hash and previous.get("raw_json"):
+                    prev_hash = payload_hash(previous["raw_json"])
 
             event_type = None
             if previous is None:
@@ -718,7 +724,10 @@ class IngestionPipeline:
             if age < timedelta(hours=self.compaction_interval_hours):
                 return False
 
-        report = self.compact_storage(confirm=True)
+        # The worker runs this once daily. A five-batch ceiling can leave a
+        # large event backlog growing faster than it drains, so allow a larger
+        # still-bounded worker drain while keeping the manual CLI conservative.
+        report = self.compact_storage(confirm=True, max_batches_per_phase=50)
         logger.info(
             "Storage compaction complete. raw_json_cleared=%s inactive_jobs_deleted=%s inactive_jobs_referenced_preserved=%s job_events_deleted=%s weekly_digests_deleted=%s",
             report.get("summary", {}).get("raw_json_cleared", 0),
@@ -1116,8 +1125,37 @@ class IngestionPipeline:
         registry_path: str = "pipeline/config/company_registry.json",
     ) -> dict[str, Any]:
         registry_entries = company_registry_map(registry_path)
-        requested = [name.strip().lower() for name in company_names if name.strip()]
-        entries = [registry_entries[name] for name in requested if name in registry_entries]
+        provider_fallback_order = ("lever", "greenhouse", "teamtailor", "smartrecruiters", "workday", "html_fallback")
+        configured_feed_entries: dict[str, CompanyRegistryEntry] = {}
+        for feed in load_company_feeds(self.company_feed_config_path):
+            provider_order = tuple(dict.fromkeys((feed.provider, *provider_fallback_order)))
+            entry = CompanyRegistryEntry(
+                company_canonical=_normalize_match_text(feed.company_canonical),
+                display_name=feed.display_name or feed.company_canonical,
+                priority_tier="B",
+                category="configured_feed",
+                status="connected" if feed.enabled else "planned",
+                provider=feed.provider,
+                provider_identifier=feed.slug_or_url,
+                provider_order=provider_order,
+                markets=tuple(feed.location_filters),
+                notes=f"Derived from configured feed {feed.feed_key}",
+                aliases=(),
+                career_page_url=feed.slug_or_url if feed.slug_or_url.startswith(("http://", "https://")) else None,
+            )
+            for key in (entry.company_canonical, _normalize_match_text(entry.display_name)):
+                if key:
+                    configured_feed_entries.setdefault(key, entry)
+
+        requested = [_normalize_match_text(name) for name in company_names if name.strip()]
+        entries: list[CompanyRegistryEntry] = []
+        seen_companies: set[str] = set()
+        for name in requested:
+            entry = registry_entries.get(name) or configured_feed_entries.get(name)
+            if entry is None or entry.company_canonical in seen_companies:
+                continue
+            seen_companies.add(entry.company_canonical)
+            entries.append(entry)
 
         provider_keywords = (
             "engineer",

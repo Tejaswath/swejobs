@@ -36,14 +36,12 @@ def run_db_audit(storage: Any, settings: Any) -> dict[str, Any]:
     events_days = int(getattr(settings, "compaction_job_event_days", 30))
     digests_days = int(getattr(settings, "compaction_weekly_digest_days", 180))
     email_logs_days = int(getattr(settings, "compaction_email_logs_days", 90))
-    edge_quota_days = int(getattr(settings, "compaction_edge_function_quota_days", 7))
 
     raw_json_cutoff = (now - timedelta(days=raw_json_days)).isoformat()
     inactive_cutoff = (now - timedelta(days=inactive_days)).isoformat()
     events_cutoff = (now - timedelta(days=events_days)).isoformat()
     digests_cutoff = (now - timedelta(days=digests_days)).isoformat()
     email_logs_cutoff = (now - timedelta(days=email_logs_days)).isoformat()
-    edge_quota_cutoff = (now - timedelta(days=edge_quota_days)).isoformat()
 
     errors: list[str] = []
     try:
@@ -67,7 +65,6 @@ def run_db_audit(storage: Any, settings: Any) -> dict[str, Any]:
             "job_events_total": _planned_count(storage, "job_events"),
             "weekly_digests_total": _planned_count(storage, "weekly_digests"),
             "email_logs_total": _planned_count(storage, "email_logs"),
-            "edge_function_quota_total": _planned_count(storage, "edge_function_quota"),
         },
         "compaction_eligible": {
             "raw_json_to_clear": _planned_count(storage, "jobs", [("published_at", "lt", raw_json_cutoff)]),
@@ -79,9 +76,6 @@ def run_db_audit(storage: Any, settings: Any) -> dict[str, Any]:
                 storage, "weekly_digests", [("generated_at", "lt", digests_cutoff)]
             ),
             "email_logs_to_delete": _planned_count(storage, "email_logs", [("sent_at", "lt", email_logs_cutoff)]),
-            "edge_function_quota_to_delete": _planned_count(
-                storage, "edge_function_quota", [("window_start", "lt", edge_quota_cutoff)]
-            ),
         },
         "retention_settings": {
             "raw_json_days": raw_json_days,
@@ -89,7 +83,6 @@ def run_db_audit(storage: Any, settings: Any) -> dict[str, Any]:
             "job_events_days": events_days,
             "weekly_digests_days": digests_days,
             "email_logs_days": email_logs_days,
-            "edge_function_quota_days": edge_quota_days,
         },
         "cutoffs": {
             "raw_json_before": raw_json_cutoff,
@@ -97,8 +90,6 @@ def run_db_audit(storage: Any, settings: Any) -> dict[str, Any]:
             "job_events_before": events_cutoff,
             "weekly_digests_before": digests_cutoff,
             "email_logs_before": email_logs_cutoff,
-            "edge_function_quota_before": edge_quota_cutoff,
         },
         "errors": errors,
     }
-

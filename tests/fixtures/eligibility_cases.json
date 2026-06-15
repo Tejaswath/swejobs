@@ -1,0 +1,147 @@
+[
+  {
+    "name": "eligible direct ATS junior role",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 60,
+      "headline": "Junior Backend Engineer",
+      "career_stage": "junior",
+      "career_stage_confidence": 0.9,
+      "years_required_min": 1,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": true,
+    "graduate_trainee": true
+  },
+  {
+    "name": "experienced title is senior",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 80,
+      "headline": "Experienced Computer Vision Engineer",
+      "career_stage": "unknown",
+      "years_required_min": null,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": false,
+    "graduate_trainee": false
+  },
+  {
+    "name": "expert title is senior",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 80,
+      "headline": "Expert Deep Learning Engineer",
+      "career_stage": "unknown",
+      "years_required_min": null,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": false,
+    "graduate_trainee": false
+  },
+  {
+    "name": "three years required is ineligible",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 70,
+      "headline": "Software Engineer",
+      "career_stage": "mid",
+      "years_required_min": 3,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": false,
+    "graduate_trainee": false
+  },
+  {
+    "name": "swedish requirement is ineligible",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 70,
+      "headline": "Software Engineer",
+      "career_stage": "junior",
+      "swedish_required": true,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": false,
+    "graduate_trainee": false
+  },
+  {
+    "name": "clearance requirement is ineligible",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 70,
+      "headline": "Graduate Software Engineer",
+      "career_stage": "graduate",
+      "security_clearance_required": true,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": false,
+    "graduate_trainee": false
+  },
+  {
+    "name": "analytics engineer II remains eligible",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 65,
+      "headline": "Analytics Engineer II",
+      "career_stage": "unknown",
+      "years_required_min": null,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": true,
+    "graduate_trainee": false
+  },
+  {
+    "name": "low confidence senior classification still blocks",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 70,
+      "headline": "Software Engineer",
+      "career_stage": "senior",
+      "career_stage_confidence": 0.2,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": false,
+    "graduate_trainee": false
+  },
+  {
+    "name": "low confidence junior classification remains graduate candidate",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 50,
+      "headline": "Software Engineer",
+      "career_stage": "junior",
+      "career_stage_confidence": 0.2,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": true,
+    "graduate_trainee": true
+  }
+]

@@ -1,4 +1,4 @@
-updated_at: "2026-03-29"
+updated_at: "2026-06-14"
 
 # v1 uses only feeds that were endpoint-verified during implementation.
 feeds:
@@ -1000,4 +1000,48 @@ feeds:
       - frontend
       - java
       - kotlin
+      - python
+
+  - feed_key: mentimeter_greenhouse
+    display_name: Mentimeter
+    provider: greenhouse
+    slug_or_url: mentimeter
+    company_canonical: mentimeter
+    enabled: true
+    priority: 33
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - data
+      - machine learning
+
+  - feed_key: yubico_greenhouse
+    display_name: Yubico
+    provider: greenhouse
+    slug_or_url: yubico
+    company_canonical: yubico
+    enabled: true
+    priority: 79
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - platform
+      - mobile
+      - security
+      - firmware
       - python

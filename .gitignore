@@ -45,5 +45,7 @@ project.md
 # Temporary docs freeze: ignore markdown files
 *.md
 **/*.md
+!update for agnet 14th june.md
+!docs/relevance_contract.md
 .claude/
 .vercel

@@ -23,6 +23,7 @@ from .v3_runtime import (
     refresh_feed_quality,
     send_alerts,
     sync_feed_registry_from_yaml,
+    useful_coverage_report,
     verify_company_sources_batch,
     write_report_files,
 )
@@ -142,6 +143,7 @@ def parse_args() -> argparse.Namespace:
         "sync-feed-registry-from-yaml",
         help="Seed/update DB feed registry from immutable YAML config",
     )
+    sub.add_parser("useful-coverage", help="Report verified feeds with active relevant jobs and working apply links")
     sync_feed_registry.add_argument(
         "--config-path",
         default="pipeline/config/company_feeds.yaml",
@@ -212,7 +214,7 @@ def parse_args() -> argparse.Namespace:
     launch_gate.add_argument("--top-early-career-size", type=int, default=50)
     launch_gate.add_argument("--top-consultancy-size", type=int, default=20)
     launch_gate.add_argument("--noise-sample-size", type=int, default=200)
-    launch_gate.add_argument("--min-top-20-relevant-pct", type=int, default=85)
+    launch_gate.add_argument("--min-top-20-relevant-pct", type=int, default=90)
     launch_gate.add_argument("--min-top-50-early-career-pct", type=int, default=40)
     launch_gate.add_argument("--max-top-20-consultancy-share-pct", type=int, default=25)
     launch_gate.add_argument("--max-noise-sample-200-pct", type=int, default=5)
@@ -298,6 +300,12 @@ def main() -> None:
             only_keys=only_keys or None,
             clear_auto_disable=bool(args.clear_auto_disable),
         )
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.command == "useful-coverage":
+        profile = load_target_profile(load_settings().target_profile_path)
+        report = useful_coverage_report(storage, target_companies=set(profile.main_companies))
         print(json.dumps(report, indent=2))
         return
 

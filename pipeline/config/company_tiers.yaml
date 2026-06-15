@@ -1,4 +1,4 @@
-updated_at: "2026-03-26"
+updated_at: "2026-06-14"
 
 tiers:
   A:
@@ -18,9 +18,34 @@ tiers:
     - axis
     - zenseact
     - astrazeneca
-  B:
-    - microsoft sweden
     - google sweden
+    - microsoft sweden
     - amazon
+    - nvidia
+    - apple
+    - paradox interactive
+    - mojang
+    - truecaller
+    - mentimeter
+    - einride
+    - sana labs
+    - lovable
+    - ikea
+    - h&m
+    - polestar
+    - abb
+    - nordea
+    - handelsbanken
+    - telia
+  B:
     - aws sweden
+    - detectify
+    - yubico
+    - instabee
+    - anyfin
+    - juni
+    - normative
+    - mathem
+    - doktor.se
+    - synopsys
   C: []

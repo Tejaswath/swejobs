@@ -39,11 +39,13 @@ import {
 import { buildSweJobsApplication } from "@/lib/applications";
 import { extractKeywordsFromJobText, runAtsScan, type AtsScanResult } from "@/lib/ats";
 import { cn } from "@/lib/utils";
+import { earlyCareerBucket, jobPassesLens } from "@/lib/jobEligibility";
+import { suitabilityScore } from "@/lib/jobRanking";
 
 const PAGE_SIZE = 25;
 const LIST_FETCH_LIMIT = 300;
 const REFRESH_MS = 600_000;
-const WATCHED_COMPANY_BOOST = 35;
+const WATCHED_COMPANY_BOOST = 10;
 const CAREER_STAGE_CONFIDENCE_THRESHOLD = 0.6;
 const SENIOR_TITLE_PATTERN = /\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president)\b/i;
 
@@ -288,6 +290,7 @@ export default function Jobs() {
   const [hideCitizenshipRestricted, setHideCitizenshipRestricted] = useState(true);
   const [hideThreePlusYears, setHideThreePlusYears] = useState(true);
   const [hideConsultancies, setHideConsultancies] = useState(true);
+  const [confirmedGraduateOnly, setConfirmedGraduateOnly] = useState(false);
   const [includeJobtechInHighSignal, setIncludeJobtechInHighSignal] = useState(
     () => searchParams.get("jobtech") === "1",
   );
@@ -407,7 +410,7 @@ export default function Jobs() {
         .select(
           "id, headline, headline_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
           "published_at, application_deadline, employment_type, working_hours, occupation_label, source_url, " +
-            "relevance_score, role_family, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
+            "relevance_score, role_family, role_family_confidence, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
             "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, " +
             "source_provider, source_kind, source_feed_key, is_direct_company_source, is_target_role, is_noise, " +
             feedSelect,
@@ -557,32 +560,7 @@ export default function Jobs() {
       ).source_feed_registry;
 
     const passesLens = (job: (typeof sourceJobs)[number], currentLens: Lens) => {
-      const relevance = numberValue(job.relevance_score);
-      const isNoise = boolValue(job.is_noise);
-      const sourceKind = String(job.source_kind || "").toLowerCase();
-
-      if (currentLens === "broad") {
-        return !isNoise;
-      }
-
-      if (currentLens === "graduate_trainee") {
-        return (
-          !isNoise &&
-          relevance >= 15 &&
-          isGraduateTraineeCandidate(job)
-        );
-      }
-
-      const feed = feedFor(job);
-      const qualityBand = String(feed?.quality_band || "unrated").toLowerCase();
-      const highSignalEligible = boolValue(feed?.high_signal_eligible);
-      const feedEnabled = boolValue(feed?.enabled);
-      const sourcePasses =
-        sourceKind === "jobtech"
-          ? includeJobtechInHighSignal
-          : feedEnabled && highSignalEligible && (qualityBand === "trusted" || qualityBand === "verified");
-
-      return boolValue(job.is_target_role) && !isNoise && relevance >= 30 && sourcePasses;
+      return jobPassesLens(job, currentLens, feedFor(job), includeJobtechInHighSignal);
     };
 
     const applyFilters = (
@@ -593,9 +571,16 @@ export default function Jobs() {
         hideCitizenship: boolean;
         hideYears: boolean;
         hideConsultancies: boolean;
+        confirmedGraduateOnly?: boolean;
       },
     ) => {
       let rows = jobs.filter((job) => passesLens(job, options.currentLens));
+      if (options.currentLens === "graduate_trainee" && options.confirmedGraduateOnly) {
+        rows = rows.filter((job) => {
+          const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
+          return boolValue(job.is_grad_program) || stage === "graduate" || stage === "trainee";
+        });
+      }
 
       if (options.hideSwedish) {
         rows = rows.filter((job) => !boolValue(job.swedish_required));
@@ -621,13 +606,21 @@ export default function Jobs() {
       hideCitizenship: hideCitizenshipRestricted,
       hideYears: hideThreePlusYears,
       hideConsultancies,
+      confirmedGraduateOnly,
     });
     let fallbackMode: SearchFallbackMode = "none";
 
     if (normalizedSearchTerm && rows.length === 0) {
       const fallbacks: Array<{
         mode: SearchFallbackMode;
-        options: { currentLens: Lens; hideSwedish: boolean; hideCitizenship: boolean; hideYears: boolean };
+        options: {
+          currentLens: Lens;
+          hideSwedish: boolean;
+          hideCitizenship: boolean;
+          hideYears: boolean;
+          hideConsultancies: boolean;
+          confirmedGraduateOnly?: boolean;
+        };
       }> = [];
 
       if (hideThreePlusYears) {
@@ -788,6 +781,7 @@ export default function Jobs() {
     hideCitizenshipRestricted,
     hideThreePlusYears,
     hideConsultancies,
+    confirmedGraduateOnly,
     lens,
     watchedSet,
     debouncedSearch,
@@ -890,12 +884,58 @@ export default function Jobs() {
     );
   }, [activeAtsResume?.parsed_text, rankAndFilterJobs, rankedJobIds.length, tagsByJobId, userSkills]);
 
+  const suitabilityByJobId = useMemo(() => {
+    const preferredCompanies = new Set(
+      (userRankingState?.preferred_companies ?? []).map((value) => normalizeCompanyName(value)),
+    );
+    const demotedCompanies = new Set(
+      (userRankingState?.demoted_companies ?? []).map((value) => normalizeCompanyName(value)),
+    );
+    const preferredRoleFamilies = new Set(
+      (userRankingState?.preferred_role_families ?? []).map((value) => String(value).toLowerCase()),
+    );
+    const demotedRoleFamilies = new Set(
+      (userRankingState?.demoted_role_families ?? []).map((value) => String(value).toLowerCase()),
+    );
+
+    return rankAndFilterJobs.reduce<Record<number, ReturnType<typeof suitabilityScore>>>((acc, job) => {
+      const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
+      const roleFamily = String(job.role_family || "").toLowerCase();
+      const feed = (
+        job as {
+          source_feed_registry?: { quality_band?: string | null } | null;
+        }
+      ).source_feed_registry;
+      let feedbackDelta = 0;
+      if (canonical && preferredCompanies.has(canonical)) feedbackDelta += 10;
+      if (canonical && demotedCompanies.has(canonical)) feedbackDelta -= 15;
+      if (roleFamily && preferredRoleFamilies.has(roleFamily)) feedbackDelta += 8;
+      if (roleFamily && demotedRoleFamilies.has(roleFamily)) feedbackDelta -= 12;
+
+      acc[job.id] = suitabilityScore(job, {
+        atsMatch: activeAtsResume?.parsed_text ? (atsByJobId[job.id]?.displayScore ?? null) : null,
+        watched: watchedSet.has(canonical),
+        qualityBand: feed?.quality_band,
+        feedbackDelta,
+      });
+      return acc;
+    }, {});
+  }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, userRankingState, watchedSet]);
+
   const sortedJobs = useMemo(() => {
     const rows = [...rankAndFilterJobs];
-    if (rows.length <= 1 || sortBy === "relevance") return rows;
+    if (rows.length <= 1) return rows;
 
     const baseOrderById = new Map(rows.map((job, index) => [job.id, index]));
     const baseOrderDiff = (aId: number, bId: number) => (baseOrderById.get(aId) ?? 0) - (baseOrderById.get(bId) ?? 0);
+
+    if (sortBy === "relevance") {
+      return rows.sort((a, b) => {
+        const diff = (suitabilityByJobId[b.id]?.score ?? 0) - (suitabilityByJobId[a.id]?.score ?? 0);
+        if (diff !== 0) return diff;
+        return baseOrderDiff(a.id, b.id);
+      });
+    }
 
     if (sortBy === "newest") {
       return rows.sort((a, b) => {
@@ -924,7 +964,7 @@ export default function Jobs() {
       if (diff !== 0) return diff;
       return baseOrderDiff(a.id, b.id);
     });
-  }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, sortBy]);
+  }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, sortBy, suitabilityByJobId]);
 
   const visibleJobs = useMemo(
     () => sortedJobs.filter((job) => !hiddenJobIds.has(job.id)),
@@ -947,6 +987,7 @@ export default function Jobs() {
     hideCitizenshipRestricted,
     hideThreePlusYears,
     hideConsultancies,
+    confirmedGraduateOnly,
     includeJobtechInHighSignal,
     search,
     lang,
@@ -984,6 +1025,7 @@ export default function Jobs() {
     !hideCitizenshipRestricted ||
     !hideThreePlusYears ||
     !hideConsultancies ||
+    confirmedGraduateOnly ||
     includeJobtechInHighSignal ||
     hiddenJobIds.size > 0 ||
     search.trim().length > 0;
@@ -993,6 +1035,7 @@ export default function Jobs() {
     Number(remoteOnly) +
     Number(!hideThreePlusYears) +
     Number(!hideConsultancies) +
+    Number(confirmedGraduateOnly) +
     Number(!hideSwedishRequired) +
     Number(!hideCitizenshipRestricted) +
     Number(includeJobtechInHighSignal) +
@@ -1007,6 +1050,7 @@ export default function Jobs() {
     setHideCitizenshipRestricted(true);
     setHideThreePlusYears(true);
     setHideConsultancies(true);
+    setConfirmedGraduateOnly(false);
     setIncludeJobtechInHighSignal(false);
     setHiddenJobIds(new Set());
     setSortBy("relevance");
@@ -1187,7 +1231,7 @@ export default function Jobs() {
         void pushFeedbackEvent({
           signalType: values.status === "applied" ? "apply" : "save",
           jobId: selectedId,
-          employerName: detail.employer_name,
+          employerName: detail.company_canonical || detail.employer_name,
           roleFamily: detail.role_family,
           sourceUrl: detail.source_url,
         });
@@ -1221,7 +1265,7 @@ export default function Jobs() {
         void pushFeedbackEvent({
           signalType: "follow_company",
           jobId: selectedId,
-          employerName: detail.employer_name,
+          employerName: detail.company_canonical || detail.employer_name,
           roleFamily: detail.role_family,
           sourceUrl: detail.source_url,
         });
@@ -1463,6 +1507,12 @@ export default function Jobs() {
                         }
                       }}
                     />
+                  </div>
+                )}
+                {lens === "graduate_trainee" && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Confirmed programs only</span>
+                    <Switch checked={confirmedGraduateOnly} onCheckedChange={setConfirmedGraduateOnly} />
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-3">
@@ -1718,8 +1768,10 @@ export default function Jobs() {
                       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
                       const watched = watchedSet.has(canonical);
                       const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
+                      const careerBucket = earlyCareerBucket(job);
                       const displayEmployer = companyDisplayName(job.company_canonical, job.employer_name);
                       const atsSnapshot = listAtsByJobId[job.id];
+                      const suitability = suitabilityByJobId[job.id];
 
                       return (
                         <div
@@ -1767,6 +1819,11 @@ export default function Jobs() {
                                   Tier {job.company_tier}
                                 </Badge>
                               )}
+                              {suitability ? (
+                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-primary/30 text-primary">
+                                  {suitability.label} {suitability.score}
+                                </Badge>
+                              ) : null}
                               {atsSnapshot ? (
                                 <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.displayScore))}>
                                   Match {atsSnapshot.displayScore}%
@@ -1789,7 +1846,7 @@ export default function Jobs() {
                                   void pushFeedbackEvent({
                                     signalType: "hide",
                                     jobId: job.id,
-                                    employerName: job.employer_name,
+                                    employerName: job.company_canonical || job.employer_name,
                                     roleFamily: job.role_family,
                                     sourceUrl: job.source_url,
                                   });
@@ -1813,11 +1870,16 @@ export default function Jobs() {
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
                             {job.lang && <span>{job.lang.toUpperCase()}</span>}
-                            {stage !== "unknown" && (
+                            {lens === "graduate_trainee" ? (
+                              <span>{careerBucket.replaceAll("_", " ")}</span>
+                            ) : stage !== "unknown" ? (
                               <span>{stage}</span>
-                            )}
+                            ) : null}
                             <span>{formatDeadlineDisplay(job.application_deadline)}</span>
                           </div>
+                          {suitability?.reasons[0] ? (
+                            <p className="mt-1 text-[10px] text-muted-foreground/80">{suitability.reasons[0]}</p>
+                          ) : null}
 
                           <div className="mt-1.5 flex flex-wrap items-center gap-1">
                             {tags.slice(0, 3).map((tag) => (

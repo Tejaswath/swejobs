@@ -1,0 +1,75 @@
+[
+  {
+    "name": "strong resume match beats watched company with zero match",
+    "better": {
+      "is_target_role": true,
+      "career_stage": "junior",
+      "career_stage_confidence": 0.9,
+      "ats_match": 75,
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified",
+      "company_tier": "B",
+      "watched": false
+    },
+    "worse": {
+      "is_target_role": true,
+      "career_stage": "unknown",
+      "career_stage_confidence": 0.2,
+      "ats_match": 0,
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified",
+      "company_tier": "A",
+      "watched": true
+    }
+  },
+  {
+    "name": "direct verified source beats jobtech when other fit is equal",
+    "better": {
+      "is_target_role": true,
+      "career_stage": "junior",
+      "career_stage_confidence": 0.9,
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified"
+    },
+    "worse": {
+      "is_target_role": true,
+      "career_stage": "junior",
+      "career_stage_confidence": 0.9,
+      "source_kind": "jobtech",
+      "quality_band": "unrated"
+    }
+  },
+  {
+    "name": "high confidence title signal beats low confidence classification",
+    "better": {
+      "is_target_role": true,
+      "role_family_confidence": 0.95,
+      "career_stage": "unknown",
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified"
+    },
+    "worse": {
+      "is_target_role": true,
+      "role_family_confidence": 0.2,
+      "career_stage": "unknown",
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified"
+    }
+  },
+  {
+    "name": "useful upcoming deadline beats no deadline when other fit is equal",
+    "better": {
+      "is_target_role": true,
+      "career_stage": "unknown",
+      "application_deadline": "2026-06-17T00:00:00Z",
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified"
+    },
+    "worse": {
+      "is_target_role": true,
+      "career_stage": "unknown",
+      "source_kind": "direct_company_ats",
+      "quality_band": "verified"
+    }
+  }
+]

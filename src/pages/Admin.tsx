@@ -80,14 +80,24 @@ export default function Admin() {
         { data: activeJobs, error: activeJobsError },
         { data: companyState, error: companyStateError },
       ] = await Promise.all([
-        supabase.from("ingestion_state").select("key, value").eq("key", "last_poll_at"),
+        supabase
+          .from("ingestion_state")
+          .select("key, value")
+          .in("key", [
+            "last_poll_at",
+            "last_compaction_at",
+            "last_user_ranking_recalculation_at",
+            "worker:last_success_at",
+            "worker:last_feed_failure_count",
+            "worker:last_feed_failures",
+          ]),
         supabase.from("ingestion_state").select("key, value").like("key", "feed:%:last_success_at"),
         supabase
           .from("jobs")
           .select("company_canonical")
           .eq("is_active", true)
           .in("company_canonical", trackedCanonicals),
-        supabase.from("ingestion_state").select("key, value").like("key", "company:%:last_seen_at"),
+        supabase.from("ingestion_state").select("key, value").like("key", "company:%"),
       ]);
       if (pollError) throw pollError;
       if (atsError) throw atsError;
@@ -96,6 +106,17 @@ export default function Admin() {
 
       const lastPollAt =
         pollState?.find((item) => item.key === "last_poll_at")?.value ?? null;
+      const lastCompactionAt =
+        pollState?.find((item) => item.key === "last_compaction_at")?.value ?? null;
+      const lastRankingAt =
+        pollState?.find((item) => item.key === "last_user_ranking_recalculation_at")?.value ?? null;
+      const workerLastSuccessAt =
+        pollState?.find((item) => item.key === "worker:last_success_at")?.value ?? null;
+      const workerFeedFailures = Number(
+        pollState?.find((item) => item.key === "worker:last_feed_failure_count")?.value ?? "0",
+      );
+      const workerFailedFeedKeys =
+        pollState?.find((item) => item.key === "worker:last_feed_failures")?.value ?? "";
       const lastAtsSync =
         atsState
           ?.map((item) => item.value)
@@ -111,7 +132,11 @@ export default function Admin() {
       }
 
       const companyLastSeenAt: Record<string, string> = {};
+      let failedCompanyCount = 0;
       for (const row of companyState ?? []) {
+        if (/^company:[^:]+:last_status$/i.test(String(row.key ?? "")) && row.value === "error") {
+          failedCompanyCount += 1;
+        }
         const match = /^company:([^:]+):last_seen_at$/i.exec(String(row.key ?? ""));
         if (!match) continue;
         const normalizedCanonical = normalizeCompanyKey(match[1].replace(/_/g, " "));
@@ -119,7 +144,18 @@ export default function Admin() {
         companyLastSeenAt[normalizedCanonical] = row.value;
       }
 
-      return { lastPollAt, lastAtsSync, activeJobsByCompany, companyLastSeenAt };
+      return {
+        lastPollAt,
+        lastCompactionAt,
+        lastRankingAt,
+        lastAtsSync,
+        workerLastSuccessAt,
+        workerFeedFailures,
+        workerFailedFeedKeys,
+        failedCompanyCount,
+        activeJobsByCompany,
+        companyLastSeenAt,
+      };
     },
   });
 
@@ -206,11 +242,27 @@ export default function Admin() {
           </Card>
         )}
 
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-5">
           <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Last sync</p>
             <p className="mt-1 text-sm font-medium">
-              {isLoading ? "Loading..." : formatMaybeDate(freshnessState?.lastPollAt ?? null)}
+              {isLoading
+                ? "Loading..."
+                : formatMaybeDate(freshnessState?.workerLastSuccessAt ?? freshnessState?.lastPollAt ?? null)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Last compaction</p>
+            <p className="mt-1 text-sm font-medium">{formatMaybeDate(freshnessState?.lastCompactionAt ?? null)}</p>
+          </div>
+          <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Ranking refresh</p>
+            <p className="mt-1 text-sm font-medium">{formatMaybeDate(freshnessState?.lastRankingAt ?? null)}</p>
+          </div>
+          <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Failing company feeds</p>
+            <p className={`mt-1 text-sm font-medium ${Math.max(freshnessState?.failedCompanyCount ?? 0, freshnessState?.workerFeedFailures ?? 0) > 0 ? "text-amber-300" : ""}`}>
+              {Math.max(freshnessState?.failedCompanyCount ?? 0, freshnessState?.workerFeedFailures ?? 0)}
             </p>
           </div>
           <div className="rounded-lg border border-border/40 bg-card/60 px-4 py-3">
@@ -224,6 +276,15 @@ export default function Admin() {
             </p>
           </div>
         </section>
+
+        {(freshnessState?.workerFeedFailures ?? 0) > 0 ? (
+          <section className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <p className="text-sm font-medium text-amber-200">Feed failures need attention</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Latest failed feeds: {freshnessState?.workerFailedFeedKeys || "See worker logs"}
+            </p>
+          </section>
+        ) : null}
 
         {resourceAlerts ? (
           <section className="rounded-lg border border-border/40 bg-card/60 px-4 py-4">

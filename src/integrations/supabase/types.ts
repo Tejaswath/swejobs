@@ -459,6 +459,7 @@ export type Database = {
           municipality_code: string | null
           occupation_id: string | null
           occupation_label: string | null
+          payload_hash: string | null
           published_at: string | null
           raw_json: Json | null
           reason_codes: string[]
@@ -468,6 +469,7 @@ export type Database = {
           remote_flag: boolean | null
           removed_at: string | null
           role_family: string
+          role_family_confidence: number
           security_clearance_required: boolean
           is_direct_company_source: boolean
           source_name: string
@@ -509,6 +511,7 @@ export type Database = {
           municipality_code?: string | null
           occupation_id?: string | null
           occupation_label?: string | null
+          payload_hash?: string | null
           published_at?: string | null
           raw_json?: Json | null
           reason_codes?: string[]
@@ -518,6 +521,7 @@ export type Database = {
           remote_flag?: boolean | null
           removed_at?: string | null
           role_family?: string
+          role_family_confidence?: number
           security_clearance_required?: boolean
           is_direct_company_source?: boolean
           source_name?: string
@@ -559,6 +563,7 @@ export type Database = {
           municipality_code?: string | null
           occupation_id?: string | null
           occupation_label?: string | null
+          payload_hash?: string | null
           published_at?: string | null
           raw_json?: Json | null
           reason_codes?: string[]
@@ -568,6 +573,7 @@ export type Database = {
           remote_flag?: boolean | null
           removed_at?: string | null
           role_family?: string
+          role_family_confidence?: number
           security_clearance_required?: boolean
           is_direct_company_source?: boolean
           source_name?: string

@@ -5,24 +5,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
-import { useEffect } from "react";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import Jobs from "./pages/Jobs";
-import JobDetail from "./pages/JobDetail";
-import TrackedJobs from "./pages/TrackedJobs";
-import Applications from "./pages/Applications";
-import Profile from "./pages/Profile";
-import SavedSearches from "./pages/SavedSearches";
-import Export from "./pages/Export";
-import SkillGap from "./pages/SkillGap";
-import Outreach from "./pages/Outreach";
-import Admin from "./pages/Admin";
-import Privacy from "./pages/Privacy";
-import NotFound from "./pages/NotFound";
+import { lazy, Suspense, useEffect } from "react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const queryClient = new QueryClient();
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Jobs = lazy(() => import("./pages/Jobs"));
+const JobDetail = lazy(() => import("./pages/JobDetail"));
+const TrackedJobs = lazy(() => import("./pages/TrackedJobs"));
+const Applications = lazy(() => import("./pages/Applications"));
+const Profile = lazy(() => import("./pages/Profile"));
+const SavedSearches = lazy(() => import("./pages/SavedSearches"));
+const Export = lazy(() => import("./pages/Export"));
+const SkillGap = lazy(() => import("./pages/SkillGap"));
+const Outreach = lazy(() => import("./pages/Outreach"));
+const Admin = lazy(() => import("./pages/Admin"));
+const Privacy = lazy(() => import("./pages/Privacy"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 function App() {
   useEffect(() => {
@@ -38,6 +38,7 @@ function App() {
           <Sonner />
           <BrowserRouter>
             <ErrorBoundary>
+              <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Loading…</div>}>
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/auth" element={<Auth />} />
@@ -62,6 +63,7 @@ function App() {
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
+              </Suspense>
             </ErrorBoundary>
           </BrowserRouter>
         </TooltipProvider>

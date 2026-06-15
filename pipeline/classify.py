@@ -108,6 +108,12 @@ SOFTWARE_GENERIC_FALLBACK_PATTERNS: tuple[str, ...] = (
     r"\bmjukvaruutvecklare\b",
 )
 
+GENERIC_ENGINEERING_TITLE_PATTERNS: tuple[str, ...] = (
+    r"\bengineer\b",
+    r"\bdeveloper\b",
+    r"\butvecklare\b",
+)
+
 GRAD_PROGRAM_PATTERNS: tuple[str, ...] = (
     r"\bgraduate\b",
     r"\bnew grad\b",
@@ -144,6 +150,13 @@ SENIOR_PATTERNS: tuple[str, ...] = (
     r"\bprincipal\b",
     r"\bstaff engineer\b",
     r"\barchitect\b",
+    r"\bexperienced\b",
+    r"\bexpert\b",
+    r"\bseasoned\b",
+    r"\berfaren(?:het)?\b",
+    r"\bflerårig\b",
+    r"\bflerarig\b",
+    r"\bgedigen erfarenhet\b",
 )
 
 CONSULTANCY_PATTERNS: tuple[str, ...] = (
@@ -216,8 +229,10 @@ YEARS_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(\d{1,2})\s*\+?\s*(?:years|year)\s*(?:of)?\s*(?:experience|exp)\b", re.IGNORECASE),
     re.compile(r"(\d{1,2})\s*-\s*(\d{1,2})\s*(?:years|year)\s*(?:of)?\s*(?:experience|exp)\b", re.IGNORECASE),
     re.compile(r"min(?:imum)?\.?\s*(\d{1,2})\s*(?:years|year)\b", re.IGNORECASE),
-    re.compile(r"(\d{1,2})\s*års?\s+erfarenhet", re.IGNORECASE),
+    re.compile(r"(\d{1,2})\s*\+?\s*års?\s+(?:erfarenhet|arbetslivserfarenhet)", re.IGNORECASE),
     re.compile(r"minst\s+(\d{1,2})\s*år", re.IGNORECASE),
+    re.compile(r"(?:at least|more than|over)\s+(\d{1,2})\s*(?:years|year)\b", re.IGNORECASE),
+    re.compile(r"(?:minimum|minst)\s+(\d{1,2})\s*års?\s+erfarenhet", re.IGNORECASE),
 )
 
 LANGUAGE_BUCKET_SV = {"sv"}
@@ -260,6 +275,7 @@ CS_SIGNAL_FAMILIES: tuple[str, ...] = (
 @dataclass(frozen=True)
 class ClassificationResult:
     role_family: str
+    role_family_confidence: float
     relevance_score: int
     reason_codes: list[str]
     is_target_role: bool
@@ -350,17 +366,29 @@ def _detect_career_stage(
     return "unknown", 0.20
 
 
-def _pick_role_family(text: str, headline: str) -> tuple[str, int]:
-    hits_by_family = {family: _matches(patterns, text) for family, patterns in ROLE_PATTERNS.items()}
-    max_hits = max(hits_by_family.values() or [0])
-    if max_hits <= 0:
+def _pick_role_family(text: str, headline: str) -> tuple[str, int, float, str]:
+    # Descriptions contain broad technology words that otherwise turn unrelated
+    # roles into SWE jobs. Require the title/occupation label to establish the
+    # family; full text may only strengthen that established family.
+    headline_hits = {family: _matches(patterns, headline) for family, patterns in ROLE_PATTERNS.items()}
+    headline_max = max(headline_hits.values() or [0])
+    if headline_max <= 0:
         if _matches(SOFTWARE_GENERIC_FALLBACK_PATTERNS, headline) > 0:
-            return "software_engineering", 1
-        return "noise", 0
+            return "software_engineering", 1, 0.9, "role_family_title_signal"
+        if _matches(GENERIC_ENGINEERING_TITLE_PATTERNS, headline) > 0:
+            full_text_hits = {family: _matches(patterns, text) for family, patterns in ROLE_PATTERNS.items()}
+            full_text_max = max(full_text_hits.values() or [0])
+            if full_text_max > 0:
+                candidates = [name for name, hits in full_text_hits.items() if hits == full_text_max]
+                candidates.sort(key=lambda item: ROLE_TIE_BREAK_INDEX.get(item, 999))
+                return candidates[0], full_text_max, 0.7, "role_family_description_confirmed"
+        return "noise", 0, 0.0, "role_family_missing"
 
-    candidates = [name for name, hits in hits_by_family.items() if hits == max_hits]
-    candidates.sort(key=lambda item: ROLE_TIE_BREAK_INDEX.get(item, 999))
-    return candidates[0], max_hits
+    title_candidates = [name for name, hits in headline_hits.items() if hits == headline_max]
+    full_text_hits = {family: _matches(patterns, text) for family, patterns in ROLE_PATTERNS.items()}
+    title_candidates.sort(key=lambda item: (-full_text_hits[item], ROLE_TIE_BREAK_INDEX.get(item, 999)))
+    selected = title_candidates[0]
+    return selected, max(headline_hits[selected], full_text_hits[selected]), 0.95, "role_family_title_signal"
 
 
 def _has_cs_signal(text: str) -> bool:
@@ -422,7 +450,10 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
     trainee_hits = _matches(TRAINEE_PROGRAM_PATTERNS, text)
     is_grad_program = grad_hits > 0 or trainee_hits > 0
 
-    role_family, role_hits = _pick_role_family(text, headline.lower())
+    role_family, role_hits, role_family_confidence, role_family_reason = _pick_role_family(
+        text, f"{headline} {occupation_label}".lower()
+    )
+    _add_reason(reason_codes, role_family_reason)
 
     scoring = profile.scoring
     relevance_score = 0
@@ -577,6 +608,7 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
 
     return ClassificationResult(
         role_family=role_family,
+        role_family_confidence=round(role_family_confidence, 3),
         relevance_score=relevance_score,
         reason_codes=list(dict.fromkeys(reason_codes)),
         is_target_role=is_target_role,

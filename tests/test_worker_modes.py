@@ -46,6 +46,7 @@ class WorkerModeTests(unittest.TestCase):
         )
         self.assertEqual(report["company_feeds"]["target_rows"], 5)
         self.assertEqual(report["deadline_expiry"]["expired_rows"], 2)
+        self.assertFalse(report["user_ranking"])
 
 
 if __name__ == "__main__":
