@@ -144,6 +144,16 @@ describe("Jobs page", () => {
         is_grad_program: false,
       }),
     ).toBe(true);
+
+    expect(
+      isGraduateTraineeCandidate({
+        headline: "Experienced Computer Vision Engineer",
+        career_stage: "unknown",
+        career_stage_confidence: 0.2,
+        years_required_min: null,
+        is_grad_program: false,
+      }),
+    ).toBe(false);
   });
 
   it("renders explore shell without crashing", async () => {

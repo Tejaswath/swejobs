@@ -41,15 +41,20 @@ import {
 import { buildSweJobsApplication } from "@/lib/applications";
 import { extractKeywordsFromJobText, runAtsScan, type AtsScanResult } from "@/lib/ats";
 import { cn } from "@/lib/utils";
-import { earlyCareerBucket, jobPassesLens } from "@/lib/jobEligibility";
+import {
+  boolValue,
+  earlyCareerBucket,
+  effectiveCareerStage,
+  hasSeniorRoleSignal,
+  isGraduateTraineeCandidate as contractIsGraduateTraineeCandidate,
+  jobPassesLens,
+  numberValue,
+} from "@/lib/jobEligibility";
 import { suitabilityScore } from "@/lib/jobRanking";
 
 const PAGE_SIZE = 25;
 const LIST_FETCH_LIMIT = 300;
 const REFRESH_MS = 600_000;
-const WATCHED_COMPANY_BOOST = 10;
-const CAREER_STAGE_CONFIDENCE_THRESHOLD = 0.6;
-const SENIOR_TITLE_PATTERN = /\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president)\b/i;
 
 type Lens = "high_signal" | "broad" | "graduate_trainee";
 type JobSort = "relevance" | "deadline" | "newest" | "ats_desc";
@@ -87,17 +92,8 @@ function timeValue(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function boolValue(value: unknown): boolean {
-  return value === true;
-}
-
 function effectiveConsultancyFlag(job: { consultancy_flag?: unknown; is_direct_company_source?: unknown }): boolean {
   return boolValue(job.consultancy_flag) && !boolValue(job.is_direct_company_source);
-}
-
-function numberValue(value: unknown, fallback = 0): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function yearsValue(value: unknown): number {
@@ -105,13 +101,6 @@ function yearsValue(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 999;
   return parsed;
-}
-
-function effectiveCareerStage(stage: unknown, confidence: unknown): string {
-  const normalized = String(stage || "unknown").toLowerCase();
-  const score = Number(confidence);
-  if (!Number.isFinite(score) || score < CAREER_STAGE_CONFIDENCE_THRESHOLD) return "unknown";
-  return normalized;
 }
 
 function careerStageAdjustment(stage: string): number {
@@ -143,31 +132,10 @@ type SeniorSignalContext = {
   reason_codes?: unknown;
 };
 
-function hasSeniorRoleSignal(context: SeniorSignalContext): boolean {
-  const title = String(context.headline ?? "");
-  if (SENIOR_TITLE_PATTERN.test(title)) return true;
-
-  const stage = effectiveCareerStage(context.career_stage, context.career_stage_confidence);
-  if (stage === "senior" || stage === "lead" || stage === "staff" || stage === "principal") return true;
-
-  const years = numberValue(context.years_required_min, -1);
-  if (years >= 3) return true;
-
-  if (Array.isArray(context.reason_codes)) {
-    const reasons = context.reason_codes.map((value) => String(value).toLowerCase());
-    if (reasons.includes("career_stage_senior") || reasons.includes("years_required_3plus")) return true;
-  }
-  return false;
-}
-
 // Exported for the focused lens regression test.
 // eslint-disable-next-line react-refresh/only-export-components
 export function isGraduateTraineeCandidate(context: SeniorSignalContext & { is_grad_program?: unknown }): boolean {
-  if (hasSeniorRoleSignal(context)) return false;
-
-  const stage = effectiveCareerStage(context.career_stage, context.career_stage_confidence);
-  const years = yearsValue(context.years_required_min);
-  return boolValue(context.is_grad_program) || ["graduate", "trainee", "junior"].includes(stage) || years <= 1;
+  return contractIsGraduateTraineeCandidate(context);
 }
 
 function requiresThreePlusYears(job: {
@@ -673,97 +641,6 @@ export default function Jobs() {
       }
     }
 
-    type RankedJob = (typeof sourceJobs)[number];
-
-    const isWatched = (job: RankedJob) => {
-      const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
-      return watchedSet.has(canonical);
-    };
-    const normalizedSearch = normalizeCompanyName(normalizedSearchTerm);
-    const companySearchBoost = (job: RankedJob) => {
-      if (!normalizedSearch) return 0;
-      const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
-      if (!canonical) return 0;
-      if (canonical === normalizedSearch) return 80;
-      if (canonical.startsWith(normalizedSearch) || normalizedSearch.startsWith(canonical)) return 55;
-      if (canonical.includes(normalizedSearch)) return 35;
-      return 0;
-    };
-    const preferredCompanies = new Set(
-      (userRankingState?.preferred_companies ?? []).map((value) => normalizeCompanyName(value)),
-    );
-    const demotedCompanies = new Set(
-      (userRankingState?.demoted_companies ?? []).map((value) => normalizeCompanyName(value)),
-    );
-    const preferredRoleFamilies = new Set(
-      (userRankingState?.preferred_role_families ?? []).map((value) => String(value).toLowerCase()),
-    );
-    const demotedRoleFamilies = new Set(
-      (userRankingState?.demoted_role_families ?? []).map((value) => String(value).toLowerCase()),
-    );
-    const userRankingDelta = numberValue(userRankingState?.high_signal_score_delta, 0);
-    const userRankingAdjustment = (job: RankedJob) => {
-      const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
-      const roleFamily = String(job.role_family || "").toLowerCase();
-      let delta = 0;
-      if (canonical && preferredCompanies.has(canonical)) delta += 12;
-      if (canonical && demotedCompanies.has(canonical)) delta -= 12;
-      if (roleFamily && preferredRoleFamilies.has(roleFamily)) delta += 10;
-      if (roleFamily && demotedRoleFamilies.has(roleFamily)) delta -= 10;
-      if (lens === "high_signal") delta += userRankingDelta;
-      return delta;
-    };
-
-    rows.sort((a, b) => {
-      const targetDiff =
-        lens === "broad"
-          ? 0
-          : Number(boolValue((b as { is_target_role?: unknown }).is_target_role)) -
-            Number(boolValue((a as { is_target_role?: unknown }).is_target_role));
-      if (targetDiff !== 0) return targetDiff;
-
-      const watchedDiff = Number(isWatched(b)) - Number(isWatched(a));
-      const stageA = effectiveCareerStage(a.career_stage, a.career_stage_confidence);
-      const stageB = effectiveCareerStage(b.career_stage, b.career_stage_confidence);
-      const stageAdjustmentA = lens === "high_signal" ? careerStageAdjustment(stageA) : 0;
-      const stageAdjustmentB = lens === "high_signal" ? careerStageAdjustment(stageB) : 0;
-      const boostedA =
-        numberValue(a.relevance_score) +
-        (isWatched(a) ? WATCHED_COMPANY_BOOST : 0) +
-        stageAdjustmentA +
-        companySearchBoost(a) +
-        userRankingAdjustment(a);
-      const boostedB =
-        numberValue(b.relevance_score) +
-        (isWatched(b) ? WATCHED_COMPANY_BOOST : 0) +
-        stageAdjustmentB +
-        companySearchBoost(b) +
-        userRankingAdjustment(b);
-      const relevanceDiff = boostedB - boostedA;
-      if (relevanceDiff !== 0) return relevanceDiff;
-
-      if (watchedDiff !== 0) return watchedDiff;
-
-      const tierA = TIER_RANK[String(a.company_tier || "unknown")] ?? 3;
-      const tierB = TIER_RANK[String(b.company_tier || "unknown")] ?? 3;
-      if (tierA !== tierB) return tierA - tierB;
-
-      const yearsDiff = yearsValue(a.years_required_min) - yearsValue(b.years_required_min);
-      if (yearsDiff !== 0) return yearsDiff;
-
-      const langDiff = langRank(String(b.lang || "")) - langRank(String(a.lang || ""));
-      if (langDiff !== 0) return langDiff;
-
-      const freshnessDiff = timeValue(String(b.published_at || "")) - timeValue(String(a.published_at || ""));
-      if (freshnessDiff !== 0) return freshnessDiff;
-
-      if (effectiveConsultancyFlag(a) !== effectiveConsultancyFlag(b)) {
-        return Number(effectiveConsultancyFlag(a)) - Number(effectiveConsultancyFlag(b));
-      }
-
-      return numberValue(b.id) - numberValue(a.id);
-    });
-
     const seenKeys = new Set<string>();
     rows = rows.filter((job) => {
       const canonicalCompany = normalizeCompanyName(job.company_canonical || job.employer_name);
@@ -785,10 +662,8 @@ export default function Jobs() {
     hideConsultancies,
     confirmedGraduateOnly,
     lens,
-    watchedSet,
     debouncedSearch,
     includeJobtechInHighSignal,
-    userRankingState,
   ]);
 
   const rankAndFilterJobs = rankedJobsView.rows;
@@ -930,12 +805,47 @@ export default function Jobs() {
 
     const baseOrderById = new Map(rows.map((job, index) => [job.id, index]));
     const baseOrderDiff = (aId: number, bId: number) => (baseOrderById.get(aId) ?? 0) - (baseOrderById.get(bId) ?? 0);
+    const recommendationTieBreak = (a: (typeof rows)[number], b: (typeof rows)[number]) => {
+      const targetDiff =
+        Number(boolValue((b as { is_target_role?: unknown }).is_target_role)) -
+        Number(boolValue((a as { is_target_role?: unknown }).is_target_role));
+      if (targetDiff !== 0) return targetDiff;
+
+      const directDiff =
+        Number(boolValue((b as { is_direct_company_source?: unknown }).is_direct_company_source)) -
+        Number(boolValue((a as { is_direct_company_source?: unknown }).is_direct_company_source));
+      if (directDiff !== 0) return directDiff;
+
+      const stageDiff =
+        careerStageAdjustment(effectiveCareerStage(b.career_stage, b.career_stage_confidence)) -
+        careerStageAdjustment(effectiveCareerStage(a.career_stage, a.career_stage_confidence));
+      if (stageDiff !== 0) return stageDiff;
+
+      const yearsDiff = yearsValue(a.years_required_min) - yearsValue(b.years_required_min);
+      if (yearsDiff !== 0) return yearsDiff;
+
+      const langDiff = langRank(String(b.lang || "")) - langRank(String(a.lang || ""));
+      if (langDiff !== 0) return langDiff;
+
+      if (effectiveConsultancyFlag(a) !== effectiveConsultancyFlag(b)) {
+        return Number(effectiveConsultancyFlag(a)) - Number(effectiveConsultancyFlag(b));
+      }
+
+      const tierA = TIER_RANK[String(a.company_tier || "unknown")] ?? 3;
+      const tierB = TIER_RANK[String(b.company_tier || "unknown")] ?? 3;
+      if (tierA !== tierB) return tierA - tierB;
+
+      const freshnessDiff = timeValue(String(b.published_at || "")) - timeValue(String(a.published_at || ""));
+      if (freshnessDiff !== 0) return freshnessDiff;
+
+      return numberValue(b.id) - numberValue(a.id);
+    };
 
     if (sortBy === "relevance") {
       return rows.sort((a, b) => {
         const diff = (suitabilityByJobId[b.id]?.score ?? 0) - (suitabilityByJobId[a.id]?.score ?? 0);
         if (diff !== 0) return diff;
-        return baseOrderDiff(a.id, b.id);
+        return recommendationTieBreak(a, b);
       });
     }
 

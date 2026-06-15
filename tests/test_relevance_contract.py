@@ -19,6 +19,11 @@ class RelevanceContractTests(unittest.TestCase):
             with self.subTest(icon=icon):
                 self.assertIn(icon, lucide_import)
 
+    def test_explore_does_not_duplicate_senior_eligibility_regex(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        self.assertNotIn("SENIOR_TITLE_PATTERN", jobs_page)
+        self.assertIn("hasSeniorRoleSignal", jobs_page)
+
     def test_shared_eligibility_fixtures(self) -> None:
         fixtures = json.loads(Path("tests/fixtures/eligibility_cases.json").read_text(encoding="utf-8"))
         registry = {
