@@ -15,7 +15,9 @@ class RelevanceContractTests(unittest.TestCase):
     def test_explore_imports_detail_panel_icons(self) -> None:
         jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
         lucide_import = jobs_page.split('from "lucide-react";', 1)[0]
-        self.assertIn("ChevronsUpDown", lucide_import)
+        for icon in ("Bookmark", "ChevronsUpDown"):
+            with self.subTest(icon=icon):
+                self.assertIn(icon, lucide_import)
 
     def test_shared_eligibility_fixtures(self) -> None:
         fixtures = json.loads(Path("tests/fixtures/eligibility_cases.json").read_text(encoding="utf-8"))

@@ -1,11 +1,52 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import Jobs, { isGraduateTraineeCandidate } from "@/pages/Jobs";
 
 const supabase = vi.hoisted(() => {
+  const job = {
+    id: 1,
+    is_active: true,
+    headline: "Backend Engineer",
+    headline_en: null,
+    description: "Build reliable backend services.",
+    description_en: null,
+    employer_name: "Example AB",
+    company_canonical: "example",
+    company_tier: "A",
+    municipality: "Stockholm",
+    region: "Stockholm",
+    lang: "en",
+    remote_flag: false,
+    published_at: "2026-06-15T08:00:00+00:00",
+    application_deadline: null,
+    employment_type: "Permanent",
+    working_hours: "Full-time",
+    occupation_label: "Software Engineer",
+    source_url: "https://example.com/jobs/1",
+    relevance_score: 70,
+    role_family: "backend",
+    role_family_confidence: 0.95,
+    career_stage: "junior",
+    career_stage_confidence: 0.9,
+    is_grad_program: false,
+    years_required_min: 1,
+    swedish_required: false,
+    consultancy_flag: false,
+    citizenship_required: false,
+    security_clearance_required: false,
+    reason_codes: ["role_family_title_signal", "career_stage_junior"],
+    source_provider: "greenhouse",
+    source_kind: "direct_company_ats",
+    source_feed_key: "example_greenhouse",
+    is_direct_company_source: true,
+    is_target_role: true,
+    is_noise: false,
+    source_feed_registry: { quality_band: "verified", high_signal_eligible: true, enabled: true },
+  };
+
   const createThenableBuilder = (result: { data: unknown; error: null; count?: number }) => {
     const builder: Record<string, unknown> = {};
     const chain = () => proxy;
@@ -50,7 +91,23 @@ const supabase = vi.hoisted(() => {
   };
 
   return {
-    from: () => createThenableBuilder({ data: [], error: null, count: 0 }),
+    from: (table: string) => {
+      if (table === "jobs") return createThenableBuilder({ data: [job], error: null, count: 1 });
+      if (table === "job_tags") {
+        return createThenableBuilder({ data: [{ job_id: 1, tag: "backend" }], error: null, count: 1 });
+      }
+      if (table === "resume_versions") {
+        return createThenableBuilder({
+          data: [{ id: "resume-1", label: "Default resume", parsed_text: "backend services", is_default: true }],
+          error: null,
+          count: 1,
+        });
+      }
+      if (table === "user_skills") {
+        return createThenableBuilder({ data: [{ skill: "backend" }], error: null, count: 1 });
+      }
+      return createThenableBuilder({ data: [], error: null, count: 0 });
+    },
   };
 });
 
@@ -103,5 +160,25 @@ describe("Jobs page", () => {
     expect(await screen.findByRole("heading", { name: "Explore" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "High Signal" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Broad Discovery" })).toBeInTheDocument();
+  });
+
+  it("opens a populated job detail panel without crashing", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Jobs />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    const jobTitle = await screen.findByText("Backend Engineer");
+    fireEvent.click(jobTitle);
+
+    expect(await screen.findByText("Track")).toBeInTheDocument();
+    expect(screen.getByText("Match analysis")).toBeInTheDocument();
+    expect(screen.getByText("Description")).toBeInTheDocument();
   });
 });

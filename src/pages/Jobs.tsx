@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   EyeOff,
   ChevronsUpDown,
+  Bookmark,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1329,7 +1330,7 @@ export default function Jobs() {
   useEffect(() => {
     if (selectedIdx >= 0 && listRef.current) {
       const items = listRef.current.querySelectorAll("[data-job-item]");
-      items[selectedIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      items[selectedIdx]?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
     }
   }, [selectedIdx]);
 
