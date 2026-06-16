@@ -94,6 +94,7 @@ class IngestionPipeline:
         compaction_job_event_days: int,
         compaction_weekly_digest_days: int,
         enable_translation: bool,
+        max_active_jobs: int = 15000,
         libretranslate_url: str | None = None,
         translation_provider: str = "google_cloud",
         translation_api_key: str = "",
@@ -124,6 +125,7 @@ class IngestionPipeline:
         self.compaction_inactive_job_days = max(1, compaction_inactive_job_days)
         self.compaction_job_event_days = max(1, compaction_job_event_days)
         self.compaction_weekly_digest_days = max(1, compaction_weekly_digest_days)
+        self.max_active_jobs = max(1, int(max_active_jobs))
         self.enable_translation = bool(enable_translation)
         self.translation_provider = str(translation_provider or "google_cloud").strip().lower()
         self.translation_api_key = str(translation_api_key or "").strip()
@@ -368,10 +370,17 @@ class IngestionPipeline:
         *,
         records: list[dict[str, Any]],
         checkpoint_update: dict[str, str] | None,
+        drop_irrelevant_jobtech: bool = False,
     ) -> int:
         jobs, tags_by_job_id, _ = self._prepare_records(records)
         if not jobs:
             return 0
+        if drop_irrelevant_jobtech:
+            jobs, tags_by_job_id = self._filter_persistable_jobtech_rows(jobs, tags_by_job_id)
+            if not jobs:
+                if checkpoint_update:
+                    self.storage.upsert_ingestion_state(checkpoint_update)
+                return 0
 
         existing = self.storage.fetch_existing_jobs([int(job["id"]) for job in jobs])
         events = self._build_events(jobs=jobs, existing=existing)
@@ -383,6 +392,70 @@ class IngestionPipeline:
             self.storage.upsert_ingestion_state(checkpoint_update)
 
         return len(jobs)
+
+    @staticmethod
+    def _is_jobtech_row(job: dict[str, Any]) -> bool:
+        return str(job.get("source_kind") or "").strip().lower() == "jobtech"
+
+    def _is_persistable_jobtech_row(self, job: dict[str, Any]) -> bool:
+        if not self._is_jobtech_row(job):
+            return True
+        if bool(job.get("is_target_role")):
+            return True
+        if bool(job.get("is_noise")):
+            return False
+        if bool(job.get("swedish_required")) or bool(job.get("citizenship_required")):
+            return False
+        if bool(job.get("security_clearance_required")):
+            return False
+
+        role_family = str(job.get("role_family") or "").strip().lower()
+        if role_family in {"", "noise"}:
+            return False
+
+        try:
+            relevance_score = int(job.get("relevance_score") or 0)
+        except (TypeError, ValueError):
+            relevance_score = 0
+
+        if relevance_score >= 15:
+            return True
+        if bool(job.get("remote_flag")):
+            return True
+
+        profile_region_codes = {str(value).strip() for value in getattr(self.profile, "region_codes", set()) if str(value).strip()}
+        profile_region_names = {
+            str(value).strip().lower() for value in getattr(self.profile, "region_names", set()) if str(value).strip()
+        }
+        if profile_region_codes or profile_region_names:
+            region_code = str(job.get("region_code") or "").strip()
+            region_name = str(job.get("region") or "").strip().lower()
+            return region_code in profile_region_codes or region_name in profile_region_names
+
+        return False
+
+    def _filter_persistable_jobtech_rows(
+        self,
+        jobs: list[dict[str, Any]],
+        tags_by_job_id: dict[int, list[str]],
+    ) -> tuple[list[dict[str, Any]], dict[int, list[str]]]:
+        filtered_jobs = [job for job in jobs if self._is_persistable_jobtech_row(job)]
+        filtered_ids = {int(job["id"]) for job in filtered_jobs}
+        dropped = len(jobs) - len(filtered_jobs)
+        if dropped:
+            logger.info("Dropped %s non-persistable JobTech rows before storage", dropped)
+        return filtered_jobs, {job_id: tags for job_id, tags in tags_by_job_id.items() if job_id in filtered_ids}
+
+    def over_storage_budget(self) -> bool:
+        try:
+            active_jobs = int(self.storage.count_active_jobs())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Active-job budget check failed; continuing ingest. error=%s", exc)
+            return False
+        if active_jobs >= self.max_active_jobs:
+            logger.warning("Active-job budget reached. active_jobs=%s max_active_jobs=%s", active_jobs, self.max_active_jobs)
+            return True
+        return False
 
     def _prepare_records(
         self,
@@ -483,16 +556,28 @@ class IngestionPipeline:
         return count
 
     def run_snapshot(self, *, limit: int | None = None) -> int:
+        if self.over_storage_budget():
+            logger.warning("Skipping JobTech snapshot because active-job budget is already reached")
+            return 0
+
         processed = 0
         batch: list[dict[str, Any]] = []
         for row in self.client.iter_snapshot(limit=limit):
             batch.append(row)
             if len(batch) >= self.batch_size:
-                processed += self._persist_records(records=batch, checkpoint_update=None)
+                processed += self._persist_records(
+                    records=batch,
+                    checkpoint_update=None,
+                    drop_irrelevant_jobtech=True,
+                )
                 batch = []
 
         if batch:
-            processed += self._persist_records(records=batch, checkpoint_update=None)
+            processed += self._persist_records(
+                records=batch,
+                checkpoint_update=None,
+                drop_irrelevant_jobtech=True,
+            )
 
         self.storage.upsert_ingestion_state(
             {
@@ -552,6 +637,11 @@ class IngestionPipeline:
         return processed
 
     def run_stream_once(self, *, limit: int | None = None) -> int:
+        if self.over_storage_budget():
+            self.storage.upsert_ingestion_state({"last_poll_at": datetime.now(UTC).isoformat()})
+            logger.warning("Skipping JobTech stream poll because active-job budget is already reached")
+            return 0
+
         state = self.storage.get_ingestion_state(["last_stream_timestamp", "snapshot_complete"])
         since = state.get("last_stream_timestamp")
         snapshot_complete = str(state.get("snapshot_complete", "")).strip().lower() == "true"
@@ -594,6 +684,7 @@ class IngestionPipeline:
                 "last_poll_at": datetime.now(UTC).isoformat(),
                 "last_stream_timestamp": next_cursor or datetime.now(UTC).isoformat(),
             },
+            drop_irrelevant_jobtech=True,
         )
         logger.info("Stream poll processed rows=%s", processed)
         return processed
@@ -1423,10 +1514,14 @@ class IngestionPipeline:
         while True:
             started_at = time.monotonic()
             try:
-                self.run_stream_once(limit=self.batch_size)
+                over_budget = self.over_storage_budget()
+                if over_budget:
+                    logger.warning("Skipping JobTech poll because active-job budget is already reached")
+                else:
+                    self.run_stream_once(limit=self.batch_size)
                 self._poll_counter += 1
 
-                if self.enable_company_feeds and (self._poll_counter % self.feed_interval_polls == 0):
+                if self.enable_company_feeds and not over_budget and (self._poll_counter % self.feed_interval_polls == 0):
                     feed_report = self.run_company_feed_cycle()
                     logger.info(
                         "Company feed sync complete. processed_rows=%s target_rows=%s http_requests=%s cursor=%s",

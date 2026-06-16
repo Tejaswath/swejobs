@@ -79,27 +79,31 @@ def run_ats_only_cycle(pipeline: Any, *, max_rows: int, max_http: int) -> dict[s
     report: dict[str, Any] = {}
 
     try:
-        feed_report = pipeline.run_company_feeds_once(max_rows=max_rows, max_http=max_http)
-        report["company_feeds"] = feed_report
-        feed_results = feed_report.get("feed_results") or []
-        failures = [row for row in feed_results if str(row.get("status") or "") != "ok"]
-        storage = getattr(pipeline, "storage", None)
-        if storage is not None:
-            storage.upsert_ingestion_state(
-                {
-                    "worker:last_success_at": datetime.now(UTC).isoformat(),
-                    "worker:last_feed_failure_count": str(len(failures)),
-                    "worker:last_feed_failures": ",".join(str(row.get("feed_key") or "") for row in failures[:20]),
-                }
+        if bool(getattr(pipeline, "over_storage_budget", lambda: False)()):
+            report["company_feeds_skipped"] = "active_job_budget"
+            logger.warning("ATS sync skipped because active-job budget is already reached")
+        else:
+            feed_report = pipeline.run_company_feeds_once(max_rows=max_rows, max_http=max_http)
+            report["company_feeds"] = feed_report
+            feed_results = feed_report.get("feed_results") or []
+            failures = [row for row in feed_results if str(row.get("status") or "") != "ok"]
+            storage = getattr(pipeline, "storage", None)
+            if storage is not None:
+                storage.upsert_ingestion_state(
+                    {
+                        "worker:last_success_at": datetime.now(UTC).isoformat(),
+                        "worker:last_feed_failure_count": str(len(failures)),
+                        "worker:last_feed_failures": ",".join(str(row.get("feed_key") or "") for row in failures[:20]),
+                    }
+                )
+            logger.info(
+                "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s failures=%s",
+                feed_report.get("processed_rows", 0),
+                feed_report.get("target_rows", 0),
+                feed_report.get("http_requests", 0),
+                feed_report.get("feeds_run", 0),
+                len(failures),
             )
-        logger.info(
-            "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s failures=%s",
-            feed_report.get("processed_rows", 0),
-            feed_report.get("target_rows", 0),
-            feed_report.get("http_requests", 0),
-            feed_report.get("feeds_run", 0),
-            len(failures),
-        )
     except Exception as exc:  # noqa: BLE001
         report["company_feeds_error"] = str(exc)
         logger.exception("ATS sync unexpectedly failed: %s", exc)

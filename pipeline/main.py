@@ -69,6 +69,7 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
         compaction_inactive_job_days=settings.compaction_inactive_job_days,
         compaction_job_event_days=settings.compaction_job_event_days,
         compaction_weekly_digest_days=settings.compaction_weekly_digest_days,
+        max_active_jobs=settings.max_active_jobs,
         enable_translation=settings.enable_translation,
         translation_provider=settings.translation_provider,
         translation_api_key=settings.translation_api_key,

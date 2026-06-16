@@ -6,8 +6,13 @@ from pipeline.worker import run_ats_only_cycle
 
 
 class FakePipeline:
-    def __init__(self) -> None:
+    def __init__(self, *, over_budget: bool = False) -> None:
         self.calls: list[tuple] = []
+        self.over_budget = over_budget
+
+    def over_storage_budget(self) -> bool:
+        self.calls.append(("budget_check",))
+        return self.over_budget
 
     def run_company_feeds_once(self, *, max_rows: int, max_http: int) -> dict:
         self.calls.append(("company_feeds", max_rows, max_http))
@@ -38,6 +43,7 @@ class WorkerModeTests(unittest.TestCase):
         self.assertEqual(
             pipeline.calls,
             [
+                ("budget_check",),
                 ("company_feeds", 2000, 100),
                 ("translation",),
                 ("deadline_expiry",),
@@ -47,6 +53,23 @@ class WorkerModeTests(unittest.TestCase):
         self.assertEqual(report["company_feeds"]["target_rows"], 5)
         self.assertEqual(report["deadline_expiry"]["expired_rows"], 2)
         self.assertFalse(report["user_ranking"])
+
+    def test_ats_only_cycle_skips_ingest_over_active_job_budget_but_runs_maintenance(self) -> None:
+        pipeline = FakePipeline(over_budget=True)
+
+        report = run_ats_only_cycle(pipeline, max_rows=2000, max_http=100)
+
+        self.assertEqual(
+            pipeline.calls,
+            [
+                ("budget_check",),
+                ("translation",),
+                ("deadline_expiry",),
+                ("compaction",),
+            ],
+        )
+        self.assertEqual(report["company_feeds_skipped"], "active_job_budget")
+        self.assertEqual(report["deadline_expiry"]["expired_rows"], 2)
 
 
 if __name__ == "__main__":

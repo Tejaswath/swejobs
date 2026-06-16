@@ -97,6 +97,16 @@ class SupabaseStorage:
         )
         return int(response.count or 0)
 
+    def count_active_jobs(self) -> int:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id", count="exact", head=True)
+            .eq("is_active", True)
+            .execute(),
+            context="count active jobs",
+        )
+        return int(response.count or 0)
+
     def upsert_ingestion_state(self, values: dict[str, str]) -> None:
         rows = [{"key": k, "value": v, "updated_at": datetime.now(UTC).isoformat()} for k, v in values.items()]
         self._execute(

@@ -1160,6 +1160,13 @@ export default function Jobs() {
     },
   });
 
+  const trackApplyClick = () => {
+    if (!user || !selectedId || !detail || upsertTracking.isPending) {
+      return;
+    }
+    upsertTracking.mutate({ status: "applied", notes });
+  };
+
   const watchCompany = useMutation({
     mutationFn: async (name: string) => {
       const { error } = await supabase.from("watched_companies").upsert(
@@ -1287,6 +1294,8 @@ export default function Jobs() {
       penalty: seniorityPenalty(context),
     };
   }, [activeAtsResume?.parsed_text, detail, detailTags, userSkills]);
+  const visibleMatchedKeywords = detailAtsResult?.result.matchedKeywords.slice(0, 6) ?? [];
+  const visibleMissingKeywords = detailAtsResult?.result.missingKeywords.slice(0, 6) ?? [];
 
   const detailDisplayEmployer = detail
     ? companyDisplayName(detail.company_canonical, detail.employer_name)
@@ -1889,7 +1898,7 @@ export default function Jobs() {
 
                     <div className="flex flex-wrap gap-2">
                       {detail.source_url && (
-                        <a href={detail.source_url} target="_blank" rel="noopener noreferrer">
+                        <a href={detail.source_url} target="_blank" rel="noopener noreferrer" onClick={trackApplyClick}>
                           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
                             <ExternalLink className="h-3 w-3" /> Apply
                           </Button>
@@ -2025,6 +2034,38 @@ export default function Jobs() {
                             Seniority adjustment applied ({detailAtsResult.penalty} pts) based on title/stage/experience signals.
                           </p>
                         ) : null}
+                        {(visibleMatchedKeywords.length > 0 || visibleMissingKeywords.length > 0) && (
+                          <div className="grid gap-2 rounded-lg border border-border/50 bg-muted/20 p-2 md:grid-cols-2">
+                            <div>
+                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">You have</p>
+                              <div className="flex flex-wrap gap-1">
+                                {visibleMatchedKeywords.length > 0 ? (
+                                  visibleMatchedKeywords.map((keyword) => (
+                                    <Badge key={keyword} variant="secondary" className="text-[10px] font-normal">
+                                      {keyword}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground">No direct keyword matches yet</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">Gaps</p>
+                              <div className="flex flex-wrap gap-1">
+                                {visibleMissingKeywords.length > 0 ? (
+                                  visibleMissingKeywords.map((keyword) => (
+                                    <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
+                                      {keyword}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground">No obvious keyword gaps</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
                           <CollapsibleTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">

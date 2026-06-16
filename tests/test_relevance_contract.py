@@ -19,6 +19,12 @@ class RelevanceContractTests(unittest.TestCase):
             with self.subTest(icon=icon):
                 self.assertIn(icon, lucide_import)
 
+    def test_apply_link_auto_tracks_application(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        self.assertIn("const trackApplyClick = () =>", jobs_page)
+        self.assertIn('onClick={trackApplyClick}', jobs_page)
+        self.assertIn('upsertTracking.mutate({ status: "applied", notes })', jobs_page)
+
     def test_explore_does_not_duplicate_senior_eligibility_regex(self) -> None:
         jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
         self.assertNotIn("SENIOR_TITLE_PATTERN", jobs_page)
