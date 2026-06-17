@@ -22,3 +22,19 @@ describe("early-career buckets", () => {
     );
   });
 });
+
+describe("For You lens eligibility", () => {
+  it("excludes explicit senior Swedish title variants", () => {
+    const job = {
+      is_active: true,
+      is_noise: false,
+      is_target_role: true,
+      relevance_score: 80,
+      headline: "Saab söker erfarna systemingenjörer!",
+      career_stage: "unknown",
+      source_kind: "jobtech",
+    };
+
+    expect(jobPassesLens(job, "broad", feed, false)).toBe(false);
+  });
+});

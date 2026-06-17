@@ -26,7 +26,7 @@ export type FeedEligibility = {
 };
 
 const SENIOR_TITLE_PATTERN =
-  /\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarenhet|flerårig|flerarig|gedigen erfarenhet)\b/i;
+  /\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarna|erfaret|erfarenhet|flerårig|fleråriga|flerarig|flerariga|gedigen erfarenhet)\b/i;
 const SENIOR_STAGES = new Set(["senior", "lead", "staff", "principal"]);
 const GRAD_STAGES = new Set(["graduate", "trainee", "junior"]);
 
@@ -98,7 +98,7 @@ export function jobPassesLens(
   includeJobtechInHighSignal: boolean,
 ): boolean {
   if (!boolValue(job.is_active) || boolValue(job.is_noise)) return false;
-  if (lens === "broad") return !hasDefaultRestriction(job);
+  if (lens === "broad") return !hasDefaultRestriction(job) && !hasSeniorRoleSignal(job);
   if (hasDefaultRestriction(job) || hasSeniorRoleSignal(job)) return false;
 
   const relevance = numberValue(job.relevance_score);

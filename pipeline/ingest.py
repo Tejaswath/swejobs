@@ -71,7 +71,7 @@ def _jaccard_similarity(left: set[str], right: set[str]) -> float:
 _SENIOR_STAGES = {"senior", "lead", "staff", "principal"}
 _GRAD_STAGES = {"graduate", "trainee", "junior"}
 _SENIOR_TITLE_RE = re.compile(
-    r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarenhet|flerårig|flerarig|gedigen erfarenhet)\b",
+    r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarna|erfaret|erfarenhet|flerårig|fleråriga|flerarig|flerariga|gedigen erfarenhet)\b",
     re.IGNORECASE,
 )
 

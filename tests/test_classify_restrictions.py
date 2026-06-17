@@ -71,6 +71,22 @@ class ClassifyRestrictionTests(unittest.TestCase):
                 self.assertEqual(result.career_stage, "senior")
                 self.assertIn("career_stage_senior", result.reason_codes)
 
+    def test_swedish_senior_title_variants_are_senior(self) -> None:
+        for headline in ("Saab söker erfarna systemingenjörer!", "Fleråriga utvecklare till plattformsteam"):
+            with self.subTest(headline=headline):
+                result = classify_job(
+                    {
+                        "headline": headline,
+                        "description": "Bygg och underhåll mjukvara.",
+                        "occupation_label": "Software Engineer",
+                        "employer_name": "Example AB",
+                        "lang": "sv",
+                    },
+                    _profile(),
+                )
+                self.assertEqual(result.career_stage, "senior")
+                self.assertIn("career_stage_senior", result.reason_codes)
+
     def test_description_technology_tokens_do_not_create_software_role(self) -> None:
         result = classify_job(
             {

@@ -98,6 +98,53 @@ function timeValue(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeDedupeValue(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9åäö]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function semanticJobDedupeKey(job: {
+  headline?: unknown;
+  headline_en?: unknown;
+  employer_name?: unknown;
+  company_canonical?: unknown;
+  municipality?: unknown;
+  region?: unknown;
+  source_url?: unknown;
+}): string {
+  const company = normalizeCompanyName(String(job.company_canonical || job.employer_name || ""));
+  const title = normalizeDedupeValue(job.headline || job.headline_en);
+  const location = normalizeDedupeValue(`${job.municipality || ""} ${job.region || ""}`);
+  if (company && title) return `${company}::${title}::${location}`;
+  return normalizeDedupeValue(job.source_url);
+}
+
+function duplicateCandidateScore(job: {
+  is_direct_company_source?: unknown;
+  source_kind?: unknown;
+  company_tier?: unknown;
+  relevance_score?: unknown;
+  published_at?: unknown;
+  application_deadline?: unknown;
+  source_url?: unknown;
+}): number {
+  let score = 0;
+  if (boolValue(job.is_direct_company_source)) score += 10_000_000;
+  if (String(job.source_kind || "").toLowerCase() === "direct_company_ats") score += 10_000_000;
+  const tierRank = TIER_RANK[String(job.company_tier || "unknown")] ?? 3;
+  score += (4 - tierRank) * 100_000;
+  score += numberValue(job.relevance_score) * 1_000;
+  score += Math.min(999, Math.floor(timeValue(String(job.published_at || "")) / 86_400_000));
+  if (job.application_deadline) score += 100;
+  if (job.source_url) score += 10;
+  return score;
+}
+
 function effectiveConsultancyFlag(job: { consultancy_flag?: unknown; is_direct_company_source?: unknown }): boolean {
   return boolValue(job.consultancy_flag) && !boolValue(job.is_direct_company_source);
 }
@@ -647,17 +694,20 @@ export default function Jobs() {
       }
     }
 
-    const seenKeys = new Set<string>();
-    rows = rows.filter((job) => {
-      const canonicalCompany = normalizeCompanyName(job.company_canonical || job.employer_name);
-      const headline = String(job.headline || "").trim().toLowerCase();
-      const published = String(job.published_at || "").slice(0, 10);
-      const dedupeKey = String(job.source_url || `${canonicalCompany}::${headline}::${published}`).toLowerCase();
-      if (!dedupeKey) return true;
-      if (seenKeys.has(dedupeKey)) return false;
-      seenKeys.add(dedupeKey);
-      return true;
+    const bestByKey = new Map<string, (typeof rows)[number]>();
+    const orderByKey = new Map<string, number>();
+    rows.forEach((job, index) => {
+      const semanticKey = semanticJobDedupeKey(job);
+      const dedupeKey = semanticKey || normalizeDedupeValue(job.source_url) || String(job.id);
+      if (!orderByKey.has(dedupeKey)) orderByKey.set(dedupeKey, index);
+      const existing = bestByKey.get(dedupeKey);
+      if (!existing || duplicateCandidateScore(job) > duplicateCandidateScore(existing)) {
+        bestByKey.set(dedupeKey, job);
+      }
     });
+    rows = Array.from(bestByKey.entries())
+      .sort((a, b) => (orderByKey.get(a[0]) ?? 0) - (orderByKey.get(b[0]) ?? 0))
+      .map(([, job]) => job);
 
     return { rows, fallbackMode };
   }, [
@@ -1704,22 +1754,32 @@ export default function Jobs() {
                         <div
                           key={job.id}
                           data-job-item
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open details for ${(job.lang === "sv" ? job.headline_en : null) || job.headline}`}
                           onClick={() => {
                             setSelectedId(job.id);
                             setSelectedIdx(idx);
                           }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedId(job.id);
+                              setSelectedIdx(idx);
+                            }
+                          }}
                           className={cn(
-                            "cursor-pointer rounded-md border-l-2 px-3 py-2.5 transition-all duration-200",
-                            isSelected && "border-l-primary bg-primary/5 shadow-sm",
+                            "cursor-pointer rounded-md border-l-2 px-3 py-2.5 transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50",
+                            isSelected && "border-l-primary bg-primary/5 shadow-sm ring-1 ring-primary/20",
                             !isSelected && "border-l-transparent hover:bg-muted/40",
                             !isSelected && job.company_tier === "A" && "border-l-emerald-500/40",
                             !isSelected && job.company_tier === "B" && "border-l-sky-500/30",
                           )}
                         >
                           <div className="flex items-start justify-between gap-2">
-                          <h3 className="text-sm font-medium leading-snug line-clamp-1">
-                            {(job.lang === "sv" ? job.headline_en : null) || job.headline}
-                          </h3>
+                            <h3 className="text-sm font-medium leading-snug line-clamp-1">
+                              {(job.lang === "sv" ? job.headline_en : null) || job.headline}
+                            </h3>
                             <div className="flex shrink-0 items-center gap-1">
                               {watched && (
                                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
@@ -1782,6 +1842,9 @@ export default function Jobs() {
                                 <EyeOff className="mr-0.5 h-2.5 w-2.5" />
                                 Hide
                               </button>
+                              <span className="inline-flex h-4 items-center rounded border border-primary/20 px-1 text-[9px] text-primary/80">
+                                Open details
+                              </span>
                             </div>
                           </div>
 
@@ -1849,7 +1912,7 @@ export default function Jobs() {
                   </div>
                 )}
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  ↑↓ Navigate · Enter Open · Esc Close
+                  Click a role or use ↑↓ Navigate · Enter Open · Esc Close
                 </p>
               </>
             )}

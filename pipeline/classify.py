@@ -154,8 +154,12 @@ SENIOR_PATTERNS: tuple[str, ...] = (
     r"\bexpert\b",
     r"\bseasoned\b",
     r"\berfaren(?:het)?\b",
+    r"\berfarna\b",
+    r"\berfaret\b",
     r"\bflerårig\b",
+    r"\bfleråriga\b",
     r"\bflerarig\b",
+    r"\bflerariga\b",
     r"\bgedigen erfarenhet\b",
 )
 

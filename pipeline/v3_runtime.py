@@ -21,7 +21,8 @@ _HIGH_SIGNAL_BANDS = {"trusted", "verified"}
 _GRAD_STAGES = {"graduate", "trainee", "junior"}
 _SENIOR_TITLE_PATTERN = re.compile(
     r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|"
-    r"experienced|expert|seasoned|erfaren|erfarenhet|flerårig|flerarig|gedigen erfarenhet)\b",
+    r"experienced|expert|seasoned|erfaren|erfarna|erfaret|erfarenhet|flerårig|fleråriga|"
+    r"flerarig|flerariga|gedigen erfarenhet)\b",
     flags=re.IGNORECASE,
 )
 _DEFAULT_FEED_QUALITY_THRESHOLDS_PATH = "pipeline/config/feed_quality_thresholds.yaml"
