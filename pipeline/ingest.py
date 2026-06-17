@@ -827,7 +827,59 @@ class IngestionPipeline:
         if not since:
             since = (now - timedelta(days=max(1, int(since_days)))).isoformat()
 
-        events, next_cursor = self.client.get_stream_events(since=since, limit=max(1, int(limit)))
+        since_dt = self._parse_state_datetime(str(since))
+        if since_dt is None:
+            since_dt = now - timedelta(days=max(1, int(since_days)))
+            since = since_dt.isoformat()
+
+        window_end = min(since_dt + timedelta(hours=6), now)
+        cursor_value = window_end.isoformat()
+        if window_end <= since_dt:
+            report = {
+                "generated_at": now.isoformat(),
+                "apply": bool(apply),
+                "status": "no_new_window" if apply else "dry_run",
+                "cursor": {
+                    "state_key": "last_jobtech_topup_timestamp",
+                    "since": since,
+                    "window_end": cursor_value,
+                    "next": cursor_value,
+                },
+                "limits": {
+                    "limit": max(1, int(limit)),
+                    "since_days": max(1, int(since_days)),
+                    "max_age_days": max(1, int(max_age_days)),
+                },
+                "fetched": 0,
+                "prepared": 0,
+                "rejected": 0,
+                "rejection_counts": {},
+                "duplicates": 0,
+                "would_persist": 0,
+                "persisted": 0,
+                "tier_counts": {"graduate": 0, "broad": 0},
+                "sample_rows": [],
+            }
+            if apply:
+                self.storage.upsert_ingestion_state(
+                    {
+                        "last_jobtech_topup_at": now.isoformat(),
+                        "last_poll_at": now.isoformat(),
+                    }
+                )
+            return report
+
+        events, next_cursor = self.client.get_stream_events(
+            since=since,
+            limit=max(1, int(limit)),
+            until=cursor_value,
+        )
+        report_next_cursor = cursor_value
+        if next_cursor:
+            next_cursor_dt = self._parse_state_datetime(str(next_cursor))
+            if next_cursor_dt is not None and next_cursor_dt <= window_end:
+                report_next_cursor = next_cursor_dt.isoformat()
+
         jobs, tags_by_job_id, _target_count = self._prepare_records(events)
 
         rejection_counts: dict[str, int] = {}
@@ -874,7 +926,8 @@ class IngestionPipeline:
             "cursor": {
                 "state_key": "last_jobtech_topup_timestamp",
                 "since": since,
-                "next": next_cursor or now.isoformat(),
+                "window_end": cursor_value,
+                "next": report_next_cursor,
             },
             "limits": {
                 "limit": max(1, int(limit)),
@@ -912,7 +965,7 @@ class IngestionPipeline:
             events_to_store = self._build_events(jobs=deduped_jobs, existing=existing)
             self.storage.persist_batch(jobs=deduped_jobs, tags_by_job_id=filtered_tags, events=events_to_store)
 
-        cursor_value = next_cursor or now.isoformat()
+        cursor_value = report_next_cursor
         self.storage.upsert_ingestion_state(
             {
                 "last_jobtech_topup_timestamp": cursor_value,

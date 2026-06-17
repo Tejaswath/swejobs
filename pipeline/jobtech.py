@@ -142,10 +142,18 @@ class JobTechClient:
                     yield item
                 return
 
-    def get_stream_events(self, since: str | None, limit: int | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    def get_stream_events(
+        self,
+        since: str | None,
+        limit: int | None = None,
+        until: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
         """Fetch one stream page and return (events, next_cursor)."""
         updated_after = self._format_stream_datetime(since, default_minutes_back=5)
-        updated_before = self._format_stream_datetime(datetime.now(UTC).isoformat(), default_minutes_back=0)
+        updated_before = self._format_stream_datetime(
+            until or datetime.now(UTC).isoformat(),
+            default_minutes_back=0,
+        )
 
         params: dict[str, Any] = {
             "updated-after": updated_after,
@@ -182,6 +190,9 @@ class JobTechClient:
                 if isinstance(candidate, list):
                     events = [x for x in candidate if isinstance(x, dict)]
                     break
+
+        if limit is not None:
+            events = events[: max(1, int(limit))]
 
         return events, next_cursor
 

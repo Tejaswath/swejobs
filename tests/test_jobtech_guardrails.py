@@ -47,8 +47,13 @@ class FakeJobTechClient:
         self.next_cursor = "2026-06-16T01:00:00+00:00"
         self.calls: list[dict] = []
 
-    def get_stream_events(self, since: str | None, limit: int | None = None) -> tuple[list[dict], str]:
-        self.calls.append({"since": since, "limit": limit})
+    def get_stream_events(
+        self,
+        since: str | None,
+        limit: int | None = None,
+        until: str | None = None,
+    ) -> tuple[list[dict], str]:
+        self.calls.append({"since": since, "limit": limit, "until": until})
         return list(self.events[: limit or len(self.events)]), self.next_cursor
 
 
@@ -201,6 +206,7 @@ class JobTechGuardrailTests(unittest.TestCase):
         self.assertEqual(report["rejection_counts"]["senior"], 1)
         self.assertEqual(storage.persisted_batches, [])
         self.assertNotIn("last_jobtech_topup_timestamp", storage.state)
+        self.assertIsNotNone(pipeline.client.calls[0]["until"])
 
     def test_jobtech_topup_apply_persists_broad_unknown_but_not_noise(self) -> None:
         storage = FakeStorage()
@@ -236,7 +242,9 @@ class JobTechGuardrailTests(unittest.TestCase):
         self.assertEqual(report["persisted"], 1)
         self.assertEqual(report["tier_counts"]["broad"], 1)
         self.assertEqual([job["id"] for job in storage.persisted_batches[0]["jobs"]], [31])
-        self.assertEqual(storage.state["last_jobtech_topup_timestamp"], "2026-06-16T01:00:00+00:00")
+        self.assertEqual(storage.state["last_jobtech_topup_timestamp"], report["cursor"]["next"])
+        self.assertNotEqual(storage.state["last_jobtech_topup_timestamp"], "2026-06-16T01:00:00+00:00")
+        self.assertIsNotNone(pipeline.client.calls[0]["until"])
 
     def test_jobtech_topup_drops_ats_duplicate(self) -> None:
         storage = FakeStorage()

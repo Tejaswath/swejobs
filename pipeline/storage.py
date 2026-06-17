@@ -100,8 +100,9 @@ class SupabaseStorage:
     def count_active_jobs(self) -> int:
         response = self._execute(
             lambda: self.client.table("jobs")
-            .select("id", count="exact", head=True)
+            .select("id", count="exact")
             .eq("is_active", True)
+            .limit(1)
             .execute(),
             context="count active jobs",
         )
