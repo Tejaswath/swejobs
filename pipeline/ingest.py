@@ -422,6 +422,38 @@ class IngestionPipeline:
 
         return len(jobs)
 
+    def _persist_reclassification_records(self, records: list[dict[str, Any]]) -> int:
+        """Persist classification updates for existing rows without ingest dedupe.
+
+        Normal ingest dedupes aggressively to avoid duplicate cards. Reclassification
+        has a different contract: every existing row needs its classification columns
+        refreshed, including rows that are duplicates of each other.
+        """
+        jobs: list[dict[str, Any]] = []
+        tags_by_job_id: dict[int, list[str]] = {}
+        seen_job_ids: set[int] = set()
+        for raw in records:
+            try:
+                job_row, tags = self._classify_and_prepare(raw)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Reclassification parse failure for record: %s", exc)
+                continue
+
+            job_id = int(job_row["id"])
+            if job_id in seen_job_ids:
+                continue
+            seen_job_ids.add(job_id)
+            jobs.append(job_row)
+            tags_by_job_id[job_id] = tags
+
+        if not jobs:
+            return 0
+
+        existing = self.storage.fetch_existing_jobs([int(job["id"]) for job in jobs])
+        events = self._build_events(jobs=jobs, existing=existing)
+        self.storage.persist_batch(jobs=jobs, tags_by_job_id=tags_by_job_id, events=events)
+        return len(jobs)
+
     @staticmethod
     def _is_jobtech_row(job: dict[str, Any]) -> bool:
         return str(job.get("source_kind") or "").strip().lower() == "jobtech"
@@ -735,7 +767,7 @@ class IngestionPipeline:
                     logger.debug("Reclassify fallback from normalized row id=%s (raw_json missing)", row.get("id"))
 
             if records:
-                processed += self._persist_records(records=records, checkpoint_update=None)
+                processed += self._persist_reclassification_records(records)
 
             try:
                 cursor = int(rows[-1]["id"])
