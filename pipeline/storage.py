@@ -174,6 +174,21 @@ class SupabaseStorage:
         )
         return response.data or []
 
+    def fetch_active_jobtech_no_deadline_before(self, *, published_before: str, limit: int = 500) -> list[dict[str, Any]]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id,published_at,raw_json")
+            .eq("is_active", True)
+            .eq("source_kind", "jobtech")
+            .is_("application_deadline_date", "null")
+            .lt("published_at", published_before)
+            .order("id")
+            .limit(limit)
+            .execute(),
+            context="fetch active no-deadline JobTech jobs before cutoff",
+        )
+        return response.data or []
+
     def fetch_job_event_ids_before(self, *, cutoff_iso: str, limit: int = 500) -> list[int]:
         response = self._execute(
             lambda: self.client.table("job_events")
@@ -267,6 +282,27 @@ class SupabaseStorage:
                 if source_url:
                     by_url[source_url] = row
         return by_url
+
+    def fetch_active_ats_jobs_for_companies(self, companies: list[str], *, limit: int = 5000) -> list[dict[str, Any]]:
+        normalized = sorted({str(company).strip().lower() for company in companies if str(company).strip()})
+        if not normalized:
+            return []
+
+        rows: list[dict[str, Any]] = []
+        for chunk in self._chunked([{"company": value} for value in normalized], chunk_size=100):
+            values = [row["company"] for row in chunk]
+            response = self._execute(
+                lambda values=values: self.client.table("jobs")
+                .select("id,headline,employer_name,company_canonical,municipality,region,source_kind,is_active")
+                .eq("is_active", True)
+                .eq("source_kind", "direct_company_ats")
+                .in_("company_canonical", values)
+                .limit(limit)
+                .execute(),
+                context="select active ats jobs for dedup",
+            )
+            rows.extend(response.data or [])
+        return rows[:limit]
 
     # ------------------------------------------------------------------
     # Safety helpers for FK-aware inactive-job purge

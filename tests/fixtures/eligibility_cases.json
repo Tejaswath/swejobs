@@ -17,6 +17,22 @@
     "graduate_trainee": true
   },
   {
+    "name": "two years required remains graduate candidate",
+    "job": {
+      "is_active": true,
+      "is_target_role": true,
+      "is_noise": false,
+      "relevance_score": 55,
+      "headline": "Software Engineer",
+      "career_stage": "unknown",
+      "years_required_min": 2,
+      "source_kind": "direct_company_ats",
+      "source_feed_key": "trusted_feed"
+    },
+    "high_signal": true,
+    "graduate_trainee": true
+  },
+  {
     "name": "experienced title is senior",
     "job": {
       "is_active": true,

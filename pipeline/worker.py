@@ -75,8 +75,43 @@ def maybe_recalculate_user_ranking(pipeline: Any, *, interval_hours: int = 24) -
     return True
 
 
-def run_ats_only_cycle(pipeline: Any, *, max_rows: int, max_http: int) -> dict[str, Any]:
+def _next_worker_cycle(pipeline: Any) -> int:
+    storage = getattr(pipeline, "storage", None)
+    if storage is None:
+        return 1
+    try:
+        state = storage.get_ingestion_state(["worker:ats_cycle_count"])
+        current = int(state.get("worker:ats_cycle_count") or 0)
+    except Exception:
+        current = 0
+    next_cycle = current + 1
+    try:
+        storage.upsert_ingestion_state({"worker:ats_cycle_count": str(next_cycle)})
+    except Exception:
+        logger.warning("Failed to persist worker cycle counter", exc_info=True)
+    return next_cycle
+
+
+def run_ats_only_cycle(
+    pipeline: Any,
+    *,
+    max_rows: int,
+    max_http: int,
+    jobtech_topup_enabled: bool = False,
+    jobtech_topup_limit: int = 100,
+    jobtech_topup_interval_cycles: int = 6,
+    jobtech_topup_since_days: int = 21,
+    jobtech_topup_max_age_days: int = 21,
+) -> dict[str, Any]:
     report: dict[str, Any] = {}
+    cycle_count = _next_worker_cycle(pipeline)
+    report["cycle_count"] = cycle_count
+
+    try:
+        report["deadline_expiry"] = pipeline.maybe_expire_jobs_past_deadline()
+    except Exception as exc:  # noqa: BLE001
+        report["deadline_expiry_error"] = str(exc)
+        logger.exception("ATS worker deadline_expiry unexpectedly failed: %s", exc)
 
     try:
         if bool(getattr(pipeline, "over_storage_budget", lambda: False)()):
@@ -108,9 +143,28 @@ def run_ats_only_cycle(pipeline: Any, *, max_rows: int, max_http: int) -> dict[s
         report["company_feeds_error"] = str(exc)
         logger.exception("ATS sync unexpectedly failed: %s", exc)
 
+    if jobtech_topup_enabled:
+        interval = max(1, int(jobtech_topup_interval_cycles))
+        if cycle_count % interval != 0:
+            report["jobtech_topup"] = {"status": "skipped_interval", "cycle_count": cycle_count, "interval": interval}
+        elif bool(getattr(pipeline, "over_storage_budget", lambda: False)()):
+            report["jobtech_topup"] = {"status": "skipped_active_job_budget"}
+        else:
+            try:
+                report["jobtech_topup"] = pipeline.run_jobtech_topup(
+                    limit=max(1, int(jobtech_topup_limit)),
+                    apply=True,
+                    since_days=max(1, int(jobtech_topup_since_days)),
+                    max_age_days=max(1, int(jobtech_topup_max_age_days)),
+                )
+            except Exception as exc:  # noqa: BLE001
+                report["jobtech_topup_error"] = str(exc)
+                logger.exception("ATS worker jobtech_topup unexpectedly failed: %s", exc)
+    else:
+        report["jobtech_topup"] = {"status": "disabled"}
+
     for report_key, operation in (
         ("translation", pipeline.maybe_translate_jobs),
-        ("deadline_expiry", pipeline.maybe_expire_jobs_past_deadline),
         ("compaction", pipeline.maybe_run_compaction),
         ("user_ranking", lambda: maybe_recalculate_user_ranking(pipeline)),
     ):
@@ -129,11 +183,25 @@ def run_ats_only_forever(
     interval_seconds: int,
     max_rows: int,
     max_http: int,
+    jobtech_topup_enabled: bool = False,
+    jobtech_topup_limit: int = 100,
+    jobtech_topup_interval_cycles: int = 6,
+    jobtech_topup_since_days: int = 21,
+    jobtech_topup_max_age_days: int = 21,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     while True:
         started_at = time.monotonic()
-        run_ats_only_cycle(pipeline, max_rows=max_rows, max_http=max_http)
+        run_ats_only_cycle(
+            pipeline,
+            max_rows=max_rows,
+            max_http=max_http,
+            jobtech_topup_enabled=jobtech_topup_enabled,
+            jobtech_topup_limit=jobtech_topup_limit,
+            jobtech_topup_interval_cycles=jobtech_topup_interval_cycles,
+            jobtech_topup_since_days=jobtech_topup_since_days,
+            jobtech_topup_max_age_days=jobtech_topup_max_age_days,
+        )
         elapsed = time.monotonic() - started_at
         sleep(max(0, interval_seconds - elapsed))
 
@@ -159,6 +227,11 @@ def main() -> None:
             interval_seconds=settings.ats_sync_interval_seconds,
             max_rows=settings.ats_sync_row_budget,
             max_http=settings.ats_sync_http_budget,
+            jobtech_topup_enabled=settings.jobtech_topup_enabled,
+            jobtech_topup_limit=settings.jobtech_topup_limit,
+            jobtech_topup_interval_cycles=settings.jobtech_topup_interval_cycles,
+            jobtech_topup_since_days=settings.jobtech_topup_since_days,
+            jobtech_topup_max_age_days=settings.jobtech_topup_max_age_days,
         )
         return
 

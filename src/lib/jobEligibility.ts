@@ -74,7 +74,7 @@ export function isGraduateTraineeCandidate(job: EligibilityJob): boolean {
     job.years_required_min === null || job.years_required_min === undefined
       ? Number.POSITIVE_INFINITY
       : numberValue(job.years_required_min, Number.POSITIVE_INFINITY);
-  return boolValue(job.is_grad_program) || GRAD_STAGES.has(stage) || years <= 1;
+  return boolValue(job.is_grad_program) || GRAD_STAGES.has(stage) || years <= 2;
 }
 
 export type EarlyCareerBucket = "confirmed_graduate" | "junior" | "unknown_possible" | "stretch";
@@ -86,7 +86,7 @@ export function earlyCareerBucket(job: EligibilityJob): EarlyCareerBucket {
       ? Number.POSITIVE_INFINITY
       : numberValue(job.years_required_min, Number.POSITIVE_INFINITY);
   if (boolValue(job.is_grad_program) || stage === "graduate" || stage === "trainee") return "confirmed_graduate";
-  if (stage === "junior" || years <= 1) return "junior";
+  if (stage === "junior" || years <= 2) return "junior";
   if (stage === "unknown" && !hasSeniorRoleSignal(job)) return "unknown_possible";
   return "stretch";
 }

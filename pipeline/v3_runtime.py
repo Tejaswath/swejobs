@@ -263,7 +263,7 @@ def lens_matches(
             and (
                 _bool(job.get("is_grad_program"))
                 or stage in _GRAD_STAGES
-                or (years_value is not None and years_value <= 1)
+                or (years_value is not None and years_value <= 2)
             )
         )
 

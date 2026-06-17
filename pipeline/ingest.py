@@ -68,6 +68,33 @@ def _jaccard_similarity(left: set[str], right: set[str]) -> float:
     return overlap / union
 
 
+_SENIOR_STAGES = {"senior", "lead", "staff", "principal"}
+_GRAD_STAGES = {"graduate", "trainee", "junior"}
+_SENIOR_TITLE_RE = re.compile(
+    r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarenhet|flerårig|flerarig|gedigen erfarenhet)\b",
+    re.IGNORECASE,
+)
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text[:10]).date()
+    except ValueError:
+        return None
+
+
 class IngestionPipeline:
     def __init__(
         self,
@@ -95,6 +122,7 @@ class IngestionPipeline:
         compaction_weekly_digest_days: int,
         enable_translation: bool,
         max_active_jobs: int = 15000,
+        jobtech_topup_no_deadline_ttl_days: int = 30,
         libretranslate_url: str | None = None,
         translation_provider: str = "google_cloud",
         translation_api_key: str = "",
@@ -126,6 +154,7 @@ class IngestionPipeline:
         self.compaction_job_event_days = max(1, compaction_job_event_days)
         self.compaction_weekly_digest_days = max(1, compaction_weekly_digest_days)
         self.max_active_jobs = max(1, int(max_active_jobs))
+        self.jobtech_topup_no_deadline_ttl_days = max(1, int(jobtech_topup_no_deadline_ttl_days))
         self.enable_translation = bool(enable_translation)
         self.translation_provider = str(translation_provider or "google_cloud").strip().lower()
         self.translation_api_key = str(translation_api_key or "").strip()
@@ -397,31 +426,62 @@ class IngestionPipeline:
     def _is_jobtech_row(job: dict[str, Any]) -> bool:
         return str(job.get("source_kind") or "").strip().lower() == "jobtech"
 
-    def _is_persistable_jobtech_row(self, job: dict[str, Any]) -> bool:
+    @staticmethod
+    def _has_senior_role_signal(job: dict[str, Any]) -> bool:
+        headline = str(job.get("headline") or "")
+        if _SENIOR_TITLE_RE.search(headline):
+            return True
+        stage = str(job.get("career_stage") or "").strip().lower()
+        if stage in _SENIOR_STAGES:
+            return True
+        if _to_int(job.get("years_required_min"), -1) >= 3:
+            return True
+        reason_codes = job.get("reason_codes")
+        if isinstance(reason_codes, list):
+            reasons = {str(value).strip().lower() for value in reason_codes}
+            return "career_stage_senior" in reasons or "years_required_3plus" in reasons
+        return False
+
+    @staticmethod
+    def _has_market_restriction(job: dict[str, Any]) -> bool:
+        return (
+            bool(job.get("swedish_required"))
+            or bool(job.get("citizenship_required"))
+            or bool(job.get("security_clearance_required"))
+        )
+
+    @staticmethod
+    def _has_explicit_early_career_signal(job: dict[str, Any]) -> bool:
+        stage = str(job.get("career_stage") or "").strip().lower()
+        years_required = job.get("years_required_min")
+        return bool(job.get("is_grad_program")) or stage in _GRAD_STAGES or (
+            years_required is not None and _to_int(years_required, 99) <= 2
+        )
+
+    def _jobtech_route_tier(self, job: dict[str, Any]) -> str | None:
+        if not self._is_persistable_jobtech_row(job):
+            return None
+        return "graduate" if self._has_explicit_early_career_signal(job) else "broad"
+
+    def _jobtech_rejection_reason(self, job: dict[str, Any]) -> str | None:
         if not self._is_jobtech_row(job):
-            return True
-        if bool(job.get("is_target_role")):
-            return True
+            return None
         if bool(job.get("is_noise")):
-            return False
-        if bool(job.get("swedish_required")) or bool(job.get("citizenship_required")):
-            return False
-        if bool(job.get("security_clearance_required")):
-            return False
+            return "noise"
+        if self._has_market_restriction(job):
+            return "restricted"
+        if self._has_senior_role_signal(job):
+            return "senior"
 
         role_family = str(job.get("role_family") or "").strip().lower()
         if role_family in {"", "noise"}:
-            return False
+            return "non_software_role"
+        if bool(job.get("is_target_role")):
+            return None
 
-        try:
-            relevance_score = int(job.get("relevance_score") or 0)
-        except (TypeError, ValueError):
-            relevance_score = 0
-
-        if relevance_score >= 15:
-            return True
-        if bool(job.get("remote_flag")):
-            return True
+        relevance_score = _to_int(job.get("relevance_score"), 0)
+        if relevance_score >= 15 or bool(job.get("remote_flag")):
+            return None
 
         profile_region_codes = {str(value).strip() for value in getattr(self.profile, "region_codes", set()) if str(value).strip()}
         profile_region_names = {
@@ -430,7 +490,61 @@ class IngestionPipeline:
         if profile_region_codes or profile_region_names:
             region_code = str(job.get("region_code") or "").strip()
             region_name = str(job.get("region") or "").strip().lower()
-            return region_code in profile_region_codes or region_name in profile_region_names
+            if region_code in profile_region_codes or region_name in profile_region_names:
+                return None
+            return "outside_region"
+
+        return "low_relevance"
+
+    def _is_persistable_jobtech_row(self, job: dict[str, Any]) -> bool:
+        if not self._is_jobtech_row(job):
+            return True
+        return self._jobtech_rejection_reason(job) is None
+
+    def _jobtech_topup_age_rejection_reason(
+        self,
+        job: dict[str, Any],
+        *,
+        now: datetime,
+        max_age_days: int,
+    ) -> str | None:
+        deadline_date = _parse_iso_date(job.get("application_deadline_date") or job.get("application_deadline"))
+        if deadline_date is not None and deadline_date < now.astimezone(self.local_timezone).date():
+            return "expired"
+
+        published_date = _parse_iso_date(job.get("published_at"))
+        if published_date is not None:
+            cutoff = now.date() - timedelta(days=max(1, int(max_age_days)))
+            if published_date < cutoff:
+                return "stale"
+        return None
+
+    @staticmethod
+    def _is_ats_duplicate(job: dict[str, Any], ats_rows: list[dict[str, Any]]) -> bool:
+        company = _normalize_match_text(str(job.get("company_canonical") or job.get("employer_name") or ""))
+        if not company:
+            return False
+        location = _normalize_match_text(" ".join([str(job.get("municipality") or ""), str(job.get("region") or "")]))
+        headline_tokens = _headline_tokens(str(job.get("headline") or ""))
+        if len(headline_tokens) < 2:
+            return False
+
+        for existing in ats_rows:
+            existing_company = _normalize_match_text(
+                str(existing.get("company_canonical") or existing.get("employer_name") or "")
+            )
+            if company != existing_company:
+                continue
+
+            existing_location = _normalize_match_text(
+                " ".join([str(existing.get("municipality") or ""), str(existing.get("region") or "")])
+            )
+            if location and existing_location and location != existing_location:
+                continue
+
+            existing_tokens = _headline_tokens(str(existing.get("headline") or ""))
+            if _jaccard_similarity(headline_tokens, existing_tokens) >= 0.75:
+                return True
 
         return False
 
@@ -689,6 +803,127 @@ class IngestionPipeline:
         logger.info("Stream poll processed rows=%s", processed)
         return processed
 
+    def run_jobtech_topup(
+        self,
+        *,
+        limit: int,
+        apply: bool = False,
+        since_days: int = 21,
+        max_age_days: int = 21,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        if self.over_storage_budget():
+            return {
+                "generated_at": now.isoformat(),
+                "apply": bool(apply),
+                "status": "skipped_active_job_budget",
+                "fetched": 0,
+                "would_persist": 0,
+                "persisted": 0,
+            }
+
+        state = self.storage.get_ingestion_state(["last_jobtech_topup_timestamp"])
+        since = state.get("last_jobtech_topup_timestamp")
+        if not since:
+            since = (now - timedelta(days=max(1, int(since_days)))).isoformat()
+
+        events, next_cursor = self.client.get_stream_events(since=since, limit=max(1, int(limit)))
+        jobs, tags_by_job_id, _target_count = self._prepare_records(events)
+
+        rejection_counts: dict[str, int] = {}
+        candidate_jobs: list[dict[str, Any]] = []
+        for job in jobs:
+            reason = self._jobtech_rejection_reason(job) or self._jobtech_topup_age_rejection_reason(
+                job,
+                now=now,
+                max_age_days=max_age_days,
+            )
+            if reason:
+                rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+                continue
+            candidate_jobs.append(job)
+
+        companies = [
+            str(job.get("company_canonical") or job.get("employer_name") or "").strip().lower()
+            for job in candidate_jobs
+            if self._is_jobtech_row(job)
+        ]
+        fetch_ats = getattr(self.storage, "fetch_active_ats_jobs_for_companies", None)
+        ats_rows = fetch_ats(companies) if callable(fetch_ats) else []
+
+        deduped_jobs: list[dict[str, Any]] = []
+        duplicate_count = 0
+        for job in candidate_jobs:
+            if self._is_jobtech_row(job) and self._is_ats_duplicate(job, ats_rows):
+                duplicate_count += 1
+                continue
+            deduped_jobs.append(job)
+
+        deduped_ids = {int(job["id"]) for job in deduped_jobs}
+        filtered_tags = {job_id: tags for job_id, tags in tags_by_job_id.items() if job_id in deduped_ids}
+        tier_counts = {"graduate": 0, "broad": 0}
+        for job in deduped_jobs:
+            tier = self._jobtech_route_tier(job)
+            if tier in tier_counts:
+                tier_counts[tier] += 1
+
+        report: dict[str, Any] = {
+            "generated_at": now.isoformat(),
+            "apply": bool(apply),
+            "status": "dry_run",
+            "cursor": {
+                "state_key": "last_jobtech_topup_timestamp",
+                "since": since,
+                "next": next_cursor or now.isoformat(),
+            },
+            "limits": {
+                "limit": max(1, int(limit)),
+                "since_days": max(1, int(since_days)),
+                "max_age_days": max(1, int(max_age_days)),
+            },
+            "fetched": len(events),
+            "prepared": len(jobs),
+            "rejected": sum(rejection_counts.values()),
+            "rejection_counts": rejection_counts,
+            "duplicates": duplicate_count,
+            "would_persist": len(deduped_jobs),
+            "persisted": 0,
+            "tier_counts": tier_counts,
+            "sample_rows": [
+                {
+                    "id": job.get("id"),
+                    "headline": job.get("headline"),
+                    "employer_name": job.get("employer_name"),
+                    "career_stage": job.get("career_stage"),
+                    "years_required_min": job.get("years_required_min"),
+                    "relevance_score": job.get("relevance_score"),
+                    "route_tier": self._jobtech_route_tier(job),
+                    "source_url": job.get("source_url"),
+                }
+                for job in deduped_jobs[:10]
+            ],
+        }
+
+        if not apply:
+            return report
+
+        if deduped_jobs:
+            existing = self.storage.fetch_existing_jobs([int(job["id"]) for job in deduped_jobs])
+            events_to_store = self._build_events(jobs=deduped_jobs, existing=existing)
+            self.storage.persist_batch(jobs=deduped_jobs, tags_by_job_id=filtered_tags, events=events_to_store)
+
+        cursor_value = next_cursor or now.isoformat()
+        self.storage.upsert_ingestion_state(
+            {
+                "last_jobtech_topup_timestamp": cursor_value,
+                "last_jobtech_topup_at": now.isoformat(),
+                "last_poll_at": now.isoformat(),
+            }
+        )
+        report["status"] = "applied"
+        report["persisted"] = len(deduped_jobs)
+        return report
+
     def compact_storage(
         self,
         *,
@@ -715,6 +950,7 @@ class IngestionPipeline:
                 "inactive_jobs_before": inactive_job_cutoff,
                 "job_events_before": job_event_cutoff,
                 "weekly_digests_before": weekly_digest_cutoff,
+                "jobtech_no_deadline_before": (now - timedelta(days=self.jobtech_topup_no_deadline_ttl_days)).isoformat(),
             },
         }
 
@@ -728,8 +964,10 @@ class IngestionPipeline:
             report["status"] = "dry_run"
             return report
 
+        no_deadline_cutoff = report["cutoffs"]["jobtech_no_deadline_before"]
         summary = {
             "raw_json_cleared": 0,
+            "jobtech_no_deadline_deactivated": 0,
             "inactive_jobs_deleted": 0,
             "inactive_jobs_referenced_preserved": 0,
             "job_events_deleted": 0,
@@ -739,6 +977,7 @@ class IngestionPipeline:
             "raw_json": 0,
             "job_events": 0,
             "weekly_digests": 0,
+            "jobtech_no_deadline": 0,
             "inactive_jobs": 0,
         }
         phases_at_limit: list[str] = []
@@ -775,6 +1014,25 @@ class IngestionPipeline:
                 break
         else:
             phases_at_limit.append("weekly_digests")
+
+        for _ in range(max_batches_per_phase):
+            rows = self.storage.fetch_active_jobtech_no_deadline_before(
+                published_before=no_deadline_cutoff,
+                limit=batch_size,
+            )
+            if not rows:
+                break
+            job_ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+            if not job_ids:
+                break
+            batches["jobtech_no_deadline"] += 1
+            removed_at = datetime.now(UTC).isoformat()
+            summary["jobtech_no_deadline_deactivated"] += self.storage.deactivate_jobs(job_ids, removed_at=removed_at)
+            self.storage.insert_job_events(self._build_removed_events_from_existing(rows=rows, event_time=removed_at))
+            if len(job_ids) < batch_size:
+                break
+        else:
+            phases_at_limit.append("jobtech_no_deadline")
 
         inactive_cursor = 0
         for _ in range(max_batches_per_phase):
@@ -820,8 +1078,9 @@ class IngestionPipeline:
         # still-bounded worker drain while keeping the manual CLI conservative.
         report = self.compact_storage(confirm=True, max_batches_per_phase=50)
         logger.info(
-            "Storage compaction complete. raw_json_cleared=%s inactive_jobs_deleted=%s inactive_jobs_referenced_preserved=%s job_events_deleted=%s weekly_digests_deleted=%s",
+            "Storage compaction complete. raw_json_cleared=%s jobtech_no_deadline_deactivated=%s inactive_jobs_deleted=%s inactive_jobs_referenced_preserved=%s job_events_deleted=%s weekly_digests_deleted=%s",
             report.get("summary", {}).get("raw_json_cleared", 0),
+            report.get("summary", {}).get("jobtech_no_deadline_deactivated", 0),
             report.get("summary", {}).get("inactive_jobs_deleted", 0),
             report.get("summary", {}).get("inactive_jobs_referenced_preserved", 0),
             report.get("summary", {}).get("job_events_deleted", 0),

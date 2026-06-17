@@ -9,6 +9,7 @@ class FakePipeline:
     def __init__(self, *, over_budget: bool = False) -> None:
         self.calls: list[tuple] = []
         self.over_budget = over_budget
+        self.storage = None
 
     def over_storage_budget(self) -> bool:
         self.calls.append(("budget_check",))
@@ -33,6 +34,10 @@ class FakePipeline:
     def run_stream_once(self, *, limit: int) -> int:
         raise AssertionError("ATS-only worker must never poll JobTech")
 
+    def run_jobtech_topup(self, *, limit: int, apply: bool, since_days: int, max_age_days: int) -> dict:
+        self.calls.append(("jobtech_topup", limit, apply, since_days, max_age_days))
+        return {"status": "applied", "persisted": 3}
+
 
 class WorkerModeTests(unittest.TestCase):
     def test_ats_only_cycle_never_polls_jobtech(self) -> None:
@@ -43,10 +48,10 @@ class WorkerModeTests(unittest.TestCase):
         self.assertEqual(
             pipeline.calls,
             [
+                ("deadline_expiry",),
                 ("budget_check",),
                 ("company_feeds", 2000, 100),
                 ("translation",),
-                ("deadline_expiry",),
                 ("compaction",),
             ],
         )
@@ -62,14 +67,31 @@ class WorkerModeTests(unittest.TestCase):
         self.assertEqual(
             pipeline.calls,
             [
+                ("deadline_expiry",),
                 ("budget_check",),
                 ("translation",),
-                ("deadline_expiry",),
                 ("compaction",),
             ],
         )
         self.assertEqual(report["company_feeds_skipped"], "active_job_budget")
         self.assertEqual(report["deadline_expiry"]["expired_rows"], 2)
+
+    def test_ats_only_cycle_runs_enabled_topup_on_interval(self) -> None:
+        pipeline = FakePipeline()
+
+        report = run_ats_only_cycle(
+            pipeline,
+            max_rows=2000,
+            max_http=100,
+            jobtech_topup_enabled=True,
+            jobtech_topup_limit=50,
+            jobtech_topup_interval_cycles=1,
+            jobtech_topup_since_days=21,
+            jobtech_topup_max_age_days=21,
+        )
+
+        self.assertIn(("jobtech_topup", 50, True, 21, 21), pipeline.calls)
+        self.assertEqual(report["jobtech_topup"]["persisted"], 3)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,7 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
         compaction_job_event_days=settings.compaction_job_event_days,
         compaction_weekly_digest_days=settings.compaction_weekly_digest_days,
         max_active_jobs=settings.max_active_jobs,
+        jobtech_topup_no_deadline_ttl_days=settings.jobtech_topup_no_deadline_ttl_days,
         enable_translation=settings.enable_translation,
         translation_provider=settings.translation_provider,
         translation_api_key=settings.translation_api_key,
@@ -95,6 +96,14 @@ def parse_args() -> argparse.Namespace:
 
     stream_once = sub.add_parser("poll-once", help="Run one stream polling pass")
     stream_once.add_argument("--limit", type=int, default=None)
+
+    jobtech_topup = sub.add_parser("jobtech-topup", help="Run bounded JobTech top-up using its own cursor")
+    jobtech_topup.add_argument("--limit", type=int, default=None)
+    jobtech_topup.add_argument("--since-days", type=int, default=None)
+    jobtech_topup.add_argument("--max-age-days", type=int, default=None)
+    mode = jobtech_topup.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Report candidates without persisting or advancing cursor")
+    mode.add_argument("--apply", action="store_true", help="Persist useful rows and advance the top-up cursor")
 
     sub.add_parser("poll", help="Run continuous stream polling")
 
@@ -276,6 +285,17 @@ def main() -> None:
     if args.command == "poll-once":
         count = pipeline.run_stream_once(limit=args.limit)
         print(f"poll_rows={count}")
+        return
+
+    if args.command == "jobtech-topup":
+        settings = load_settings()
+        report = pipeline.run_jobtech_topup(
+            limit=args.limit if args.limit is not None else settings.jobtech_topup_limit,
+            apply=bool(args.apply),
+            since_days=args.since_days if args.since_days is not None else settings.jobtech_topup_since_days,
+            max_age_days=args.max_age_days if args.max_age_days is not None else settings.jobtech_topup_max_age_days,
+        )
+        print(json.dumps(report, indent=2))
         return
 
     if args.command == "poll":

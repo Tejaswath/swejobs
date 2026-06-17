@@ -37,6 +37,12 @@ class Settings:
     compaction_job_event_days: int
     compaction_weekly_digest_days: int
     max_active_jobs: int
+    jobtech_topup_enabled: bool
+    jobtech_topup_limit: int
+    jobtech_topup_interval_cycles: int
+    jobtech_topup_since_days: int
+    jobtech_topup_max_age_days: int
+    jobtech_topup_no_deadline_ttl_days: int
     enable_translation: bool
     translation_provider: str
     translation_api_key: str
@@ -106,10 +112,16 @@ def load_settings() -> Settings:
         stream_reset_stale_cursor_hours=int(os.getenv("STREAM_RESET_STALE_CURSOR_HOURS", "24")),
         compaction_interval_hours=int(os.getenv("COMPACTION_INTERVAL_HOURS", "24")),
         compaction_raw_json_days=int(os.getenv("COMPACTION_RAW_JSON_DAYS", "2")),
-        compaction_inactive_job_days=int(os.getenv("COMPACTION_INACTIVE_JOB_DAYS", "60")),
-        compaction_job_event_days=int(os.getenv("COMPACTION_JOB_EVENT_DAYS", "30")),
+        compaction_inactive_job_days=int(os.getenv("COMPACTION_INACTIVE_JOB_DAYS", "7")),
+        compaction_job_event_days=int(os.getenv("COMPACTION_JOB_EVENT_DAYS", "14")),
         compaction_weekly_digest_days=int(os.getenv("COMPACTION_WEEKLY_DIGEST_DAYS", "180")),
         max_active_jobs=max(1, int(os.getenv("MAX_ACTIVE_JOBS", "15000"))),
+        jobtech_topup_enabled=_bool("JOBTECH_TOPUP_ENABLED", False),
+        jobtech_topup_limit=max(1, int(os.getenv("JOBTECH_TOPUP_LIMIT", "100"))),
+        jobtech_topup_interval_cycles=max(1, int(os.getenv("JOBTECH_TOPUP_INTERVAL_CYCLES", "6"))),
+        jobtech_topup_since_days=max(1, int(os.getenv("JOBTECH_TOPUP_SINCE_DAYS", "21"))),
+        jobtech_topup_max_age_days=max(1, int(os.getenv("JOBTECH_TOPUP_MAX_AGE_DAYS", "21"))),
+        jobtech_topup_no_deadline_ttl_days=max(1, int(os.getenv("JOBTECH_TOPUP_NO_DEADLINE_TTL_DAYS", "30"))),
         enable_translation=_bool("ENABLE_TRANSLATION", False),
         translation_provider=translation_provider,
         translation_api_key=os.getenv("TRANSLATION_API_KEY", "").strip(),

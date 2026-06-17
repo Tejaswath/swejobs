@@ -169,7 +169,7 @@ describe("Jobs page", () => {
     );
     expect(await screen.findByRole("heading", { name: "Explore" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "High Signal" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Broad Discovery" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "For You" })).toBeInTheDocument();
   });
 
   it("opens a populated job detail panel without crashing", async () => {

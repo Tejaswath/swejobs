@@ -11,9 +11,12 @@ class CompactStorageFake:
         self.raw_json_ids: list[int] = []
         self.event_ids: list[int] = []
         self.digest_ids: list[int] = []
+        self.no_deadline_rows: list[dict] = []
         self.inactive_ids: list[int] = [10, 11, 12, 13]
         self.referenced_ids: set[int] = {11, 13}
         self.deleted_job_calls: list[list[int]] = []
+        self.deactivated_calls: list[list[int]] = []
+        self.inserted_events: list[dict] = []
 
     def count_jobs_with_raw_json_before(self, cutoff_iso: str) -> int:
         return len(self.raw_json_ids)
@@ -44,6 +47,18 @@ class CompactStorageFake:
 
     def delete_weekly_digests_by_ids(self, digest_ids: list[int]) -> int:
         return len(digest_ids)
+
+    def fetch_active_jobtech_no_deadline_before(self, *, published_before: str, limit: int = 500) -> list[dict]:
+        rows = self.no_deadline_rows[:limit]
+        self.no_deadline_rows = self.no_deadline_rows[limit:]
+        return rows
+
+    def deactivate_jobs(self, job_ids: list[int], *, removed_at: str) -> int:
+        self.deactivated_calls.append(list(job_ids))
+        return len(job_ids)
+
+    def insert_job_events(self, events: list[dict]) -> None:
+        self.inserted_events.extend(events)
 
     def fetch_inactive_job_ids_before_with_cursor(
         self,
@@ -87,10 +102,12 @@ class CompactStorageSafetyTests(unittest.TestCase):
             stream_reset_stale_cursor_hours=24,
             compaction_interval_hours=24,
             compaction_raw_json_days=7,
-            compaction_inactive_job_days=60,
-            compaction_job_event_days=30,
+            compaction_inactive_job_days=7,
+            compaction_job_event_days=14,
             compaction_weekly_digest_days=180,
             enable_translation=False,
+            max_active_jobs=15000,
+            jobtech_topup_no_deadline_ttl_days=30,
             libretranslate_url="http://localhost:5000/translate",
             translation_interval_polls=10,
             translation_batch_size=20,
@@ -132,6 +149,26 @@ class CompactStorageSafetyTests(unittest.TestCase):
         self.assertEqual(report["batches"]["raw_json"], 2)
         self.assertIn("raw_json", report["phases_at_limit"])
         self.assertEqual(storage.raw_json_ids, [5])
+
+    def test_no_deadline_jobtech_is_deactivated_not_deleted_same_cycle(self) -> None:
+        storage = CompactStorageFake()
+        storage.no_deadline_rows = [{"id": 90, "raw_json": {"headline": "Old no-deadline JobTech"}}]
+        storage.inactive_ids = []
+        pipeline = self._build_pipeline(storage)
+
+        report = pipeline.compact_storage(confirm=True, batch_size=10)
+
+        self.assertEqual(report["summary"]["jobtech_no_deadline_deactivated"], 1)
+        self.assertEqual(storage.deactivated_calls, [[90]])
+        self.assertEqual(storage.deleted_job_calls, [])
+        self.assertEqual([event["event_type"] for event in storage.inserted_events], ["removed"])
+
+    def test_compaction_defaults_keep_recovery_and_event_windows(self) -> None:
+        storage = CompactStorageFake()
+        pipeline = self._build_pipeline(storage)
+
+        self.assertEqual(pipeline.compaction_inactive_job_days, 7)
+        self.assertEqual(pipeline.compaction_job_event_days, 14)
 
 
 if __name__ == "__main__":

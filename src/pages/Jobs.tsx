@@ -63,7 +63,7 @@ type DeadlineFocus = "none" | "today" | "week" | "upcoming";
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
   { id: "high_signal", label: "High Signal", description: "ATS-first, high-confidence relevant roles" },
-  { id: "broad", label: "Broad Discovery", description: "Wider active discovery while still filtering noise" },
+  { id: "broad", label: "For You", description: "ATS plus useful JobTech discovery, ranked for fit" },
   { id: "graduate_trainee", label: "Graduate / Trainee", description: "Early-career and program roles" },
 ];
 
@@ -75,6 +75,12 @@ const JOB_SORT_OPTIONS: Array<{ id: JobSort; label: string }> = [
 ];
 
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, C: 2, unknown: 3 };
+const EARLY_CAREER_LABELS = {
+  confirmed_graduate: "confirmed graduate",
+  junior: "junior",
+  unknown_possible: "experience unspecified",
+  stretch: "stretch",
+} as const;
 
 function normalizeCompanyName(value: string | null | undefined): string {
   return normalizeCompanyKey(value);
@@ -251,7 +257,7 @@ export default function Jobs() {
     if (value === "broad" || value === "graduate_trainee" || value === "high_signal") {
       return value;
     }
-    return "high_signal";
+    return "broad";
   });
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [lang, setLang] = useState(() => searchParams.get("lang") ?? "all");
@@ -400,7 +406,7 @@ export default function Jobs() {
         query = query
           .eq("is_noise", false)
           .gte("relevance_score", 15)
-          .or("is_grad_program.eq.true,career_stage.in.(graduate,trainee,junior),years_required_min.lte.1");
+          .or("is_grad_program.eq.true,career_stage.in.(graduate,trainee,junior),years_required_min.lte.2");
       } else if (lens === "broad") {
         query = query.eq("is_noise", false);
       }
@@ -929,7 +935,7 @@ export default function Jobs() {
 
   const hasActiveFilters =
     deadlineFocus !== "none" ||
-    lens !== "high_signal" ||
+    lens !== "broad" ||
     sortBy !== "relevance" ||
     lang !== "all" ||
     remoteOnly ||
@@ -954,7 +960,7 @@ export default function Jobs() {
     Number(hiddenJobIds.size > 0);
 
   const clearFilters = () => {
-    setLens("high_signal");
+    setLens("broad");
     setSearch("");
     setLang("all");
     setRemoteOnly(false);
@@ -1791,11 +1797,13 @@ export default function Jobs() {
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
                             {job.lang && <span>{job.lang.toUpperCase()}</span>}
-                            {lens === "graduate_trainee" ? (
-                              <span>{careerBucket.replaceAll("_", " ")}</span>
-                            ) : stage !== "unknown" ? (
-                              <span>{stage}</span>
-                            ) : null}
+                            <span>
+                              {lens === "graduate_trainee" || careerBucket !== "stretch"
+                                ? EARLY_CAREER_LABELS[careerBucket]
+                                : stage !== "unknown"
+                                  ? stage
+                                  : "experience unspecified"}
+                            </span>
                             <span>{formatDeadlineDisplay(job.application_deadline)}</span>
                           </div>
                           {suitability?.reasons[0] ? (

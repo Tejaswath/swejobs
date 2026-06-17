@@ -19,6 +19,12 @@ class RelevanceContractTests(unittest.TestCase):
             with self.subTest(icon=icon):
                 self.assertIn(icon, lucide_import)
 
+    def test_explore_defaults_to_for_you_broad_lens(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        self.assertIn('{ id: "broad", label: "For You"', jobs_page)
+        self.assertIn('return "broad";', jobs_page)
+        self.assertIn('setLens("broad");', jobs_page)
+
     def test_apply_link_auto_tracks_application(self) -> None:
         jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
         self.assertIn("const trackApplyClick = () =>", jobs_page)
