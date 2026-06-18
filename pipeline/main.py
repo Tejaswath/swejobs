@@ -96,6 +96,15 @@ def parse_args() -> argparse.Namespace:
     reclassify.add_argument("--limit", type=int, default=None)
     reclassify.add_argument("--include-inactive", action="store_true")
 
+    reingest_jobtech = sub.add_parser(
+        "reingest-jobtech-active",
+        help="Bounded repair fetch for active JobTech rows; never uses snapshot/stream cursors",
+    )
+    reingest_jobtech.add_argument("--limit", type=int, default=500)
+    reingest_mode = reingest_jobtech.add_mutually_exclusive_group()
+    reingest_mode.add_argument("--dry-run", action="store_true", help="Report URL changes without persisting")
+    reingest_mode.add_argument("--apply", action="store_true", help="Persist refreshed active JobTech rows")
+
     stream_once = sub.add_parser("poll-once", help="Run one stream polling pass")
     stream_once.add_argument("--limit", type=int, default=None)
 
@@ -282,6 +291,11 @@ def main() -> None:
     if args.command == "reclassify":
         count = pipeline.reclassify_existing(limit=args.limit, active_only=not args.include_inactive)
         print(f"reclassified_rows={count}")
+        return
+
+    if args.command == "reingest-jobtech-active":
+        report = pipeline.reingest_active_jobtech(limit=args.limit, apply=bool(args.apply))
+        print(json.dumps(report, indent=2))
         return
 
     if args.command == "poll-once":

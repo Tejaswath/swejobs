@@ -232,9 +232,25 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     employment_type = _to_text(_first(raw, "employment_type.label", "employment_type"))
     working_hours = _to_text(_first(raw, "working_hours_type.label", "working_hours"))
 
-    source_url = _to_text(
-        _first(
-            raw,
+    source_name = _to_text(_first(raw, "source_name", "source.name")) or "jobtech"
+    source_kind = _to_text(_first(raw, "source_kind")) or (
+        "jobtech" if source_name == "jobtech" else "direct_company_ats"
+    )
+    if source_kind == "jobtech":
+        source_url_paths = (
+            "application_details.url",
+            "apply_url",
+            "webpage_url",
+            "source_url",
+            "absolute_url",
+            "hosted_url",
+            "url",
+            "external_url",
+        )
+    else:
+        # Preserve the established direct-ATS precedence exactly. Company-feed
+        # adapters already provide their canonical application URL.
+        source_url_paths = (
             "webpage_url",
             "source_url",
             "application_details.url",
@@ -244,7 +260,7 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "external_url",
             "apply_url",
         )
-    )
+    source_url = _to_text(_first(raw, *source_url_paths))
     application_deadline = _parse_deadline_date(_first(raw, "application_deadline", "last_application_date"))
 
     published_at = _parse_datetime(_first(raw, "publication_date", "published_at", "created"))
@@ -259,12 +275,8 @@ def normalize_job(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
     tags = extract_tags(raw, headline, description)
 
-    source_name = _to_text(_first(raw, "source_name", "source.name")) or "jobtech"
     source_provider = _to_text(_first(raw, "source_provider")) or (
         source_name if source_name not in {"", "jobtech"} else None
-    )
-    source_kind = _to_text(_first(raw, "source_kind")) or (
-        "jobtech" if source_name == "jobtech" else "direct_company_ats"
     )
     source_feed_key = _to_text(_first(raw, "source_feed_key"))
     source_company_key = _to_text(_first(raw, "source_company_key", "company_canonical"))

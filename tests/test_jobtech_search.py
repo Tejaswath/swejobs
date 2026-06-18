@@ -116,6 +116,15 @@ class JobTechSearchTests(unittest.TestCase):
         self.assertEqual(result["offset"], 2000)
         self.assertEqual(result["hits"], [{"id": "1"}])
 
+    def test_get_job_by_id_uses_sibling_ad_endpoint(self) -> None:
+        client, session = self.make_client({"id": "31103660", "headline": "Python Software Engineer"})
+
+        result = client.get_job_by_id("31103660")
+
+        self.assertEqual(result["id"], "31103660")
+        self.assertEqual(session.calls[0]["url"], "https://example.test/ad/31103660")
+        self.assertEqual(session.calls[0]["headers"], {"accept": "application/json"})
+
 
 if __name__ == "__main__":
     unittest.main()

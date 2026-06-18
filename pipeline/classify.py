@@ -119,6 +119,15 @@ CLINICAL_DBT_TITLE_PATTERNS: tuple[str, ...] = (
     r"\bdialektisk beteendeterapi\b",
 )
 
+AMBIGUOUS_ENGINEERING_TITLE_PATTERNS: tuple[str, ...] = (
+    r"\bautomation(?:\s+\w+){0,2}\s+engineer\b",
+    r"\bautomations?ingenj[oö]r\b",
+    r"\bscada\b.*\b(?:engineer|integrator|specialist|ingenj[oö]r)\b",
+    r"\b(?:engineer|integrator|specialist|ingenj[oö]r)\b.*\bscada\b",
+    r"\bsystems?(?:\s+\w+){0,2}\s+engineer\b",
+    r"\bsystemingenj[oö]r\b",
+)
+
 GRAD_PROGRAM_PATTERNS: tuple[str, ...] = (
     r"\bgraduate\b",
     r"\bnew grad\b",
@@ -502,9 +511,24 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
     grad_without_cs = is_grad_program and not has_cs_signal
 
     exclusion_text = f"{headline} {occupation_label}"
-    has_exclusion = _contains_exclusion_term(exclusion_text, profile.exclude_domains) or grad_without_cs
+    excluded_title = _contains_exclusion_term(exclusion_text, profile.exclude_domains)
+    ambiguous_title = _matches(AMBIGUOUS_ENGINEERING_TITLE_PATTERNS, headline.lower()) > 0
+    has_software_evidence = _contains_exclusion_term(
+        headline,
+        profile.software_evidence_title_terms,
+    ) or _contains_exclusion_term(
+        description,
+        profile.software_evidence_description_terms,
+    )
+    ambiguous_without_software = ambiguous_title and not has_software_evidence
+    has_exclusion = excluded_title or grad_without_cs or ambiguous_without_software
     if has_exclusion:
-        _add_reason(reason_codes, "excluded_domain_hit" if not grad_without_cs else "non_cs_grad_program")
+        if ambiguous_without_software:
+            _add_reason(reason_codes, "ambiguous_title_without_software_evidence")
+        elif grad_without_cs:
+            _add_reason(reason_codes, "non_cs_grad_program")
+        else:
+            _add_reason(reason_codes, "excluded_domain_hit")
         relevance_score -= scoring.get("exclusion_penalty", 60)
 
     if role_family != "noise":

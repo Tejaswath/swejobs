@@ -1,5 +1,5 @@
-version: 5
-updated_at: "2026-06-14"
+version: 6
+updated_at: "2026-06-18"
 
 role_families:
   include:
@@ -16,6 +16,17 @@ role_families:
     - full_stack
   exclude_domains:
     - mechanical
+    - mechanical engineer
+    - mechanical design engineer
+    - ui ux designer
+    - ux ui designer
+    - user experience designer
+    - user interface designer
+    - nvh engineer
+    - nvh test engineer
+    - noise vibration harshness
+    - acoustic engineer
+    - acoustics engineer
     - civil
     - electrician
     - plumber
@@ -77,6 +88,7 @@ role_families:
     - chemical
     - electronics engineer
     - electrical engineer
+    - electrical design engineer
     - power systems
     - researcher
     - research scientist
@@ -84,6 +96,49 @@ role_families:
     - technical writer
     - documentation specialist
     - marketing engineer
+  software_evidence:
+    # Ambiguous automation/SCADA/systems titles are retained only when the
+    # title or description contains one of these explicit software signals.
+    title_terms:
+      - software
+      - mjukvara
+      - embedded
+      - inbyggd
+      - firmware
+      - developer
+      - utvecklare
+      - programmerare
+      - backend
+      - frontend
+      - fullstack
+      - full stack
+      - data
+      - cloud
+      - devops
+      - platform
+      - security
+      - cyber
+      - machine learning
+      - ai
+    description_terms:
+      - software development
+      - software engineering
+      - develop software
+      - developing software
+      - mjukvaruutveckling
+      - embedded software
+      - firmware development
+      - write code
+      - writing code
+      - programming in
+      - programmera i
+      - backend services
+      - web applications
+      - data pipelines
+      - cloud platform
+      - api development
+      - microservices
+      - ci cd
 
 regions:
   # Empty = all Sweden by default.

@@ -5,6 +5,7 @@ import logging
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
 
@@ -257,6 +258,23 @@ class JobTechClient:
             "offset": normalized_offset,
             "limit": normalized_limit,
         }
+
+    def get_job_by_id(self, job_id: str | int) -> dict[str, Any] | None:
+        """Fetch one current JobSearch ad without using snapshot or stream APIs."""
+        normalized_id = str(job_id).strip()
+        if not normalized_id:
+            return None
+
+        parsed = urlsplit(self.search_url)
+        base_path = parsed.path.rsplit("/", 1)[0]
+        ad_path = f"{base_path}/ad/{quote(normalized_id, safe='')}"
+        ad_url = urlunsplit((parsed.scheme, parsed.netloc, ad_path, "", ""))
+        response = self._get(ad_url, headers={"accept": "application/json"})
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else None
 
     def fetch_taxonomy(self, limit: int | None = None) -> list[dict[str, Any]]:
         response = self._get(self.taxonomy_url)
