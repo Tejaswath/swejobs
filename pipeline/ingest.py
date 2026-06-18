@@ -839,6 +839,130 @@ class IngestionPipeline:
         )
         return processed
 
+    @staticmethod
+    def _jobtech_external_id_for_reingest(row: dict[str, Any]) -> str | None:
+        raw = row.get("raw_json")
+        if isinstance(raw, dict):
+            for key in ("id", "external_id", "ad_id"):
+                value = str(raw.get(key) or "").strip()
+                if value:
+                    return value
+
+        source_url = str(row.get("source_url") or "").strip()
+        for pattern in (
+            r"/annonser/(\d+)(?:[/?#]|$)",
+            r"/ad/([^/?#]+)(?:[/?#]|$)",
+            r"[?&](?:id|ad_id)=([^&#]+)",
+        ):
+            match = re.search(pattern, source_url, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+
+        row_id = row.get("id")
+        if row_id is not None and str(row_id).strip().isdigit():
+            return str(row_id).strip()
+        return None
+
+    def reingest_active_jobtech(self, *, limit: int, apply: bool = False) -> dict[str, Any]:
+        """Re-fetch a capped set of active JobTech ads by id.
+
+        This intentionally avoids snapshot/stream state and is safe to dry-run.
+        It exists for repairs that require source payload fields unavailable
+        after raw_json compaction, such as employer application URLs.
+        """
+        bounded_limit = max(1, min(5000, int(limit)))
+        cursor = 0
+        scanned = 0
+        fetched = 0
+        missing_external_id = 0
+        not_found = 0
+        fetch_errors = 0
+        id_mismatches = 0
+        changed_urls = 0
+        records: list[dict[str, Any]] = []
+        samples: list[dict[str, Any]] = []
+
+        while scanned < bounded_limit:
+            fetch_limit = min(self.batch_size, bounded_limit - scanned)
+            rows = self.storage.fetch_active_jobtech_reingest_batch(
+                after_id=cursor,
+                limit=fetch_limit,
+            )
+            if not rows:
+                break
+
+            for row in rows:
+                scanned += 1
+                external_id = self._jobtech_external_id_for_reingest(row)
+                if not external_id:
+                    missing_external_id += 1
+                    continue
+                try:
+                    raw = self.client.get_job_by_id(external_id)
+                except Exception as exc:  # noqa: BLE001
+                    fetch_errors += 1
+                    logger.warning("JobTech re-ingest fetch failed id=%s error=%s", external_id, exc)
+                    continue
+                if not raw:
+                    not_found += 1
+                    continue
+
+                try:
+                    normalized, _ = normalize_job(raw)
+                except Exception as exc:  # noqa: BLE001
+                    fetch_errors += 1
+                    logger.warning("JobTech re-ingest normalize failed id=%s error=%s", external_id, exc)
+                    continue
+
+                stored_id = int(row["id"])
+                if int(normalized["id"]) != stored_id:
+                    id_mismatches += 1
+                    logger.warning(
+                        "Skipping JobTech re-ingest id mismatch external_id=%s stored_id=%s normalized_id=%s",
+                        external_id,
+                        stored_id,
+                        normalized["id"],
+                    )
+                    continue
+
+                fetched += 1
+                old_url = str(row.get("source_url") or "").strip()
+                new_url = str(normalized.get("source_url") or "").strip()
+                if old_url != new_url:
+                    changed_urls += 1
+                    if len(samples) < 20:
+                        samples.append(
+                            {
+                                "id": stored_id,
+                                "headline": normalized.get("headline"),
+                                "old_url": old_url,
+                                "new_url": new_url,
+                            }
+                        )
+                records.append(raw)
+
+            try:
+                cursor = int(rows[-1]["id"])
+            except (KeyError, TypeError, ValueError):
+                break
+
+        persisted = self._persist_reclassification_records(records) if apply and records else 0
+        return {
+            "apply": bool(apply),
+            "status": "applied" if apply else "dry_run",
+            "limit": bounded_limit,
+            "scanned": scanned,
+            "fetched": fetched,
+            "would_persist": len(records),
+            "persisted": persisted,
+            "changed_urls": changed_urls,
+            "missing_external_id": missing_external_id,
+            "not_found": not_found,
+            "fetch_errors": fetch_errors,
+            "id_mismatches": id_mismatches,
+            "sample_url_changes": samples,
+        }
+
     def run_stream_once(self, *, limit: int | None = None) -> int:
         if self.over_storage_budget():
             self.storage.upsert_ingestion_state({"last_poll_at": datetime.now(UTC).isoformat()})

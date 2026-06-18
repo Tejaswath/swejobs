@@ -305,6 +305,25 @@ class SupabaseStorage:
             rows.extend(response.data or [])
         return rows[:limit]
 
+    def fetch_active_jobtech_reingest_batch(
+        self,
+        *,
+        after_id: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select("id,source_url,raw_json")
+            .eq("is_active", True)
+            .eq("source_kind", "jobtech")
+            .gt("id", int(after_id))
+            .order("id")
+            .limit(max(1, int(limit)))
+            .execute(),
+            context="fetch active JobTech rows for bounded re-ingest",
+        )
+        return response.data or []
+
     # ------------------------------------------------------------------
     # Safety helpers for FK-aware inactive-job purge
     # ------------------------------------------------------------------

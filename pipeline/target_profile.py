@@ -72,6 +72,16 @@ class TargetProfile:
         return set(self.data.get("role_families", {}).get("exclude_domains", []))
 
     @property
+    def software_evidence_title_terms(self) -> list[str]:
+        values = self.data.get("role_families", {}).get("software_evidence", {}).get("title_terms", [])
+        return [str(value) for value in values] if isinstance(values, list) else []
+
+    @property
+    def software_evidence_description_terms(self) -> list[str]:
+        values = self.data.get("role_families", {}).get("software_evidence", {}).get("description_terms", [])
+        return [str(value) for value in values] if isinstance(values, list) else []
+
+    @property
     def region_codes(self) -> set[str]:
         return set(self.data.get("regions", {}).get("include_codes", []))
 
