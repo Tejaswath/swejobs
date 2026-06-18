@@ -122,8 +122,8 @@ CLINICAL_DBT_TITLE_PATTERNS: tuple[str, ...] = (
 AMBIGUOUS_ENGINEERING_TITLE_PATTERNS: tuple[str, ...] = (
     r"\bautomation(?:\s+\w+){0,2}\s+engineer\b",
     r"\bautomations?ingenj[oö]r\b",
-    r"\bscada\b.*\b(?:engineer|integrator|specialist|ingenj[oö]r)\b",
-    r"\b(?:engineer|integrator|specialist|ingenj[oö]r)\b.*\bscada\b",
+    r"\bscada\b.*\b(?:engineer|integrator|integrat[oö]r|specialist|ingenj[oö]r)\b",
+    r"\b(?:engineer|integrator|integrat[oö]r|specialist|ingenj[oö]r)\b.*\bscada\b",
     r"\bsystems?(?:\s+\w+){0,2}\s+engineer\b",
     r"\bsystemingenj[oö]r\b",
 )

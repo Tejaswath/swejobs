@@ -36,6 +36,18 @@
     "reason": "ambiguous_title_without_software_evidence"
   },
   {
+    "name": "reject Swedish SCADA integrator without software evidence",
+    "job": {
+      "headline": "Junior SCADA-integratör inom Fastighetsautomation",
+      "description": "Konfigurera styrsystem, PLC och HMI för fastighetsautomation.",
+      "occupation_label": "Software Engineer",
+      "employer_name": "Example AB",
+      "lang": "sv"
+    },
+    "is_noise": true,
+    "reason": "ambiguous_title_without_software_evidence"
+  },
+  {
     "name": "reject Gripen electronics and mechanics systems engineer",
     "job": {
       "headline": "Systemingenjör till Gripens styrsystem Elektronik eller Mekanik",
