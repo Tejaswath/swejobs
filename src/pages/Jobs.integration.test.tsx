@@ -3,7 +3,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import Jobs, { isGraduateTraineeCandidate, normalizeLensParam } from "@/pages/Jobs";
+import Jobs, {
+  isGraduateTraineeCandidate,
+  normalizeLensParam,
+  semanticJobDedupeKey,
+} from "@/pages/Jobs";
 
 const supabase = vi.hoisted(() => {
   const job = {
@@ -130,6 +134,19 @@ describe("Jobs page", () => {
     expect(normalizeLensParam("high-signal")).toBe("high_signal");
     expect(normalizeLensParam("for-you")).toBe("broad");
     expect(normalizeLensParam("unknown")).toBe("broad");
+  });
+
+  it("deduplicates the same company and title across locations", () => {
+    const stockholm = semanticJobDedupeKey({
+      headline: "Systemingenjör till Gripens styrsystem",
+      employer_name: "Saab AB",
+    });
+    const linkoping = semanticJobDedupeKey({
+      headline: "Systemingenjör till Gripens styrsystem",
+      employer_name: "SAAB AB",
+    });
+
+    expect(stockholm).toBe(linkoping);
   });
 
   it("does not treat missing experience metadata as graduate eligible", () => {

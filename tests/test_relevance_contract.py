@@ -42,6 +42,11 @@ class RelevanceContractTests(unittest.TestCase):
         self.assertNotIn("SENIOR_TITLE_PATTERN", jobs_page)
         self.assertIn("hasSeniorRoleSignal", jobs_page)
 
+    def test_explore_deduplicates_exact_company_title_across_locations(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        self.assertIn('return `${company}::${title}`;', jobs_page)
+        self.assertNotIn('return `${company}::${title}::${location}`;', jobs_page)
+
     def test_shared_eligibility_fixtures(self) -> None:
         fixtures = json.loads(Path("tests/fixtures/eligibility_cases.json").read_text(encoding="utf-8"))
         registry = {

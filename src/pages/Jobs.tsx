@@ -119,19 +119,16 @@ function normalizeDedupeValue(value: unknown): string {
     .replace(/\s+/g, " ");
 }
 
-function semanticJobDedupeKey(job: {
+export function semanticJobDedupeKey(job: {
   headline?: unknown;
   headline_en?: unknown;
   employer_name?: unknown;
   company_canonical?: unknown;
-  municipality?: unknown;
-  region?: unknown;
   source_url?: unknown;
 }): string {
   const company = normalizeCompanyName(String(job.company_canonical || job.employer_name || ""));
   const title = normalizeDedupeValue(job.headline || job.headline_en);
-  const location = normalizeDedupeValue(`${job.municipality || ""} ${job.region || ""}`);
-  if (company && title) return `${company}::${title}::${location}`;
+  if (company && title) return `${company}::${title}`;
   return normalizeDedupeValue(job.source_url);
 }
 
