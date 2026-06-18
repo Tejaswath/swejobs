@@ -71,8 +71,63 @@ def _jaccard_similarity(left: set[str], right: set[str]) -> float:
 _SENIOR_STAGES = {"senior", "lead", "staff", "principal"}
 _GRAD_STAGES = {"graduate", "trainee", "junior"}
 _SENIOR_TITLE_RE = re.compile(
-    r"\b(senior|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarna|erfaret|erfarenhet|flerårig|fleråriga|flerarig|flerariga|gedigen erfarenhet)\b",
+    r"\b(senior|sr\.?|lead|principal|staff|architect|manager|head of|director|vp|vice president|experienced|expert|seasoned|erfaren|erfarna|erfaret|erfarenhet|flerårig|fleråriga|flerarig|flerariga|gedigen erfarenhet)\b",
     re.IGNORECASE,
+)
+_JOBTECH_DATA_IT_FIELD_ID = "apaJ_2ja_LuF"
+_JOBTECH_SEARCH_OFFSET_LIMIT = 2000
+_JOBTECH_SEARCH_MIN_WINDOW = timedelta(hours=1)
+_JOBTECH_SEARCH_OVERLAP = timedelta(hours=2)
+_JOBTECH_SEARCH_LANES: tuple[dict[str, Any], ...] = (
+    {
+        "lane": "early_junior",
+        "lane_group": "early_career",
+        "query": "junior",
+        "window": timedelta(days=21),
+        "budget_weight": 64,
+    },
+    {
+        "lane": "early_nyexaminerad",
+        "lane_group": "early_career",
+        "query": "nyexaminerad",
+        "window": timedelta(days=21),
+        "budget_weight": 7,
+    },
+    {
+        "lane": "early_graduate",
+        "lane_group": "early_career",
+        "query": "graduate",
+        "window": timedelta(days=21),
+        "budget_weight": 2,
+    },
+    {
+        "lane": "early_trainee",
+        "lane_group": "early_career",
+        "query": "trainee",
+        "window": timedelta(days=21),
+        "budget_weight": 2,
+    },
+    {
+        "lane": "early_examensjobb",
+        "lane_group": "early_career",
+        "query": "examensjobb",
+        "window": timedelta(days=21),
+        "budget_weight": 1,
+    },
+    {
+        "lane": "early_praktik",
+        "lane_group": "early_career",
+        "query": "praktik",
+        "window": timedelta(days=21),
+        "budget_weight": 4,
+    },
+    {
+        "lane": "general",
+        "lane_group": "general",
+        "query": None,
+        "window": timedelta(days=1),
+        "budget_weight": 20,
+    },
 )
 
 
@@ -122,6 +177,7 @@ class IngestionPipeline:
         compaction_weekly_digest_days: int,
         enable_translation: bool,
         max_active_jobs: int = 15000,
+        jobtech_search_region: str | None = None,
         jobtech_topup_no_deadline_ttl_days: int = 30,
         libretranslate_url: str | None = None,
         translation_provider: str = "google_cloud",
@@ -154,6 +210,7 @@ class IngestionPipeline:
         self.compaction_job_event_days = max(1, compaction_job_event_days)
         self.compaction_weekly_digest_days = max(1, compaction_weekly_digest_days)
         self.max_active_jobs = max(1, int(max_active_jobs))
+        self.jobtech_search_region = str(jobtech_search_region or "").strip() or None
         self.jobtech_topup_no_deadline_ttl_days = max(1, int(jobtech_topup_no_deadline_ttl_days))
         self.enable_translation = bool(enable_translation)
         self.translation_provider = str(translation_provider or "google_cloud").strip().lower()
@@ -835,6 +892,187 @@ class IngestionPipeline:
         logger.info("Stream poll processed rows=%s", processed)
         return processed
 
+    @staticmethod
+    def _jobtech_search_state_key(lane: str, suffix: str) -> str:
+        return f"jobtech_search:{lane}:{suffix}"
+
+    @staticmethod
+    def _jobtech_search_lane_budgets(limit: int) -> dict[str, int]:
+        total = max(1, int(limit))
+        budgets = {
+            str(spec["lane"]): total * int(spec["budget_weight"]) // 100
+            for spec in _JOBTECH_SEARCH_LANES
+        }
+        remainder = total - sum(budgets.values())
+        # The order is intentional: spare rows go to the highest-yield junior
+        # query first, then the other early-career queries, before general.
+        for spec in _JOBTECH_SEARCH_LANES:
+            if remainder <= 0:
+                break
+            budgets[str(spec["lane"])] += 1
+            remainder -= 1
+        return budgets
+
+    def _jobtech_search_window(
+        self,
+        *,
+        lane: str,
+        nominal_window: timedelta,
+        state: dict[str, str],
+        now: datetime,
+        since_days: int,
+    ) -> tuple[datetime, datetime, int]:
+        start_key = self._jobtech_search_state_key(lane, "window_start")
+        end_key = self._jobtech_search_state_key(lane, "window_end")
+        offset_key = self._jobtech_search_state_key(lane, "offset")
+        status_key = self._jobtech_search_state_key(lane, "status")
+
+        saved_start = self._parse_state_datetime(state.get(start_key))
+        saved_end = self._parse_state_datetime(state.get(end_key))
+        saved_status = str(state.get(status_key) or "").strip().lower()
+
+        if saved_start is not None and saved_end is not None and saved_status != "window_complete":
+            try:
+                offset = max(0, int(state.get(offset_key) or 0))
+            except (TypeError, ValueError):
+                offset = 0
+            return saved_start, min(saved_end, now), min(offset, _JOBTECH_SEARCH_OFFSET_LIMIT)
+
+        if saved_end is not None and saved_status == "window_complete":
+            window_start = saved_end - _JOBTECH_SEARCH_OVERLAP
+        else:
+            lookback = min(nominal_window, timedelta(days=max(1, int(since_days))))
+            window_start = now - lookback
+        window_end = min(window_start + nominal_window, now)
+        if window_end <= window_start:
+            window_start = now - min(nominal_window, _JOBTECH_SEARCH_OVERLAP)
+            window_end = now
+        return window_start, window_end, 0
+
+    def _fetch_jobtech_search_lane(
+        self,
+        *,
+        lane: str,
+        query: str | None,
+        nominal_window: timedelta,
+        budget: int,
+        state: dict[str, str],
+        now: datetime,
+        since_days: int,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, str] | None]:
+        window_start, window_end, offset = self._jobtech_search_window(
+            lane=lane,
+            nominal_window=nominal_window,
+            state=state,
+            now=now,
+            since_days=since_days,
+        )
+        split_count = 0
+
+        while True:
+            result = self.client.search_jobs(
+                published_after=window_start.isoformat(),
+                published_before=window_end.isoformat(),
+                limit=max(1, int(budget)),
+                offset=offset,
+                q=query,
+                occupation_field=_JOBTECH_DATA_IT_FIELD_ID,
+                region=self.jobtech_search_region,
+                sort="pubdate-desc",
+            )
+            total = max(0, int(result.get("total") or 0))
+            if total <= _JOBTECH_SEARCH_OFFSET_LIMIT:
+                break
+
+            duration = window_end - window_start
+            if duration <= _JOBTECH_SEARCH_MIN_WINDOW:
+                return (
+                    {
+                        "lane": lane,
+                        "lane_group": "early_career" if query else "general",
+                        "query": query,
+                        "status": "offset_overflow",
+                        "overflow": True,
+                        "total": total,
+                        "fetched": 0,
+                        "window_start": window_start.isoformat(),
+                        "window_end": window_end.isoformat(),
+                        "offset": offset,
+                        "budget": budget,
+                        "window_splits": split_count,
+                    },
+                    [],
+                    None,
+                )
+
+            window_end = window_start + max(_JOBTECH_SEARCH_MIN_WINDOW, duration / 2)
+            offset = 0
+            split_count += 1
+
+        hits = [row for row in result.get("hits") or [] if isinstance(row, dict)]
+        if not hits and offset < total:
+            return (
+                {
+                    "lane": lane,
+                    "lane_group": "early_career" if query else "general",
+                    "query": query,
+                    "status": "incomplete_page",
+                    "overflow": False,
+                    "total": total,
+                    "fetched": 0,
+                    "window_start": window_start.isoformat(),
+                    "window_end": window_end.isoformat(),
+                    "offset": offset,
+                    "budget": budget,
+                    "window_splits": split_count,
+                },
+                [],
+                None,
+            )
+
+        next_offset = offset + len(hits)
+        complete = next_offset >= total
+        checkpoint = {
+            self._jobtech_search_state_key(lane, "window_start"): window_start.isoformat(),
+            self._jobtech_search_state_key(lane, "window_end"): window_end.isoformat(),
+            self._jobtech_search_state_key(lane, "offset"): "0" if complete else str(next_offset),
+            self._jobtech_search_state_key(lane, "status"): "window_complete" if complete else "active",
+        }
+        return (
+            {
+                "lane": lane,
+                "lane_group": "early_career" if query else "general",
+                "query": query,
+                "status": "window_complete" if complete else "page_complete",
+                "overflow": False,
+                "total": total,
+                "fetched": len(hits),
+                "window_start": window_start.isoformat(),
+                "window_end": window_end.isoformat(),
+                "offset": offset,
+                "next_offset": 0 if complete else next_offset,
+                "budget": budget,
+                "window_splits": split_count,
+            },
+            hits,
+            checkpoint,
+        )
+
+    def _count_graduate_lens_jobs(self) -> int | None:
+        fetch = getattr(self.storage, "fetch_active_jobs_for_graduate_count", None)
+        if not callable(fetch):
+            return None
+        rows = fetch()
+        count = 0
+        for job in rows:
+            if bool(job.get("is_noise")) or self._has_market_restriction(job) or self._has_senior_role_signal(job):
+                continue
+            if _to_int(job.get("relevance_score"), 0) < 15:
+                continue
+            if self._has_explicit_early_career_signal(job):
+                count += 1
+        return count
+
     def run_jobtech_topup(
         self,
         *,
@@ -854,65 +1092,50 @@ class IngestionPipeline:
                 "persisted": 0,
             }
 
-        state = self.storage.get_ingestion_state(["last_jobtech_topup_timestamp"])
-        since = state.get("last_jobtech_topup_timestamp")
-        if not since:
-            since = (now - timedelta(days=max(1, int(since_days)))).isoformat()
+        lane_budgets = self._jobtech_search_lane_budgets(limit)
+        state_keys = [
+            self._jobtech_search_state_key(str(spec["lane"]), suffix)
+            for spec in _JOBTECH_SEARCH_LANES
+            for suffix in ("window_start", "window_end", "offset", "status")
+        ]
+        state = self.storage.get_ingestion_state(state_keys)
+        lane_reports: list[dict[str, Any]] = []
+        lane_raw_ids: dict[str, set[int]] = {}
+        proposed_checkpoint: dict[str, str] = {}
+        fetched_records: list[dict[str, Any]] = []
+        seen_raw_ids: set[str] = set()
+        query_duplicate_count = 0
 
-        since_dt = self._parse_state_datetime(str(since))
-        if since_dt is None:
-            since_dt = now - timedelta(days=max(1, int(since_days)))
-            since = since_dt.isoformat()
+        for spec in _JOBTECH_SEARCH_LANES:
+            lane = str(spec["lane"])
+            budget = lane_budgets.get(lane, 0)
+            if budget <= 0:
+                continue
+            lane_report, hits, checkpoint = self._fetch_jobtech_search_lane(
+                lane=lane,
+                query=spec.get("query"),
+                nominal_window=spec["window"],
+                budget=budget,
+                state=state,
+                now=now,
+                since_days=since_days,
+            )
+            lane_reports.append(lane_report)
+            lane_ids: set[int] = set()
+            for raw in hits:
+                raw_id = str(raw.get("id") or raw.get("external_id") or "").strip()
+                if raw_id:
+                    lane_ids.add(_to_int(raw_id, -1))
+                    if raw_id in seen_raw_ids:
+                        query_duplicate_count += 1
+                        continue
+                    seen_raw_ids.add(raw_id)
+                fetched_records.append(raw)
+            lane_raw_ids[lane] = {value for value in lane_ids if value >= 0}
+            if checkpoint:
+                proposed_checkpoint.update(checkpoint)
 
-        window_end = min(since_dt + timedelta(hours=6), now)
-        cursor_value = window_end.isoformat()
-        if window_end <= since_dt:
-            report = {
-                "generated_at": now.isoformat(),
-                "apply": bool(apply),
-                "status": "no_new_window" if apply else "dry_run",
-                "cursor": {
-                    "state_key": "last_jobtech_topup_timestamp",
-                    "since": since,
-                    "window_end": cursor_value,
-                    "next": cursor_value,
-                },
-                "limits": {
-                    "limit": max(1, int(limit)),
-                    "since_days": max(1, int(since_days)),
-                    "max_age_days": max(1, int(max_age_days)),
-                },
-                "fetched": 0,
-                "prepared": 0,
-                "rejected": 0,
-                "rejection_counts": {},
-                "duplicates": 0,
-                "would_persist": 0,
-                "persisted": 0,
-                "tier_counts": {"graduate": 0, "broad": 0},
-                "sample_rows": [],
-            }
-            if apply:
-                self.storage.upsert_ingestion_state(
-                    {
-                        "last_jobtech_topup_at": now.isoformat(),
-                        "last_poll_at": now.isoformat(),
-                    }
-                )
-            return report
-
-        events, next_cursor = self.client.get_stream_events(
-            since=since,
-            limit=max(1, int(limit)),
-            until=cursor_value,
-        )
-        report_next_cursor = cursor_value
-        if next_cursor:
-            next_cursor_dt = self._parse_state_datetime(str(next_cursor))
-            if next_cursor_dt is not None and next_cursor_dt <= window_end:
-                report_next_cursor = next_cursor_dt.isoformat()
-
-        jobs, tags_by_job_id, _target_count = self._prepare_records(events)
+        jobs, tags_by_job_id, _target_count = self._prepare_records(fetched_records)
 
         rejection_counts: dict[str, int] = {}
         candidate_jobs: list[dict[str, Any]] = []
@@ -936,10 +1159,12 @@ class IngestionPipeline:
         ats_rows = fetch_ats(companies) if callable(fetch_ats) else []
 
         deduped_jobs: list[dict[str, Any]] = []
-        duplicate_count = 0
+        ats_duplicate_count = 0
+        ats_duplicate_ids: set[int] = set()
         for job in candidate_jobs:
             if self._is_jobtech_row(job) and self._is_ats_duplicate(job, ats_rows):
-                duplicate_count += 1
+                ats_duplicate_count += 1
+                ats_duplicate_ids.add(int(job["id"]))
                 continue
             deduped_jobs.append(job)
 
@@ -951,62 +1176,149 @@ class IngestionPipeline:
             if tier in tier_counts:
                 tier_counts[tier] += 1
 
+        job_by_id = {int(job["id"]): job for job in jobs}
+        accepted_ids = {int(job["id"]) for job in candidate_jobs}
+        persisted_ids = {int(job["id"]) for job in deduped_jobs}
+        for lane_report in lane_reports:
+            lane = str(lane_report["lane"])
+            ids = lane_raw_ids.get(lane, set())
+            lane_rejections: dict[str, int] = {}
+            for job_id in ids:
+                job = job_by_id.get(job_id)
+                if not job:
+                    continue
+                reason = self._jobtech_rejection_reason(job) or self._jobtech_topup_age_rejection_reason(
+                    job,
+                    now=now,
+                    max_age_days=max_age_days,
+                )
+                if reason:
+                    lane_rejections[reason] = lane_rejections.get(reason, 0) + 1
+            lane_accepted = [job_by_id[job_id] for job_id in ids & accepted_ids if job_id in job_by_id]
+            lane_report.update(
+                {
+                    "accepted": len(lane_accepted),
+                    "early_career": sum(1 for job in lane_accepted if self._has_explicit_early_career_signal(job)),
+                    "rejection_counts": lane_rejections,
+                    "ats_duplicates": len(ids & ats_duplicate_ids),
+                    "would_persist": len(ids & persisted_ids),
+                }
+            )
+
+        lane_totals: dict[str, dict[str, int]] = {
+            "early_career": {"fetched": 0, "accepted": 0, "early_career": 0, "would_persist": 0},
+            "general": {"fetched": 0, "accepted": 0, "early_career": 0, "would_persist": 0},
+        }
+        for lane_report in lane_reports:
+            lane_group = str(lane_report.get("lane_group") or "general")
+            totals = lane_totals.setdefault(
+                lane_group,
+                {"fetched": 0, "accepted": 0, "early_career": 0, "would_persist": 0},
+            )
+            for key in ("fetched", "accepted", "early_career", "would_persist"):
+                totals[key] += int(lane_report.get(key) or 0)
+        for lane_group in lane_totals:
+            group_ids = {
+                job_id
+                for lane_report in lane_reports
+                if str(lane_report.get("lane_group") or "general") == lane_group
+                for job_id in lane_raw_ids.get(str(lane_report["lane"]), set())
+            }
+            unique_accepted = [
+                job_by_id[job_id]
+                for job_id in group_ids & accepted_ids
+                if job_id in job_by_id
+            ]
+            lane_totals[lane_group].update(
+                {
+                    "unique_accepted": len(unique_accepted),
+                    "unique_early_career": sum(
+                        1 for job in unique_accepted if self._has_explicit_early_career_signal(job)
+                    ),
+                    "unique_would_persist": len(group_ids & persisted_ids),
+                }
+            )
+
+        company_counts: dict[str, int] = {}
+        for job in deduped_jobs:
+            company = str(job.get("company_canonical") or job.get("employer_name") or "unknown").strip().lower()
+            company_counts[company or "unknown"] = company_counts.get(company or "unknown", 0) + 1
+
         report: dict[str, Any] = {
             "generated_at": now.isoformat(),
             "apply": bool(apply),
             "status": "dry_run",
-            "cursor": {
-                "state_key": "last_jobtech_topup_timestamp",
-                "since": since,
-                "window_end": cursor_value,
-                "next": report_next_cursor,
-            },
             "limits": {
                 "limit": max(1, int(limit)),
                 "since_days": max(1, int(since_days)),
                 "max_age_days": max(1, int(max_age_days)),
+                "occupation_field": _JOBTECH_DATA_IT_FIELD_ID,
+                "region": self.jobtech_search_region,
+                "offset_limit": _JOBTECH_SEARCH_OFFSET_LIMIT,
+                "lane_budgets": lane_budgets,
             },
-            "fetched": len(events),
+            "lanes": lane_reports,
+            "lane_totals": lane_totals,
+            "fetched": sum(int(row.get("fetched") or 0) for row in lane_reports),
+            "unique_fetched": len(fetched_records),
             "prepared": len(jobs),
             "rejected": sum(rejection_counts.values()),
             "rejection_counts": rejection_counts,
-            "duplicates": duplicate_count,
+            "duplicates": query_duplicate_count + ats_duplicate_count,
+            "query_duplicates": query_duplicate_count,
+            "ats_duplicates": ats_duplicate_count,
             "would_persist": len(deduped_jobs),
             "persisted": 0,
             "tier_counts": tier_counts,
+            "company_counts": dict(sorted(company_counts.items())),
+            "overflow": any(bool(row.get("overflow")) for row in lane_reports),
             "sample_rows": [
                 {
                     "id": job.get("id"),
                     "headline": job.get("headline"),
                     "employer_name": job.get("employer_name"),
+                    "municipality": job.get("municipality"),
+                    "region": job.get("region"),
+                    "role_family": job.get("role_family"),
                     "career_stage": job.get("career_stage"),
                     "years_required_min": job.get("years_required_min"),
                     "relevance_score": job.get("relevance_score"),
+                    "reason_codes": job.get("reason_codes"),
                     "route_tier": self._jobtech_route_tier(job),
                     "source_url": job.get("source_url"),
                 }
-                for job in deduped_jobs[:10]
+                for job in deduped_jobs[:20]
             ],
         }
 
         if not apply:
             return report
 
+        graduate_before = self._count_graduate_lens_jobs()
         if deduped_jobs:
             existing = self.storage.fetch_existing_jobs([int(job["id"]) for job in deduped_jobs])
             events_to_store = self._build_events(jobs=deduped_jobs, existing=existing)
             self.storage.persist_batch(jobs=deduped_jobs, tags_by_job_id=filtered_tags, events=events_to_store)
 
-        cursor_value = report_next_cursor
-        self.storage.upsert_ingestion_state(
-            {
-                "last_jobtech_topup_timestamp": cursor_value,
-                "last_jobtech_topup_at": now.isoformat(),
-                "last_poll_at": now.isoformat(),
-            }
-        )
-        report["status"] = "applied"
+        checkpoint_update = {
+            **proposed_checkpoint,
+            "last_jobtech_topup_at": now.isoformat(),
+            "last_poll_at": now.isoformat(),
+        }
+        self.storage.upsert_ingestion_state(checkpoint_update)
+        graduate_after = self._count_graduate_lens_jobs()
+        lane_issues = any(row.get("status") in {"offset_overflow", "incomplete_page"} for row in lane_reports)
+        report["status"] = "applied_with_lane_issues" if lane_issues else "applied"
         report["persisted"] = len(deduped_jobs)
+        report["graduate_lens"] = {
+            "before": graduate_before,
+            "after": graduate_after,
+            "delta": (
+                graduate_after - graduate_before
+                if graduate_before is not None and graduate_after is not None
+                else None
+            ),
+        }
         return report
 
     def compact_storage(
@@ -1526,12 +1838,20 @@ class IngestionPipeline:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to persist source_feed_probe_runs: %s", exc)
 
+        actual_failure_count = sum(
+            1 for row in feed_results if str(row.get("status") or "") in {"error", "http_error", "persist_error"}
+        )
+        auto_disabled_count = sum(
+            1 for row in feed_results if str(row.get("status") or "") == "skipped_auto_disabled"
+        )
         return {
             "enabled": bool(self.enable_company_feeds),
             "processed_rows": processed_rows,
             "target_rows": target_rows,
             "http_requests": http_requests,
             "feeds_run": len(feed_results),
+            "actual_failure_count": actual_failure_count,
+            "auto_disabled_count": auto_disabled_count,
             "feed_results": feed_results,
         }
 

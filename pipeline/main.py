@@ -43,6 +43,7 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
     client = JobTechClient(
         snapshot_url=settings.jobtech_snapshot_url,
         stream_url=settings.jobtech_stream_url,
+        search_url=settings.jobtech_search_url,
         taxonomy_url=settings.jobtech_taxonomy_url,
         api_key=settings.jobtech_api_key,
         timeout_seconds=settings.request_timeout_seconds,
@@ -70,6 +71,7 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
         compaction_job_event_days=settings.compaction_job_event_days,
         compaction_weekly_digest_days=settings.compaction_weekly_digest_days,
         max_active_jobs=settings.max_active_jobs,
+        jobtech_search_region=settings.jobtech_search_region,
         jobtech_topup_no_deadline_ttl_days=settings.jobtech_topup_no_deadline_ttl_days,
         enable_translation=settings.enable_translation,
         translation_provider=settings.translation_provider,
@@ -97,7 +99,7 @@ def parse_args() -> argparse.Namespace:
     stream_once = sub.add_parser("poll-once", help="Run one stream polling pass")
     stream_once.add_argument("--limit", type=int, default=None)
 
-    jobtech_topup = sub.add_parser("jobtech-topup", help="Run bounded JobTech top-up using its own cursor")
+    jobtech_topup = sub.add_parser("jobtech-topup", help="Run bounded targeted JobSearch top-up lanes")
     jobtech_topup.add_argument("--limit", type=int, default=None)
     jobtech_topup.add_argument("--since-days", type=int, default=None)
     jobtech_topup.add_argument("--max-age-days", type=int, default=None)

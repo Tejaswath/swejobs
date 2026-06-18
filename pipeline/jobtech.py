@@ -22,9 +22,11 @@ class JobTechClient:
         taxonomy_url: str,
         api_key: str | None,
         timeout_seconds: int,
+        search_url: str = "https://jobsearch.api.jobtechdev.se/search",
     ) -> None:
         self.snapshot_url = snapshot_url
         self.stream_url = stream_url
+        self.search_url = search_url
         self.taxonomy_url = taxonomy_url
         self.timeout_seconds = timeout_seconds
         self.session = requests.Session()
@@ -195,6 +197,66 @@ class JobTechClient:
             events = events[: max(1, int(limit))]
 
         return events, next_cursor
+
+    def search_jobs(
+        self,
+        *,
+        published_after: str,
+        published_before: str,
+        limit: int,
+        offset: int = 0,
+        q: str | None = None,
+        occupation_field: str = "apaJ_2ja_LuF",
+        region: str | None = None,
+        sort: str = "pubdate-asc",
+    ) -> dict[str, Any]:
+        """Search a bounded JobSearch publication window.
+
+        JobSearch accepts offsets through 2000 inclusive. Callers must split
+        windows whose result count exceeds that ceiling before paginating.
+        """
+        normalized_limit = max(1, min(100, int(limit)))
+        normalized_offset = max(0, int(offset))
+        if normalized_offset > 2000:
+            raise ValueError("JobSearch offset must be <= 2000")
+
+        params: dict[str, Any] = {
+            "occupation-field": occupation_field,
+            "published-after": self._format_stream_datetime(published_after, default_minutes_back=0),
+            "published-before": self._format_stream_datetime(published_before, default_minutes_back=0),
+            "limit": normalized_limit,
+            "offset": normalized_offset,
+            "sort": sort,
+        }
+        if q:
+            params["q"] = q
+        if region:
+            params["region"] = region
+
+        response = self._get(self.search_url, params=params, headers={"accept": "application/json"})
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("JobSearch response must be a JSON object")
+
+        total_payload = payload.get("total")
+        if isinstance(total_payload, dict):
+            total_value = total_payload.get("value")
+        else:
+            total_value = total_payload
+        try:
+            total = max(0, int(total_value or 0))
+        except (TypeError, ValueError):
+            total = 0
+
+        raw_hits = payload.get("hits")
+        hits = [row for row in raw_hits if isinstance(row, dict)] if isinstance(raw_hits, list) else []
+        return {
+            "total": total,
+            "hits": hits,
+            "offset": normalized_offset,
+            "limit": normalized_limit,
+        }
 
     def fetch_taxonomy(self, limit: int | None = None) -> list[dict[str, Any]]:
         response = self._get(self.taxonomy_url)

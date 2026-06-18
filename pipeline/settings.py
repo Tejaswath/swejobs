@@ -23,6 +23,8 @@ class Settings:
     batch_size: int
     jobtech_snapshot_url: str
     jobtech_stream_url: str
+    jobtech_search_url: str
+    jobtech_search_region: str | None
     jobtech_taxonomy_url: str
     enable_company_feeds: bool
     company_feed_config_path: str
@@ -99,6 +101,8 @@ def load_settings() -> Settings:
         batch_size=int(os.getenv("BATCH_SIZE", "200")),
         jobtech_snapshot_url=os.getenv("JOBTECH_SNAPSHOT_URL", "https://jobstream.api.jobtechdev.se/v2/snapshot"),
         jobtech_stream_url=os.getenv("JOBTECH_STREAM_URL", "https://jobstream.api.jobtechdev.se/v2/stream"),
+        jobtech_search_url=os.getenv("JOBTECH_SEARCH_URL", "https://jobsearch.api.jobtechdev.se/search"),
+        jobtech_search_region=os.getenv("JOBTECH_SEARCH_REGION", "").strip() or None,
         jobtech_taxonomy_url=os.getenv(
             "JOBTECH_TAXONOMY_URL",
             "https://taxonomy.api.jobtechdev.se/v1/taxonomy/main/concepts",

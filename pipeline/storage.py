@@ -631,6 +631,20 @@ class SupabaseStorage:
         )
         return response.data or []
 
+    def fetch_active_jobs_for_graduate_count(self, *, limit: int = 20000) -> list[dict[str, Any]]:
+        response = self._execute(
+            lambda: self.client.table("jobs")
+            .select(
+                "id,headline,is_active,is_noise,relevance_score,career_stage,is_grad_program,"
+                "years_required_min,swedish_required,citizenship_required,security_clearance_required,reason_codes"
+            )
+            .eq("is_active", True)
+            .limit(max(1, int(limit)))
+            .execute(),
+            context="fetch active jobs for graduate count",
+        )
+        return response.data or []
+
     def fetch_jobs_raw_batch(
         self,
         *,

@@ -121,7 +121,13 @@ def run_ats_only_cycle(
             feed_report = pipeline.run_company_feeds_once(max_rows=max_rows, max_http=max_http)
             report["company_feeds"] = feed_report
             feed_results = feed_report.get("feed_results") or []
-            failures = [row for row in feed_results if str(row.get("status") or "") != "ok"]
+            failure_statuses = {"error", "http_error", "persist_error"}
+            failures = [row for row in feed_results if str(row.get("status") or "") in failure_statuses]
+            auto_disabled = [
+                row for row in feed_results if str(row.get("status") or "") == "skipped_auto_disabled"
+            ]
+            feed_report["actual_failure_count"] = len(failures)
+            feed_report["auto_disabled_count"] = len(auto_disabled)
             storage = getattr(pipeline, "storage", None)
             if storage is not None:
                 storage.upsert_ingestion_state(
@@ -129,15 +135,17 @@ def run_ats_only_cycle(
                         "worker:last_success_at": datetime.now(UTC).isoformat(),
                         "worker:last_feed_failure_count": str(len(failures)),
                         "worker:last_feed_failures": ",".join(str(row.get("feed_key") or "") for row in failures[:20]),
+                        "worker:last_feed_auto_disabled_count": str(len(auto_disabled)),
                     }
                 )
             logger.info(
-                "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s failures=%s",
+                "ATS sync complete. processed_rows=%s target_rows=%s http_requests=%s feeds_run=%s failures=%s auto_disabled=%s",
                 feed_report.get("processed_rows", 0),
                 feed_report.get("target_rows", 0),
                 feed_report.get("http_requests", 0),
                 feed_report.get("feeds_run", 0),
                 len(failures),
+                len(auto_disabled),
             )
     except Exception as exc:  # noqa: BLE001
         report["company_feeds_error"] = str(exc)

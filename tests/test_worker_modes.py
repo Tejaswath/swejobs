@@ -39,6 +39,19 @@ class FakePipeline:
         return {"status": "applied", "persisted": 3}
 
 
+class FakeStateStorage:
+    def __init__(self) -> None:
+        self.state: dict[str, str] = {"last_user_ranking_recalculation_at": "2099-01-01T00:00:00+00:00"}
+
+    def get_ingestion_state(self, keys: list[str] | None = None) -> dict[str, str]:
+        if not keys:
+            return dict(self.state)
+        return {key: self.state[key] for key in keys if key in self.state}
+
+    def upsert_ingestion_state(self, values: dict[str, str]) -> None:
+        self.state.update(values)
+
+
 class WorkerModeTests(unittest.TestCase):
     def test_ats_only_cycle_never_polls_jobtech(self) -> None:
         pipeline = FakePipeline()
@@ -92,6 +105,29 @@ class WorkerModeTests(unittest.TestCase):
 
         self.assertIn(("jobtech_topup", 50, True, 21, 21), pipeline.calls)
         self.assertEqual(report["jobtech_topup"]["persisted"], 3)
+
+    def test_feed_health_separates_failures_from_auto_disabled(self) -> None:
+        pipeline = FakePipeline()
+        pipeline.storage = FakeStateStorage()
+        pipeline.run_company_feeds_once = lambda **_kwargs: {  # type: ignore[method-assign]
+            "processed_rows": 1,
+            "target_rows": 1,
+            "http_requests": 1,
+            "feeds_run": 3,
+            "feed_results": [
+                {"feed_key": "healthy", "status": "ok"},
+                {"feed_key": "broken", "status": "http_error"},
+                {"feed_key": "paused", "status": "skipped_auto_disabled"},
+            ],
+        }
+
+        report = run_ats_only_cycle(pipeline, max_rows=20, max_http=3)
+
+        self.assertEqual(report["company_feeds"]["actual_failure_count"], 1)
+        self.assertEqual(report["company_feeds"]["auto_disabled_count"], 1)
+        self.assertEqual(pipeline.storage.state["worker:last_feed_failure_count"], "1")
+        self.assertEqual(pipeline.storage.state["worker:last_feed_failures"], "broken")
+        self.assertEqual(pipeline.storage.state["worker:last_feed_auto_disabled_count"], "1")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from pipeline.ingest import IngestionPipeline
 from pipeline.target_profile import TargetProfile
@@ -40,12 +41,20 @@ class FakeStorage:
             if str(row.get("company_canonical") or row.get("employer_name") or "").strip().lower() in wanted
         ][:limit]
 
+    def fetch_active_jobs_for_graduate_count(self) -> list[dict]:
+        jobs: list[dict] = []
+        for batch in self.persisted_batches:
+            jobs.extend(batch["jobs"])
+        return jobs
+
 
 class FakeJobTechClient:
     def __init__(self) -> None:
         self.events: list[dict] = []
-        self.next_cursor = "2026-06-16T01:00:00+00:00"
         self.calls: list[dict] = []
+        self.events_by_query: dict[str | None, list[dict]] = {}
+        self.raise_on_query: str | None = "__never__"
+        self.total_override: int | None = None
 
     def get_stream_events(
         self,
@@ -54,7 +63,39 @@ class FakeJobTechClient:
         until: str | None = None,
     ) -> tuple[list[dict], str]:
         self.calls.append({"since": since, "limit": limit, "until": until})
-        return list(self.events[: limit or len(self.events)]), self.next_cursor
+        return list(self.events[: limit or len(self.events)]), "2026-06-16T01:00:00+00:00"
+
+    def search_jobs(
+        self,
+        *,
+        published_after: str,
+        published_before: str,
+        limit: int,
+        offset: int = 0,
+        q: str | None = None,
+        occupation_field: str,
+        region: str | None = None,
+        sort: str,
+    ) -> dict:
+        self.calls.append(
+            {
+                "published_after": published_after,
+                "published_before": published_before,
+                "limit": limit,
+                "offset": offset,
+                "query": q,
+                "occupation_field": occupation_field,
+                "region": region,
+                "sort": sort,
+            }
+        )
+        if q == self.raise_on_query:
+            raise RuntimeError("search failed")
+        rows = self.events_by_query.get(q)
+        if rows is None:
+            rows = self.events if q == "junior" else []
+        total = self.total_override if self.total_override is not None else len(rows)
+        return {"total": total, "hits": list(rows[offset : offset + limit])}
 
 
 def make_pipeline(storage: FakeStorage) -> IngestionPipeline:
@@ -196,6 +237,7 @@ class JobTechGuardrailTests(unittest.TestCase):
                 "published_at": "2026-06-15T00:00:00+00:00",
             },
         ]
+        pipeline.client.events = [{"id": 21}, {"id": 22}]
         pipeline._prepare_records = lambda records: (rows, {21: ["backend"], 22: ["backend"]}, 1)  # type: ignore[method-assign]
 
         report = pipeline.run_jobtech_topup(limit=100, apply=False, since_days=21, max_age_days=21)
@@ -205,8 +247,40 @@ class JobTechGuardrailTests(unittest.TestCase):
         self.assertEqual(report["tier_counts"]["graduate"], 1)
         self.assertEqual(report["rejection_counts"]["senior"], 1)
         self.assertEqual(storage.persisted_batches, [])
-        self.assertNotIn("last_jobtech_topup_timestamp", storage.state)
-        self.assertIsNotNone(pipeline.client.calls[0]["until"])
+        self.assertFalse(any(key.startswith("jobtech_search:") for key in storage.state))
+        self.assertEqual(report["limits"]["lane_budgets"], {
+            "early_junior": 64,
+            "early_nyexaminerad": 7,
+            "early_graduate": 2,
+            "early_trainee": 2,
+            "early_examensjobb": 1,
+            "early_praktik": 4,
+            "general": 20,
+        })
+        self.assertEqual(pipeline.client.calls[0]["occupation_field"], "apaJ_2ja_LuF")
+        self.assertIsNone(pipeline.client.calls[0]["region"])
+        self.assertEqual(pipeline.client.calls[0]["sort"], "pubdate-desc")
+        self.assertEqual(report["lane_totals"]["early_career"]["accepted"], 1)
+        self.assertEqual(
+            {call["query"] for call in pipeline.client.calls},
+            {"junior", "nyexaminerad", "graduate", "trainee", "examensjobb", "praktik", None},
+        )
+
+    def test_jobtech_topup_rejects_sr_title_as_senior(self) -> None:
+        storage = FakeStorage()
+        pipeline = make_pipeline(storage)
+        job = {
+            "id": 23,
+            "source_kind": "jobtech",
+            "headline": "ASIC & FPGA Developer - Sr",
+            "is_noise": False,
+            "is_target_role": True,
+            "role_family": "software_engineering",
+            "career_stage": "unknown",
+            "relevance_score": 60,
+        }
+
+        self.assertEqual(pipeline._jobtech_rejection_reason(job), "senior")
 
     def test_jobtech_topup_apply_persists_broad_unknown_but_not_noise(self) -> None:
         storage = FakeStorage()
@@ -242,9 +316,8 @@ class JobTechGuardrailTests(unittest.TestCase):
         self.assertEqual(report["persisted"], 1)
         self.assertEqual(report["tier_counts"]["broad"], 1)
         self.assertEqual([job["id"] for job in storage.persisted_batches[0]["jobs"]], [31])
-        self.assertEqual(storage.state["last_jobtech_topup_timestamp"], report["cursor"]["next"])
-        self.assertNotEqual(storage.state["last_jobtech_topup_timestamp"], "2026-06-16T01:00:00+00:00")
-        self.assertIsNotNone(pipeline.client.calls[0]["until"])
+        self.assertEqual(storage.state["jobtech_search:early_junior:status"], "window_complete")
+        self.assertEqual(report["graduate_lens"]["delta"], 0)
 
     def test_jobtech_topup_drops_ats_duplicate(self) -> None:
         storage = FakeStorage()
@@ -282,6 +355,121 @@ class JobTechGuardrailTests(unittest.TestCase):
         self.assertEqual(report["duplicates"], 1)
         self.assertEqual(report["persisted"], 0)
         self.assertEqual(storage.persisted_batches, [])
+
+    def test_jobtech_topup_deduplicates_overlapping_queries(self) -> None:
+        storage = FakeStorage()
+        pipeline = make_pipeline(storage)
+        shared = {"id": 51, "source_url": "https://example.test/shared"}
+        pipeline.client.events_by_query = {
+            "junior": [shared],
+            "nyexaminerad": [shared],
+            None: [],
+        }
+        pipeline._prepare_records = lambda records: (  # type: ignore[method-assign]
+            [
+                {
+                    "id": 51,
+                    "source_kind": "jobtech",
+                    "source_url": "https://example.test/shared",
+                    "is_noise": False,
+                    "is_target_role": True,
+                    "role_family": "backend",
+                    "career_stage": "junior",
+                    "relevance_score": 50,
+                    "published_at": "2026-06-15T00:00:00+00:00",
+                }
+            ],
+            {51: ["backend"]},
+            1,
+        )
+
+        report = pipeline.run_jobtech_topup(limit=100, apply=False, since_days=21, max_age_days=21)
+
+        self.assertEqual(report["fetched"], 2)
+        self.assertEqual(report["unique_fetched"], 1)
+        self.assertEqual(report["query_duplicates"], 1)
+        self.assertEqual(report["would_persist"], 1)
+
+    def test_general_lane_starts_with_most_recent_one_day_window(self) -> None:
+        storage = FakeStorage()
+        pipeline = make_pipeline(storage)
+        now = datetime(2026, 6, 18, 12, 0, tzinfo=UTC)
+
+        start, end, offset = pipeline._jobtech_search_window(
+            lane="general",
+            nominal_window=timedelta(days=1),
+            state={},
+            now=now,
+            since_days=21,
+        )
+
+        self.assertEqual(start, now - timedelta(days=1))
+        self.assertEqual(end, now)
+        self.assertEqual(offset, 0)
+
+    def test_jobtech_topup_splits_windows_above_offset_limit(self) -> None:
+        storage = FakeStorage()
+        pipeline = make_pipeline(storage)
+
+        def search_jobs(**kwargs):
+            pipeline.client.calls.append(kwargs)
+            start = datetime.fromisoformat(kwargs["published_after"])
+            end = datetime.fromisoformat(kwargs["published_before"])
+            total = 2501 if (end - start).total_seconds() > 3600 else 0
+            return {"total": total, "hits": []}
+
+        pipeline.client.search_jobs = search_jobs  # type: ignore[method-assign]
+
+        report = pipeline.run_jobtech_topup(limit=100, apply=False, since_days=21, max_age_days=21)
+
+        self.assertFalse(report["overflow"])
+        self.assertTrue(any(lane["window_splits"] > 0 for lane in report["lanes"]))
+        self.assertTrue(all(lane["total"] <= 2000 for lane in report["lanes"]))
+
+    def test_jobtech_topup_reports_one_hour_offset_overflow_without_checkpoint(self) -> None:
+        storage = FakeStorage()
+        pipeline = make_pipeline(storage)
+        pipeline.client.total_override = 2501
+
+        report = pipeline.run_jobtech_topup(limit=100, apply=True, since_days=21, max_age_days=21)
+
+        self.assertTrue(report["overflow"])
+        self.assertEqual(report["status"], "applied_with_lane_issues")
+        self.assertFalse(any(key.startswith("jobtech_search:") for key in storage.state))
+
+    def test_jobtech_topup_failed_request_does_not_advance_state(self) -> None:
+        storage = FakeStorage()
+        pipeline = make_pipeline(storage)
+        pipeline.client.raise_on_query = "nyexaminerad"
+
+        with self.assertRaisesRegex(RuntimeError, "search failed"):
+            pipeline.run_jobtech_topup(limit=100, apply=True, since_days=21, max_age_days=21)
+
+        self.assertFalse(any(key.startswith("jobtech_search:") for key in storage.state))
+        self.assertEqual(storage.persisted_batches, [])
+
+    def test_jobtech_topup_resumes_saved_offset_and_completes_window(self) -> None:
+        storage = FakeStorage()
+        storage.state.update(
+            {
+                "jobtech_search:early_junior:window_start": "2026-06-01T00:00:00+00:00",
+                "jobtech_search:early_junior:window_end": "2026-06-08T00:00:00+00:00",
+                "jobtech_search:early_junior:offset": "25",
+                "jobtech_search:early_junior:status": "active",
+            }
+        )
+        pipeline = make_pipeline(storage)
+        pipeline.client.events_by_query["junior"] = [{"id": index} for index in range(30)]
+        pipeline._prepare_records = lambda records: ([], {}, 0)  # type: ignore[method-assign]
+
+        report = pipeline.run_jobtech_topup(limit=100, apply=True, since_days=21, max_age_days=21)
+
+        junior_lane = next(row for row in report["lanes"] if row["lane"] == "early_junior")
+        self.assertEqual(junior_lane["offset"], 25)
+        self.assertEqual(junior_lane["fetched"], 5)
+        self.assertEqual(junior_lane["status"], "window_complete")
+        self.assertEqual(storage.state["jobtech_search:early_junior:offset"], "0")
+        self.assertEqual(storage.state["jobtech_search:early_junior:status"], "window_complete")
 
     def test_jobtech_topup_skips_over_budget(self) -> None:
         storage = FakeStorage()
