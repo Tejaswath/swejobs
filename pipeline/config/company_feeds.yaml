@@ -1,4 +1,4 @@
-updated_at: "2026-06-14"
+updated_at: "2026-06-18"
 
 # v1 uses only feeds that were endpoint-verified during implementation.
 feeds:
@@ -1023,6 +1023,29 @@ feeds:
       - mobile
       - data
       - machine learning
+
+  - feed_key: truecaller_greenhouse
+    display_name: Truecaller
+    provider: greenhouse
+    slug_or_url: truecaller
+    company_canonical: truecaller
+    enabled: true
+    priority: 34
+    location_filters:
+      - Stockholm
+      - Sweden
+    keywords_any:
+      - engineer
+      - developer
+      - software
+      - backend
+      - frontend
+      - fullstack
+      - platform
+      - mobile
+      - data
+      - machine learning
+      - security
 
   - feed_key: yubico_greenhouse
     display_name: Yubico

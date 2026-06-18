@@ -4,10 +4,22 @@ import unittest
 from unittest.mock import patch
 
 from pipeline.ingest import IngestionPipeline
-from pipeline.sources.base import CompanyFeed, FeedFetchResult
+from pipeline.company_registry import company_registry_map
+from pipeline.sources.base import CompanyFeed, FeedFetchResult, load_company_feeds
 
 
 class CompanySourceVerificationTests(unittest.TestCase):
+    def test_truecaller_verified_feed_is_enabled_and_registered(self) -> None:
+        feeds = {feed.feed_key: feed for feed in load_company_feeds("pipeline/config/company_feeds.yaml")}
+        truecaller = feeds["truecaller_greenhouse"]
+        self.assertTrue(truecaller.enabled)
+        self.assertEqual(truecaller.provider, "greenhouse")
+        self.assertEqual(truecaller.slug_or_url, "truecaller")
+
+        registry = company_registry_map("pipeline/config/company_registry.json")
+        self.assertEqual(registry["truecaller"].status, "connected")
+        self.assertEqual(registry["truecaller"].provider, "greenhouse")
+
     def test_configured_feed_is_verifiable_without_registry_duplicate(self) -> None:
         pipeline = object.__new__(IngestionPipeline)
         pipeline.company_feed_config_path = "ignored"

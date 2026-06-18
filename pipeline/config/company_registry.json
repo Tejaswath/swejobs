@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-06-14",
+  "updated_at": "2026-06-18",
   "companies": [
     {
       "company_canonical": "spotify",
@@ -1243,13 +1243,13 @@
       "display_name": "Truecaller",
       "priority_tier": "A",
       "category": "product",
-      "status": "planned",
-      "provider": null,
-      "provider_identifier": null,
+      "status": "connected",
+      "provider": "greenhouse",
+      "provider_identifier": "truecaller",
       "provider_order": [
+        "greenhouse",
         "workday",
         "smartrecruiters",
-        "greenhouse",
         "lever",
         "teamtailor",
         "html_fallback"
@@ -1259,7 +1259,7 @@
         "sweden"
       ],
       "aliases": [],
-      "notes": "Curated target; provider verification pending"
+      "notes": "Connected via Greenhouse; verified 2026-06-18"
     },
     {
       "company_canonical": "mentimeter",
