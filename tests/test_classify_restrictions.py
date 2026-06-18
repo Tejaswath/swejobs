@@ -102,6 +102,22 @@ class ClassifyRestrictionTests(unittest.TestCase):
         self.assertEqual(result.role_family_confidence, 0.0)
         self.assertFalse(result.is_target_role)
 
+    def test_clinical_dbt_title_is_not_data_engineering(self) -> None:
+        result = classify_job(
+            {
+                "headline": "Kurator / DBT-behandlare DBT-enheten Psykiatriska kliniken",
+                "description": "Arbeta med dialektisk beteendeterapi inom psykiatrin.",
+                "occupation_label": "Behandlare",
+                "employer_name": "Region Västerbotten",
+                "lang": "sv",
+            },
+            _profile(),
+        )
+        self.assertEqual(result.role_family, "noise")
+        self.assertTrue(result.is_noise)
+        self.assertFalse(result.is_target_role)
+        self.assertIn("role_family_clinical_dbt", result.reason_codes)
+
     def test_generic_developer_title_can_be_confirmed_by_description(self) -> None:
         result = classify_job(
             {

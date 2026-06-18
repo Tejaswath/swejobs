@@ -61,6 +61,17 @@ type JobSort = "relevance" | "deadline" | "newest" | "ats_desc";
 type SearchFallbackMode = "none" | "show_swedish" | "show_experience" | "show_both" | "show_both_best_matches";
 type DeadlineFocus = "none" | "today" | "week" | "upcoming";
 
+export function normalizeLensParam(value: string | null): Lens {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "graduate" || normalized === "graduate-trainee") return "graduate_trainee";
+  if (normalized === "high-signal") return "high_signal";
+  if (normalized === "for-you") return "broad";
+  if (normalized === "broad" || normalized === "graduate_trainee" || normalized === "high_signal") {
+    return normalized;
+  }
+  return "broad";
+}
+
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
   { id: "high_signal", label: "High Signal", description: "ATS-first, high-confidence relevant roles" },
   { id: "broad", label: "For You", description: "ATS plus useful JobTech discovery, ranked for fit" },
@@ -299,13 +310,8 @@ export default function Jobs() {
     document.title = "Explore Jobs | SweJobs";
   }, []);
 
-  const [lens, setLens] = useState<Lens>(() => {
-    const value = searchParams.get("lens");
-    if (value === "broad" || value === "graduate_trainee" || value === "high_signal") {
-      return value;
-    }
-    return "broad";
-  });
+  const lensParam = searchParams.get("lens");
+  const [lens, setLens] = useState<Lens>(() => normalizeLensParam(lensParam));
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [lang, setLang] = useState(() => searchParams.get("lang") ?? "all");
   const [remoteOnly, setRemoteOnly] = useState(() => searchParams.get("remote") === "1");
@@ -347,6 +353,25 @@ export default function Jobs() {
           : "none";
 
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setLens(normalizeLensParam(lensParam));
+    setPage(0);
+  }, [lensParam]);
+
+  const selectLens = (nextLens: Lens) => {
+    setLens(nextLens);
+    setPage(0);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextLens === "broad") {
+        next.delete("lens");
+      } else {
+        next.set("lens", nextLens);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1403,7 +1428,7 @@ export default function Jobs() {
                   ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
                   : "border-border/60 bg-transparent text-muted-foreground hover:border-border hover:text-foreground",
               )}
-              onClick={() => setLens(item.id)}
+              onClick={() => selectLens(item.id)}
               title={item.description}
             >
               {item.label}
@@ -1442,15 +1467,22 @@ export default function Jobs() {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-72 space-y-3 p-3">
-              <div className="space-y-1">
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Filters</h3>
-                <p className="text-xs text-muted-foreground/80">Tune role visibility rules.</p>
+            <PopoverContent align="start" className="w-[min(calc(100vw-2rem),22rem)] space-y-4 p-4">
+              <div className="space-y-2 border-b border-border/60 pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold">Role visibility</h3>
+                  <Badge variant="outline" className="text-[10px] font-normal">
+                    4 safeguards on
+                  </Badge>
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Senior, consultancy, Swedish-required, and restricted roles are hidden by default.
+                </p>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground">Language</p>
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Language</p>
                   <Select value={lang} onValueChange={setLang}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
@@ -1464,14 +1496,14 @@ export default function Jobs() {
                   </Select>
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs">Remote only</span>
-                  <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} />
+                <div className="space-y-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Preferences</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Remote only</span>
+                    <Switch checked={remoteOnly} onCheckedChange={setRemoteOnly} />
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs">Hide 3+ years (strict)</span>
-                  <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} />
-                </div>
+
                 {lens === "high_signal" && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-xs">Include JobTech in High Signal</span>
@@ -1492,19 +1524,32 @@ export default function Jobs() {
                     <Switch checked={confirmedGraduateOnly} onCheckedChange={setConfirmedGraduateOnly} />
                   </div>
                 )}
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs">Hide consultancies</span>
-                  <Switch checked={hideConsultancies} onCheckedChange={setHideConsultancies} />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs">Hide Swedish-required</span>
-                  <Switch checked={hideSwedishRequired} onCheckedChange={setHideSwedishRequired} />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs">Hide citizenship-restricted</span>
-                  <Switch checked={hideCitizenshipRestricted} onCheckedChange={setHideCitizenshipRestricted} />
+
+                <div className="space-y-3 border-t border-border/60 pt-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Safety filters</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Hide 3+ years experience</span>
+                    <Switch checked={hideThreePlusYears} onCheckedChange={setHideThreePlusYears} />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Hide consultancies</span>
+                    <Switch checked={hideConsultancies} onCheckedChange={setHideConsultancies} />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Hide Swedish-required</span>
+                    <Switch checked={hideSwedishRequired} onCheckedChange={setHideSwedishRequired} />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs">Hide citizenship-restricted</span>
+                    <Switch checked={hideCitizenshipRestricted} onCheckedChange={setHideCitizenshipRestricted} />
+                  </div>
                 </div>
               </div>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 w-full text-xs">
+                  Reset all controls
+                </Button>
+              )}
             </PopoverContent>
           </Popover>
 

@@ -114,6 +114,11 @@ GENERIC_ENGINEERING_TITLE_PATTERNS: tuple[str, ...] = (
     r"\butvecklare\b",
 )
 
+CLINICAL_DBT_TITLE_PATTERNS: tuple[str, ...] = (
+    r"\bdbt[- ]?behandlare\b",
+    r"\bdialektisk beteendeterapi\b",
+)
+
 GRAD_PROGRAM_PATTERNS: tuple[str, ...] = (
     r"\bgraduate\b",
     r"\bnew grad\b",
@@ -454,9 +459,16 @@ def classify_job(job: dict[str, Any], profile: TargetProfile) -> ClassificationR
     trainee_hits = _matches(TRAINEE_PROGRAM_PATTERNS, text)
     is_grad_program = grad_hits > 0 or trainee_hits > 0
 
-    role_family, role_hits, role_family_confidence, role_family_reason = _pick_role_family(
-        text, f"{headline} {occupation_label}".lower()
-    )
+    role_headline = f"{headline} {occupation_label}".lower()
+    if _matches(CLINICAL_DBT_TITLE_PATTERNS, headline.lower()) > 0:
+        role_family, role_hits, role_family_confidence, role_family_reason = (
+            "noise",
+            0,
+            0.0,
+            "role_family_clinical_dbt",
+        )
+    else:
+        role_family, role_hits, role_family_confidence, role_family_reason = _pick_role_family(text, role_headline)
     _add_reason(reason_codes, role_family_reason)
 
     scoring = profile.scoring

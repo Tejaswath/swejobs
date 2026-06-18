@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import Jobs, { isGraduateTraineeCandidate } from "@/pages/Jobs";
+import Jobs, { isGraduateTraineeCandidate, normalizeLensParam } from "@/pages/Jobs";
 
 const supabase = vi.hoisted(() => {
   const job = {
@@ -124,6 +124,14 @@ vi.mock("@/integrations/supabase/client", () => ({
 }));
 
 describe("Jobs page", () => {
+  it("normalizes public lens URL aliases", () => {
+    expect(normalizeLensParam("graduate")).toBe("graduate_trainee");
+    expect(normalizeLensParam("graduate-trainee")).toBe("graduate_trainee");
+    expect(normalizeLensParam("high-signal")).toBe("high_signal");
+    expect(normalizeLensParam("for-you")).toBe("broad");
+    expect(normalizeLensParam("unknown")).toBe("broad");
+  });
+
   it("does not treat missing experience metadata as graduate eligible", () => {
     expect(
       isGraduateTraineeCandidate({

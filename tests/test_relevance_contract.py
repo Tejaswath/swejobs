@@ -25,6 +25,12 @@ class RelevanceContractTests(unittest.TestCase):
         self.assertIn('return "broad";', jobs_page)
         self.assertIn('setLens("broad");', jobs_page)
 
+    def test_explore_accepts_public_lens_url_aliases(self) -> None:
+        jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
+        self.assertIn('normalized === "graduate"', jobs_page)
+        self.assertIn('normalized === "high-signal"', jobs_page)
+        self.assertIn('next.set("lens", nextLens)', jobs_page)
+
     def test_apply_link_auto_tracks_application(self) -> None:
         jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
         self.assertIn("const trackApplyClick = () =>", jobs_page)
