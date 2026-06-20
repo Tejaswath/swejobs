@@ -1643,6 +1643,42 @@ export default function Jobs() {
                     <Switch checked={hideCitizenshipRestricted} onCheckedChange={setHideCitizenshipRestricted} />
                   </div>
                 </div>
+
+                <div className="space-y-3 border-t border-border/60 pt-3 sm:hidden">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sort and match</p>
+                  <Select value={sortBy} onValueChange={(value) => setSortBy(value as JobSort)}>
+                    <SelectTrigger className="h-8 w-full text-xs" aria-label="Sort jobs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {JOB_SORT_OPTIONS.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {user && (atsResumes?.length ?? 0) > 1 ? (
+                    <Select value={selectedAtsResumeId} onValueChange={setSelectedAtsResumeId}>
+                      <SelectTrigger className="h-8 w-full text-xs" aria-label="Résumé for job matching">
+                        <SelectValue placeholder="Résumé for match" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">
+                          {activeAtsResume
+                            ? `Default (${activeAtsResume.file_name || activeAtsResume.label})`
+                            : "Default résumé"}
+                        </SelectItem>
+                        {(atsResumes ?? []).map((resume) => (
+                          <SelectItem key={resume.id} value={resume.id}>
+                            {resume.file_name || resume.label}
+                            {resume.is_default ? " (Default)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                </div>
               </div>
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 w-full text-xs">
@@ -1653,7 +1689,7 @@ export default function Jobs() {
           </Popover>
 
           <Select value={sortBy} onValueChange={(value) => setSortBy(value as JobSort)}>
-            <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectTrigger className="hidden h-8 w-44 text-xs sm:flex" aria-label="Sort jobs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1667,7 +1703,7 @@ export default function Jobs() {
 
           {user && (atsResumes?.length ?? 0) > 1 ? (
             <Select value={selectedAtsResumeId} onValueChange={setSelectedAtsResumeId}>
-              <SelectTrigger className="h-8 w-56 text-xs">
+              <SelectTrigger className="hidden h-8 w-56 text-xs sm:flex" aria-label="Résumé for job matching">
                 <SelectValue placeholder="Resume for match" />
               </SelectTrigger>
               <SelectContent>
@@ -1686,7 +1722,7 @@ export default function Jobs() {
             </Select>
           ) : null}
           {user && (atsResumes?.length ?? 0) === 1 && activeAtsResume ? (
-            <Badge variant="outline" className="h-8 rounded-md px-2 text-xs font-normal">
+            <Badge variant="outline" className="hidden h-8 rounded-md px-2 text-xs font-normal sm:inline-flex">
               Résumé: {activeAtsResume.file_name || activeAtsResume.label}
             </Badge>
           ) : null}
@@ -1862,8 +1898,15 @@ export default function Jobs() {
           </p>
         ) : null}
 
-        <div className="flex gap-4" style={{ height: "calc(100vh - 320px)" }}>
-          <div className={`flex flex-col ${selectedId ? "w-[380px] shrink-0" : "w-full max-w-2xl"} transition-all duration-200`}>
+        <div className="flex min-w-0 flex-col gap-4 md:h-[calc(100vh-320px)] md:flex-row">
+          <div
+            className={cn(
+              "min-w-0 flex-col transition-all duration-200",
+              selectedId
+                ? "hidden md:flex md:w-[380px] md:shrink-0"
+                : "flex w-full md:max-w-2xl",
+            )}
+          >
             {searchParams.get("coverage") === "1" && coverageBanner && (
               <div
                 className={`mb-2 rounded-md border px-3 py-2 text-xs ${
@@ -1954,36 +1997,36 @@ export default function Jobs() {
                       const suitability = suitabilityByJobId[job.id];
 
                       return (
-                        <div
-                          key={job.id}
-                          data-job-item
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Open details for ${(job.lang === "sv" ? job.headline_en : null) || job.headline}`}
-                          onClick={() => {
-                            setSelectedId(job.id);
-                            setSelectedIdx(idx);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
+                        <div key={job.id} className="relative">
+                          <div
+                            data-job-item
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Open details for ${(job.lang === "sv" ? job.headline_en : null) || job.headline}`}
+                            onClick={() => {
                               setSelectedId(job.id);
                               setSelectedIdx(idx);
-                            }
-                          }}
-                          className={cn(
-                            "cursor-pointer rounded-md border-l-2 px-3 py-2.5 transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50",
-                            isSelected && "border-l-primary bg-primary/5 shadow-sm ring-1 ring-primary/20",
-                            !isSelected && "border-l-transparent hover:bg-muted/40",
-                            !isSelected && job.company_tier === "A" && "border-l-emerald-500/40",
-                            !isSelected && job.company_tier === "B" && "border-l-sky-500/30",
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-medium leading-snug line-clamp-1">
-                              {(job.lang === "sv" ? job.headline_en : null) || job.headline}
-                            </h3>
-                            <div className="flex shrink-0 items-center gap-1">
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedId(job.id);
+                                setSelectedIdx(idx);
+                              }
+                            }}
+                            className={cn(
+                              "cursor-pointer rounded-md border-l-2 px-3 py-2.5 pr-16 transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50",
+                              isSelected && "border-l-primary bg-primary/5 shadow-sm ring-1 ring-primary/20",
+                              !isSelected && "border-l-transparent hover:bg-muted/40",
+                              !isSelected && job.company_tier === "A" && "border-l-emerald-500/40",
+                              !isSelected && job.company_tier === "B" && "border-l-sky-500/30",
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="text-sm font-medium leading-snug line-clamp-1">
+                                {(job.lang === "sv" ? job.headline_en : null) || job.headline}
+                              </h3>
+                              <div className="flex shrink-0 items-center gap-1">
                               {watched && (
                                 <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
                                   Following
@@ -2030,37 +2073,11 @@ export default function Jobs() {
                                   Match {atsSnapshot.displayScore}%
                                 </Badge>
                               ) : null}
-                              <button
-                                type="button"
-                                className="inline-flex h-4 items-center rounded border border-border/50 px-1 text-[9px] text-muted-foreground hover:text-foreground"
-                                aria-label="Hide this job"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setHiddenJobIds((previous) => {
-                                    const next = new Set(previous);
-                                    next.add(job.id);
-                                    if (typeof window !== "undefined") {
-                                      window.localStorage.setItem("swejobs.jobs.hidden-ids", JSON.stringify(Array.from(next)));
-                                    }
-                                    return next;
-                                  });
-                                  void pushFeedbackEvent({
-                                    signalType: "hide",
-                                    jobId: job.id,
-                                    employerName: job.company_canonical || job.employer_name,
-                                    roleFamily: job.role_family,
-                                    sourceUrl: job.source_url,
-                                  });
-                                }}
-                              >
-                                <EyeOff className="mr-0.5 h-2.5 w-2.5" />
-                                Hide
-                              </button>
                               <span className="inline-flex h-4 items-center rounded border border-primary/20 px-1 text-[9px] text-primary/80">
                                 Open details
                               </span>
+                              </div>
                             </div>
-                          </div>
 
                           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                             <span
@@ -2071,7 +2088,7 @@ export default function Jobs() {
                             </span>
                             {displayEmployer}
                           </p>
-                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
                             {job.lang && <span>{languageLabel(job.lang)}</span>}
                             <span>
@@ -2094,6 +2111,32 @@ export default function Jobs() {
                               </Badge>
                             ))}
                           </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2.5 inline-flex h-6 items-center rounded border border-border/50 bg-background/80 px-1.5 text-[9px] text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            aria-label={`Hide ${(job.lang === "sv" ? job.headline_en : null) || job.headline}`}
+                            onClick={() => {
+                              setHiddenJobIds((previous) => {
+                                const next = new Set(previous);
+                                next.add(job.id);
+                                if (typeof window !== "undefined") {
+                                  window.localStorage.setItem("swejobs.jobs.hidden-ids", JSON.stringify(Array.from(next)));
+                                }
+                                return next;
+                              });
+                              void pushFeedbackEvent({
+                                signalType: "hide",
+                                jobId: job.id,
+                                employerName: job.company_canonical || job.employer_name,
+                                roleFamily: job.role_family,
+                                sourceUrl: job.source_url,
+                              });
+                            }}
+                          >
+                            <EyeOff className="mr-0.5 h-2.5 w-2.5" />
+                            Hide
+                          </button>
                         </div>
                       );
                     })}
@@ -2105,6 +2148,7 @@ export default function Jobs() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      aria-label="Previous page"
                       disabled={page === 0}
                       onClick={() => setPage((prev) => Math.max(0, prev - 1))}
                       className="h-7 w-7 p-0"
@@ -2117,6 +2161,7 @@ export default function Jobs() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      aria-label="Next page"
                       disabled={page >= totalPages - 1}
                       onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
                       className="h-7 w-7 p-0"
@@ -2138,7 +2183,7 @@ export default function Jobs() {
                 initial={{ opacity: 0, x: 8 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 8 }}
-                className="flex-1 space-y-4 rounded-lg border border-border/40 bg-card p-5"
+                className="min-h-[50vh] min-w-0 flex-1 space-y-4 rounded-lg border border-border/40 bg-card p-5 md:min-h-0"
               >
                 <Skeleton className="h-7 w-2/3" />
                 <Skeleton className="h-4 w-1/2" />
@@ -2151,7 +2196,7 @@ export default function Jobs() {
                 initial={{ opacity: 0, x: 8 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 8 }}
-                className="flex flex-1 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/5 p-6"
+                className="min-h-[50vh] min-w-0 flex-1 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/5 p-6 md:min-h-0"
               >
                 <div className="max-w-sm text-center">
                   <p className="text-sm font-medium">This job could not be opened</p>
@@ -2180,7 +2225,7 @@ export default function Jobs() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 8 }}
                 transition={{ duration: 0.15 }}
-                className="flex-1 overflow-hidden rounded-lg border border-border/40 bg-card"
+                className="h-[calc(100vh-9rem)] min-w-0 flex-1 overflow-hidden rounded-lg border border-border/40 bg-card md:h-auto"
               >
                 <ScrollArea className="h-full">
                   <div className="space-y-5 p-5">
@@ -2212,6 +2257,7 @@ export default function Jobs() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label="Close job details"
                         className="h-7 w-7 shrink-0"
                         onClick={() => {
                           setSelectedId(null);
@@ -2224,11 +2270,11 @@ export default function Jobs() {
 
                     <div className="flex flex-wrap gap-2">
                       {detail.source_url && (
-                        <a href={detail.source_url} target="_blank" rel="noopener noreferrer" onClick={trackApplyClick}>
-                          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                        <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                          <a href={detail.source_url} target="_blank" rel="noopener noreferrer" onClick={trackApplyClick}>
                             <ExternalLink className="h-3 w-3" /> Apply
-                          </Button>
-                        </a>
+                          </a>
+                        </Button>
                       )}
                       {user && detailDisplayEmployer && (
                         <Button
