@@ -34,13 +34,13 @@ import {
   ChevronDown,
   Search,
   Download,
-  Target,
   Bookmark,
   MoreHorizontal,
   Menu,
   Settings,
   User,
   Mail,
+  ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -48,21 +48,15 @@ const NAV_ITEMS = [
   { path: "/", label: "Overview", icon: Activity },
   { path: "/jobs", label: "Explore", icon: Compass },
   { path: "/applications", label: "Applications", icon: ClipboardList },
-  { path: "/outreach", label: "Outreach", icon: Mail },
+  { path: "/tracked", label: "Saved Jobs", icon: Bookmark },
 ];
 
-const MORE_ITEMS = [
-  { path: "/tracked", label: "Saved Jobs", icon: Bookmark },
+const BASE_MORE_ITEMS = [
+  { path: "/outreach", label: "Outreach", icon: Mail },
   { path: "/resumes", label: "Resume Library", icon: User },
-  { path: "/skills", label: "Skill Gap", icon: Target },
   { path: "/searches", label: "Saved Searches", icon: Bookmark },
   { path: "/export", label: "Export Data", icon: Download },
-  ...(import.meta.env.DEV ? [{ path: "/admin", label: "Admin", icon: Settings }] : []),
-];
-
-const COMMAND_ITEMS = [
-  ...NAV_ITEMS,
-  ...MORE_ITEMS,
+  { path: "/privacy", label: "Privacy", icon: ShieldCheck },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -73,7 +67,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const userEmail = user?.email ?? "";
   const userInitial = userEmail.charAt(0).toUpperCase() || "U";
-  const moreActive = MORE_ITEMS.some((item) => location.pathname.startsWith(item.path));
+  const moreItems = user
+    ? [...BASE_MORE_ITEMS, { path: "/admin", label: "Admin", icon: Settings }]
+    : BASE_MORE_ITEMS;
+  const commandItems = [...NAV_ITEMS, ...moreItems];
+  const moreActive = moreItems.some((item) => location.pathname.startsWith(item.path));
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -136,17 +134,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   })}
                   <div className="my-2 h-px bg-border/40" />
                   <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">More</p>
-                  {MORE_ITEMS.map((item) => (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      onClick={() => setMobileOpen(false)}
-                      className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                    >
-                      <item.icon className="h-4 w-4" />
-                      {item.label}
-                    </Link>
-                  ))}
+                  {moreItems.map((item) => {
+                    const isActive = location.pathname.startsWith(item.path);
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+                          isActive ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        }`}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
                 </nav>
               </SheetContent>
             </Sheet>
@@ -165,20 +168,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 ? location.pathname === "/"
                 : location.pathname.startsWith(item.path);
               return (
-                <Link key={item.path} to={item.path}>
-                  <Button
-                    variant={isActive ? "secondary" : "ghost"}
-                    size="sm"
-                    className={`h-10 gap-1.5 rounded-xl px-4 text-sm ${
-                      isActive
-                        ? "relative border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] after:absolute after:bottom-1 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:rounded-full after:bg-primary"
-                        : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                    }`}
-                  >
+                <Button
+                  key={item.path}
+                  asChild
+                  variant={isActive ? "secondary" : "ghost"}
+                  size="sm"
+                  className={`h-10 gap-1.5 rounded-xl px-4 text-sm ${
+                    isActive
+                      ? "relative border border-border/60 bg-secondary/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] after:absolute after:bottom-1 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:rounded-full after:bg-primary"
+                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  }`}
+                >
+                  <Link to={item.path}>
                     <item.icon className="h-3.5 w-3.5" />
                     {item.label}
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               );
             })}
 
@@ -199,7 +204,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                {MORE_ITEMS.map((item) => (
+                {moreItems.map((item) => (
                   <DropdownMenuItem key={item.path} onClick={() => navigate(item.path)} className="gap-2 text-xs">
                     <item.icon className="h-3.5 w-3.5" />
                     {item.label}
@@ -253,11 +258,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Link to="/auth">
-                <Button variant="ghost" size="sm" className="h-10 gap-1.5 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground">
+              <Button asChild variant="ghost" size="sm" className="h-10 gap-1.5 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground">
+                <Link to="/auth">
                   <LogIn className="h-3 w-3" /> Sign in
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )}
           </div>
         </div>
@@ -271,7 +276,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <Link to="/jobs" className="hover:text-foreground">Explore</Link>
             <Link to="/applications" className="hover:text-foreground">Applications</Link>
-            <Link to="/outreach" className="hover:text-foreground">Outreach</Link>
+            <Link to="/tracked" className="hover:text-foreground">Saved Jobs</Link>
             <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
           </div>
         </div>
@@ -282,7 +287,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <CommandList>
           <CommandEmpty>No results.</CommandEmpty>
           <CommandGroup heading="Navigate">
-            {COMMAND_ITEMS.map((item) => (
+            {commandItems.map((item) => (
               <CommandItem key={item.path} onSelect={() => { navigate(item.path); setCmdOpen(false); }}>
                 <item.icon className="mr-2 h-3.5 w-3.5" />
                 {item.label}

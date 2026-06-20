@@ -57,13 +57,17 @@ import {
   STATUS_LABELS,
   buildSweJobsApplication,
   type ApplicationInsert,
+  type ApplicationMomentumFilter,
   type ApplicationRow,
   type ApplicationSort,
   type ApplicationStatus,
   sweJobsApplicationRequestId,
   computeApplicationMetrics,
+  computeApplicationMomentum,
   formatApplicationDate,
   formatApplicationDateInput,
+  isArchivedApplication,
+  matchesApplicationMomentum,
 } from "@/lib/applications";
 import { getErrorMessage, toDisplayError } from "@/lib/errors";
 import { downloadCSV } from "@/lib/export";
@@ -360,6 +364,8 @@ export default function Applications() {
   const [form, setForm] = useState<ApplicationFormState>(emptyFormState());
   const [urlMatchNotice, setUrlMatchNotice] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
+  const [momentumFilter, setMomentumFilter] = useState<ApplicationMomentumFilter>("all");
+  const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<ApplicationSort>("applied_desc");
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>("25");
@@ -592,9 +598,13 @@ export default function Applications() {
   const filteredApplications = useMemo(() => {
     return (applicationsQuery.data ?? [])
       .filter((application) => (statusFilter === "all" ? true : application.status === statusFilter))
+      .filter((application) => (
+        statusFilter !== "all" || showArchived || !isArchivedApplication(application)
+      ))
+      .filter((application) => matchesApplicationMomentum(application, momentumFilter))
       .filter((application) => matchesSearch(application, debouncedSearch))
       .sort((a, b) => compareApplications(a, b, sort));
-  }, [applicationsQuery.data, debouncedSearch, sort, statusFilter]);
+  }, [applicationsQuery.data, debouncedSearch, momentumFilter, showArchived, sort, statusFilter]);
 
   const applicationsById = useMemo(
     () => new Map((applicationsQuery.data ?? []).map((application) => [application.id, application])),
@@ -606,7 +616,7 @@ export default function Applications() {
 
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, sort, statusFilter, pageSize]);
+  }, [debouncedSearch, momentumFilter, showArchived, sort, statusFilter, pageSize]);
 
   useEffect(() => {
     if (page >= totalPages) {
@@ -675,6 +685,10 @@ export default function Applications() {
   };
 
   const metrics = useMemo(() => computeApplicationMetrics(applicationsQuery.data ?? []), [applicationsQuery.data]);
+  const momentum = useMemo(
+    () => computeApplicationMomentum(applicationsQuery.data ?? []),
+    [applicationsQuery.data],
+  );
   const editingStatusTimeline = useMemo(
     () => parseStatusHistory(editingApplication?.status_history),
     [editingApplication?.status_history],
@@ -1182,25 +1196,70 @@ export default function Applications() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-4">
-          <Card className="border-border/40 border-t-2 border-t-stone-500/40 bg-card/60">
-            <CardContent className="p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Applications</p>
-              <p className="mt-2 text-2xl font-semibold">{metrics.total}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/40 border-t-2 border-t-amber-500/40 bg-card/60">
-            <CardContent className="p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Online Assessments</p>
-              <p className="mt-2 text-2xl font-semibold">{metrics.oa}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/40 border-t-2 border-t-blue-500/40 bg-card/60">
-            <CardContent className="p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Interviews</p>
-              <p className="mt-2 text-2xl font-semibold">{metrics.interviewing}</p>
-            </CardContent>
-          </Card>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <button
+            type="button"
+            aria-pressed={momentumFilter === "awaiting"}
+            onClick={() => {
+              setMomentumFilter((current) => current === "awaiting" ? "all" : "awaiting");
+              setStatusFilter("all");
+              setShowArchived(false);
+            }}
+            className="text-left"
+          >
+            <Card className={cn(
+              "h-full border-border/40 border-t-2 border-t-stone-500/40 bg-card/60 transition-colors hover:bg-card",
+              momentumFilter === "awaiting" && "ring-2 ring-primary/40",
+            )}>
+              <CardContent className="p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Awaiting response</p>
+                <p className="mt-2 text-2xl font-semibold">{momentum.awaitingResponse}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Applied, no response logged</p>
+              </CardContent>
+            </Card>
+          </button>
+          <button
+            type="button"
+            aria-pressed={momentumFilter === "follow_up"}
+            onClick={() => {
+              setMomentumFilter((current) => current === "follow_up" ? "all" : "follow_up");
+              setStatusFilter("all");
+              setShowArchived(false);
+            }}
+            className="text-left"
+          >
+            <Card className={cn(
+              "h-full border-border/40 border-t-2 border-t-amber-500/40 bg-card/60 transition-colors hover:bg-card",
+              momentumFilter === "follow_up" && "ring-2 ring-primary/40",
+            )}>
+              <CardContent className="p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Follow-up due</p>
+                <p className="mt-2 text-2xl font-semibold">{momentum.followUpDue}</p>
+                <p className="mt-1 text-xs text-muted-foreground">No reply after 10 days</p>
+              </CardContent>
+            </Card>
+          </button>
+          <button
+            type="button"
+            aria-pressed={momentumFilter === "active_week"}
+            onClick={() => {
+              setMomentumFilter((current) => current === "active_week" ? "all" : "active_week");
+              setStatusFilter("all");
+              setShowArchived(false);
+            }}
+            className="text-left"
+          >
+            <Card className={cn(
+              "h-full border-border/40 border-t-2 border-t-blue-500/40 bg-card/60 transition-colors hover:bg-card",
+              momentumFilter === "active_week" && "ring-2 ring-primary/40",
+            )}>
+              <CardContent className="p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Active this week</p>
+                <p className="mt-2 text-2xl font-semibold">{momentum.activeThisWeek}</p>
+                <p className="mt-1 text-xs text-muted-foreground">New or recently updated</p>
+              </CardContent>
+            </Card>
+          </button>
           <Card className="border-border/40 border-t-2 border-t-emerald-500/40 bg-card/60">
             <CardContent className="p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Response Rate</p>
@@ -1215,7 +1274,13 @@ export default function Applications() {
         <Card className="border-border/40 bg-card/60">
           <CardContent className="space-y-4 p-4">
             <div className="grid gap-3 md:grid-cols-[180px,minmax(0,1fr),220px,140px]">
-              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as FilterStatus)}>
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => {
+                  setStatusFilter(value as FilterStatus);
+                  setMomentumFilter("all");
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -1262,6 +1327,27 @@ export default function Applications() {
               </Select>
             </div>
 
+            {momentum.archived > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/40 bg-background/25 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Rejected and withdrawn applications are archived by default.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setShowArchived((current) => !current);
+                    setStatusFilter("all");
+                    setMomentumFilter("all");
+                  }}
+                >
+                  {showArchived ? "Hide archived" : `Show archived (${momentum.archived})`}
+                </Button>
+              </div>
+            ) : null}
+
             {selectedApplicationIds.length > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/35 px-3 py-2">
                 <p className="text-xs text-muted-foreground">
@@ -1306,7 +1392,9 @@ export default function Applications() {
               <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border/60 bg-background/30 p-10 text-center">
                 <ClipboardList className="h-10 w-10 text-muted-foreground/40" />
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">No applications yet</p>
+                  <p className="text-sm font-medium">
+                    {(applicationsQuery.data?.length ?? 0) > 0 ? "No applications match this view" : "No applications yet"}
+                  </p>
                   <p className="text-sm text-muted-foreground">
                     Mark SweJobs roles as applied to bring them here automatically, or add your outside applications manually.
                   </p>

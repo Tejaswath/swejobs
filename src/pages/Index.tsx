@@ -261,16 +261,12 @@ export default function Index() {
     queryKey: ["onboarding-progress", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const [resumeResult, skillResult, searchResult] = await Promise.all([
+      const [resumeResult, searchResult] = await Promise.all([
         supabase
           .from("resume_versions")
           .select("id", { count: "exact", head: true })
           .eq("user_id", user!.id)
           .not("storage_path", "is", null),
-        supabase
-          .from("user_skills")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user!.id),
         supabase
           .from("saved_searches")
           .select("id", { count: "exact", head: true })
@@ -278,12 +274,10 @@ export default function Index() {
       ]);
 
       if (resumeResult.error) throw resumeResult.error;
-      if (skillResult.error) throw skillResult.error;
       if (searchResult.error) throw searchResult.error;
 
       return {
         resumeCount: resumeResult.count ?? 0,
-        skillCount: skillResult.count ?? 0,
         searchCount: searchResult.count ?? 0,
       };
     },
@@ -458,7 +452,6 @@ export default function Index() {
 
   const onboardingProgress = onboardingProgressQuery.data ?? {
     resumeCount: 0,
-    skillCount: 0,
     searchCount: 0,
   };
   const onboardingTasks = [
@@ -473,12 +466,6 @@ export default function Index() {
       done: watchlistHighlights.length >= 3,
       label: "Watch 3 companies",
       href: "/jobs",
-    },
-    {
-      id: "skills",
-      done: onboardingProgress.skillCount > 0,
-      label: "Add your skills",
-      href: "/skills",
     },
     {
       id: "searches",

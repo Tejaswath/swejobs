@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   applicationResponseCount,
   buildSweJobsApplication,
+  computeApplicationMomentum,
   computeApplicationMetrics,
   formatApplicationDate,
   formatApplicationDateInput,
+  isArchivedApplication,
+  matchesApplicationMomentum,
   sweJobsApplicationRequestId,
 } from "@/lib/applications";
 
@@ -53,5 +56,25 @@ describe("applications helpers", () => {
     expect(formatApplicationDate("bad-date")).toBe("Unknown");
     expect(formatApplicationDateInput("2026-03-29T09:00:00Z")).toBe("2026-03-29");
     expect(formatApplicationDateInput(null)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("computes actionable momentum and keeps terminal statuses archived", () => {
+    const now = new Date("2026-06-21T12:00:00Z");
+    const applications = [
+      { status: "applied", applied_at: "2026-06-05T12:00:00Z", updated_at: "2026-06-05T12:00:00Z" },
+      { status: "applied", applied_at: "2026-06-19T12:00:00Z", updated_at: "2026-06-19T12:00:00Z" },
+      { status: "interviewing", applied_at: "2026-06-01T12:00:00Z", updated_at: "2026-06-20T12:00:00Z" },
+      { status: "rejected", applied_at: "2026-06-18T12:00:00Z", updated_at: "2026-06-20T12:00:00Z" },
+    ];
+
+    expect(computeApplicationMomentum(applications, now)).toEqual({
+      awaitingResponse: 2,
+      followUpDue: 1,
+      activeThisWeek: 2,
+      archived: 1,
+    });
+    expect(matchesApplicationMomentum(applications[0], "follow_up", now)).toBe(true);
+    expect(matchesApplicationMomentum(applications[2], "active_week", now)).toBe(true);
+    expect(isArchivedApplication(applications[3])).toBe(true);
   });
 });
