@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -10,6 +10,15 @@ import Jobs, {
 } from "@/pages/Jobs";
 
 const supabase = vi.hoisted(() => {
+  let resumeRows = [
+    {
+      id: "resume-1",
+      label: "Default resume",
+      file_name: "default-resume.pdf",
+      parsed_text: "backend services",
+      is_default: true,
+    },
+  ];
   const job = {
     id: 1,
     is_active: true,
@@ -102,15 +111,18 @@ const supabase = vi.hoisted(() => {
       }
       if (table === "resume_versions") {
         return createThenableBuilder({
-          data: [{ id: "resume-1", label: "Default resume", parsed_text: "backend services", is_default: true }],
+          data: resumeRows,
           error: null,
-          count: 1,
+          count: resumeRows.length,
         });
       }
       if (table === "user_skills") {
         return createThenableBuilder({ data: [{ skill: "backend" }], error: null, count: 1 });
       }
       return createThenableBuilder({ data: [], error: null, count: 0 });
+    },
+    setResumeRows: (rows: typeof resumeRows) => {
+      resumeRows = rows;
     },
   };
 });
@@ -128,6 +140,18 @@ vi.mock("@/integrations/supabase/client", () => ({
 }));
 
 describe("Jobs page", () => {
+  beforeEach(() => {
+    supabase.setResumeRows([
+      {
+        id: "resume-1",
+        label: "Default resume",
+        file_name: "default-resume.pdf",
+        parsed_text: "backend services",
+        is_default: true,
+      },
+    ]);
+  });
+
   it("normalizes public lens URL aliases", () => {
     expect(normalizeLensParam("graduate")).toBe("graduate_trainee");
     expect(normalizeLensParam("graduate-trainee")).toBe("graduate_trainee");
@@ -213,7 +237,47 @@ describe("Jobs page", () => {
     fireEvent.click(jobTitle);
 
     expect(await screen.findByText("Track")).toBeInTheDocument();
-    expect(screen.getByText("Match analysis")).toBeInTheDocument();
-    expect(screen.getByText("Description")).toBeInTheDocument();
+    expect(screen.getByText("Fit summary")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Full description" })).toBeInTheDocument();
+    expect(screen.queryByText("Build reliable backend services.")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Full description" }));
+    expect(screen.getByText("Build reliable backend services.")).toBeInTheDocument();
+  });
+
+  it("restores search filters from the URL", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter initialEntries={["/jobs?q=backend&language=en&remote=true&confirmed=true"]}>
+        <QueryClientProvider client={queryClient}>
+          <Jobs />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByDisplayValue("backend")).toBeInTheDocument();
+    expect(screen.getByText("Language: English")).toBeInTheDocument();
+    expect(screen.getByText("Remote only")).toBeInTheDocument();
+  });
+
+  it("offers inline résumé upload when no résumé is available", async () => {
+    supabase.setResumeRows([]);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Jobs />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("Backend Engineer"));
+    expect(await screen.findByText("See why this role fits")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add résumé to see your fit" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Add a résumé")).toBeInTheDocument();
   });
 });

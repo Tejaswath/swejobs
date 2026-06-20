@@ -86,7 +86,7 @@ export function formatApplicationDate(value: string | null | undefined): string 
   if (!value) return "Unknown";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Unknown";
-  return parsed.toLocaleDateString("sv-SE", {
+  return parsed.toLocaleDateString("en-SE", {
     year: "numeric",
     month: "short",
     day: "numeric",

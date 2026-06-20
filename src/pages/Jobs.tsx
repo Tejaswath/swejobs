@@ -13,6 +13,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ResumeUploadDialog } from "@/components/resumes/ResumeUploadDialog";
 import {
   MapPin,
   ChevronLeft,
@@ -21,12 +24,13 @@ import {
   Building,
   X,
   Star,
-  TrendingUp,
   Search,
   SlidersHorizontal,
   EyeOff,
   ChevronsUpDown,
   Bookmark,
+  FileUp,
+  RotateCcw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -70,6 +74,10 @@ export function normalizeLensParam(value: string | null): Lens {
     return normalized;
   }
   return "broad";
+}
+
+function normalizeLanguageParam(value: string | null): "all" | "en" | "sv" | "mixed" {
+  return value === "en" || value === "sv" || value === "mixed" ? value : "all";
 }
 
 const LENSES: Array<{ id: Lens; label: string; description: string }> = [
@@ -273,17 +281,35 @@ function formatLocalDate(date: Date): string {
 }
 
 function formatDeadlineDisplay(deadline: string | null | undefined): string {
-  if (!deadline) return "No deadline";
+  if (!deadline) return "Deadline not listed";
   const parsed = new Date(`${deadline}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "No deadline";
+  if (Number.isNaN(parsed.getTime())) return "Deadline not listed";
 
   const today = startOfLocalDay(new Date());
   const targetDay = startOfLocalDay(parsed);
   const diffDays = Math.floor((targetDay.getTime() - today.getTime()) / 86_400_000);
 
-  if (diffDays <= 0) return "Today";
-  if (diffDays <= 7) return `Closing in ${diffDays}d`;
-  return targetDay.toLocaleDateString("sv-SE", { month: "short", day: "numeric" });
+  if (diffDays <= 0) return "Closes today";
+  if (diffDays === 1) return "Closes tomorrow";
+  return `Closes ${targetDay.toLocaleDateString("en-SE", { month: "long", day: "numeric" })}`;
+}
+
+function formatDisplayDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-SE", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function languageLabel(value: string | null | undefined): string {
+  if (value === "en") return "English";
+  if (value === "sv") return "Swedish";
+  if (value === "mixed") return "English & Swedish";
+  return "Language not listed";
+}
+
+function pluralizeJobs(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? "job" : "jobs"}`;
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -309,19 +335,26 @@ export default function Jobs() {
 
   const lensParam = searchParams.get("lens");
   const [lens, setLens] = useState<Lens>(() => normalizeLensParam(lensParam));
-  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
-  const [lang, setLang] = useState(() => searchParams.get("lang") ?? "all");
-  const [remoteOnly, setRemoteOnly] = useState(() => searchParams.get("remote") === "1");
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? searchParams.get("search") ?? "");
+  const [lang, setLang] = useState(() =>
+    normalizeLanguageParam(searchParams.get("language") ?? searchParams.get("lang")),
+  );
+  const [remoteOnly, setRemoteOnly] = useState(
+    () => searchParams.get("remote") === "true" || searchParams.get("remote") === "1",
+  );
   const [hideSwedishRequired, setHideSwedishRequired] = useState(true);
   const [hideCitizenshipRestricted, setHideCitizenshipRestricted] = useState(true);
   const [hideThreePlusYears, setHideThreePlusYears] = useState(true);
   const [hideConsultancies, setHideConsultancies] = useState(true);
-  const [confirmedGraduateOnly, setConfirmedGraduateOnly] = useState(false);
+  const [confirmedGraduateOnly, setConfirmedGraduateOnly] = useState(
+    () => searchParams.get("confirmed") === "true" || searchParams.get("confirmed") === "1",
+  );
   const [includeJobtechInHighSignal, setIncludeJobtechInHighSignal] = useState(
     () => searchParams.get("jobtech") === "1",
   );
   const [sortBy, setSortBy] = useState<JobSort>("relevance");
   const [selectedAtsResumeId, setSelectedAtsResumeId] = useState<string>("auto");
+  const [resumeUploadOpen, setResumeUploadOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(-1);
@@ -338,6 +371,7 @@ export default function Jobs() {
   const [tipDismissed, setTipDismissed] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("swejobs.explore.tip-dismissed") === "true",
   );
+  const syncingFromUrlRef = useRef(false);
   const debouncedSearch = useDebouncedValue(search, 275);
   const isSearchPending = search.trim() !== debouncedSearch.trim();
   const deadlineFocus: DeadlineFocus =
@@ -352,9 +386,37 @@ export default function Jobs() {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    syncingFromUrlRef.current = true;
     setLens(normalizeLensParam(lensParam));
+    setSearch(searchParams.get("q") ?? searchParams.get("search") ?? "");
+    setLang(normalizeLanguageParam(searchParams.get("language") ?? searchParams.get("lang")));
+    setRemoteOnly(searchParams.get("remote") === "true" || searchParams.get("remote") === "1");
+    setConfirmedGraduateOnly(
+      searchParams.get("confirmed") === "true" || searchParams.get("confirmed") === "1",
+    );
     setPage(0);
-  }, [lensParam]);
+    Promise.resolve().then(() => {
+      syncingFromUrlRef.current = false;
+    });
+  }, [lensParam, searchParams]);
+
+  useEffect(() => {
+    if (syncingFromUrlRef.current) return;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("search");
+      next.delete("lang");
+      if (search.trim()) next.set("q", search.trim());
+      else next.delete("q");
+      if (lang !== "all") next.set("language", lang);
+      else next.delete("language");
+      if (remoteOnly) next.set("remote", "true");
+      else next.delete("remote");
+      if (confirmedGraduateOnly) next.set("confirmed", "true");
+      else next.delete("confirmed");
+      return next.toString() === current.toString() ? current : next;
+    }, { replace: true });
+  }, [confirmedGraduateOnly, lang, remoteOnly, search, setSearchParams]);
 
   const selectLens = (nextLens: Lens) => {
     setLens(nextLens);
@@ -434,7 +496,13 @@ export default function Jobs() {
     }
   };
 
-  const { data: rawJobsData, isLoading, isFetching, error: jobsError } = useQuery({
+  const {
+    data: rawJobsData,
+    isLoading,
+    isFetching,
+    error: jobsError,
+    refetch: refetchJobs,
+  } = useQuery({
     queryKey: ["jobs-v3", lens, includeJobtechInHighSignal, debouncedSearch, lang, remoteOnly, deadlineFocus],
     staleTime: 300_000,
     placeholderData: (previous) => previous,
@@ -517,6 +585,18 @@ export default function Jobs() {
   });
 
   const activeSearchCount = rawJobsData?.length ?? 0;
+  const activeJobCountQuery = useQuery({
+    queryKey: ["active-job-count"],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
 
   const { data: searchCoverage } = useQuery({
     queryKey: ["jobs-search-coverage", debouncedSearch],
@@ -548,7 +628,7 @@ export default function Jobs() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("resume_versions")
-        .select("id, label, parsed_text, is_default, created_at")
+        .select("id, label, file_name, parsed_text, is_default, created_at")
         .eq("user_id", user!.id)
         .not("parsed_text", "is", null)
         .order("is_default", { ascending: false })
@@ -1053,9 +1133,12 @@ export default function Jobs() {
       const next = new URLSearchParams(current);
       next.delete("deadline");
       next.delete("search");
+      next.delete("q");
       next.delete("coverage");
       next.delete("lang");
+      next.delete("language");
       next.delete("remote");
+      next.delete("confirmed");
       next.delete("lens");
       next.delete("jobtech");
       return next;
@@ -1123,7 +1206,12 @@ export default function Jobs() {
     };
   }, [companyCoverageEntry, debouncedSearch, total]);
 
-  const { data: detail } = useQuery({
+  const {
+    data: detail,
+    isLoading: detailLoading,
+    isError: detailIsError,
+    refetch: refetchDetail,
+  } = useQuery({
     queryKey: ["job", selectedId],
     enabled: !!selectedId,
     queryFn: async () => {
@@ -1172,6 +1260,7 @@ export default function Jobs() {
   const [appliedFeedbackJobId, setAppliedFeedbackJobId] = useState<number | null>(null);
   const [showAtsDetails, setShowAtsDetails] = useState(false);
   const [showOriginalDescription, setShowOriginalDescription] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   useEffect(() => {
     if (tracking) {
@@ -1185,6 +1274,7 @@ export default function Jobs() {
     setAppliedFeedbackJobId(null);
     setShowAtsDetails(false);
     setShowOriginalDescription(false);
+    setShowFullDescription(false);
   }, [selectedId]);
 
   const upsertTracking = useMutation({
@@ -1329,8 +1419,6 @@ export default function Jobs() {
     }
   }, [selectedIdx]);
 
-  const matchingTags = detailTags?.filter((tag) => userSkills?.has(tag.toLowerCase())) ?? [];
-  const missingTags = detailTags?.filter((tag) => !userSkills?.has(tag.toLowerCase())) ?? [];
   const listAtsByJobId = useMemo(() => {
     if (jobs.length === 0 || Object.keys(atsByJobId).length === 0) {
       return {} as Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>;
@@ -1374,6 +1462,20 @@ export default function Jobs() {
   }, [activeAtsResume?.parsed_text, detail, detailTags, userSkills]);
   const visibleMatchedKeywords = detailAtsResult?.result.matchedKeywords.slice(0, 6) ?? [];
   const visibleMissingKeywords = detailAtsResult?.result.missingKeywords.slice(0, 6) ?? [];
+  const keyRequirements = useMemo(() => {
+    const values = detailAtsResult?.result.missingKeywords ?? detailTags ?? [];
+    return values.slice(0, 5);
+  }, [detailAtsResult?.result.missingKeywords, detailTags]);
+  const detailRestrictions = useMemo(() => {
+    if (!detail) return [];
+    const restrictions: string[] = [];
+    if (detail.years_required_min != null) restrictions.push(`${detail.years_required_min}+ years requested`);
+    if (detail.swedish_required) restrictions.push("Swedish required");
+    if (detail.citizenship_required) restrictions.push("Citizenship/work permit restriction");
+    if (detail.security_clearance_required) restrictions.push("Security clearance");
+    if (effectiveConsultancyFlag(detail)) restrictions.push("Consultancy role");
+    return restrictions;
+  }, [detail]);
 
   const detailDisplayEmployer = detail
     ? companyDisplayName(detail.company_canonical, detail.employer_name)
@@ -1389,12 +1491,12 @@ export default function Jobs() {
           <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
           <p className="text-xs text-muted-foreground">
             {deadlineFocus === "today"
-              ? `${total.toLocaleString()} roles due today`
+              ? `${pluralizeJobs(total)} due today`
               : deadlineFocus === "week"
-                ? `${total.toLocaleString()} roles closing this week`
+                ? `${pluralizeJobs(total)} closing this week`
                 : deadlineFocus === "upcoming"
-                  ? `${total.toLocaleString()} upcoming deadline roles`
-                : `${total.toLocaleString()} jobs in current lens`}
+                  ? `${pluralizeJobs(total)} with upcoming deadlines`
+                  : `${pluralizeJobs(total)} in this view`}
           </p>
         </div>
 
@@ -1480,14 +1582,14 @@ export default function Jobs() {
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Language</p>
-                  <Select value={lang} onValueChange={setLang}>
+                  <Select value={lang} onValueChange={(value) => setLang(normalizeLanguageParam(value))}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All langs</SelectItem>
+                      <SelectItem value="all">All languages</SelectItem>
                       <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="mixed">Mixed</SelectItem>
+                      <SelectItem value="mixed">English & Swedish</SelectItem>
                       <SelectItem value="sv">Swedish</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1570,11 +1672,13 @@ export default function Jobs() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">
-                  {activeAtsResume ? `Auto (${activeAtsResume.label})` : "Auto"}
+                  {activeAtsResume
+                    ? `Default (${activeAtsResume.file_name || activeAtsResume.label})`
+                    : "Default résumé"}
                 </SelectItem>
                 {(atsResumes ?? []).map((resume) => (
                   <SelectItem key={resume.id} value={resume.id}>
-                    {resume.label}
+                    {resume.file_name || resume.label}
                     {resume.is_default ? " (Default)" : ""}
                   </SelectItem>
                 ))}
@@ -1583,8 +1687,19 @@ export default function Jobs() {
           ) : null}
           {user && (atsResumes?.length ?? 0) === 1 && activeAtsResume ? (
             <Badge variant="outline" className="h-8 rounded-md px-2 text-xs font-normal">
-              Resume: {activeAtsResume.label}
+              Résumé: {activeAtsResume.file_name || activeAtsResume.label}
             </Badge>
+          ) : null}
+          {user ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setResumeUploadOpen(true)}
+            >
+              <FileUp className="h-3.5 w-3.5" />
+              {(atsResumes?.length ?? 0) === 0 ? "Add résumé" : "Upload another"}
+            </Button>
           ) : null}
 
           {hasActiveFilters && (
@@ -1598,7 +1713,7 @@ export default function Jobs() {
           <div className="flex flex-wrap items-center gap-1.5">
             {lang !== "all" && (
               <Badge variant="secondary" className="gap-1 text-[10px]">
-                Language: {lang.toUpperCase()}
+                Language: {languageLabel(lang)}
                 <button type="button" onClick={() => setLang("all")} className="hover:text-foreground" aria-label="Clear language filter">
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -1608,6 +1723,19 @@ export default function Jobs() {
               <Badge variant="secondary" className="gap-1 text-[10px]">
                 Remote only
                 <button type="button" onClick={() => setRemoteOnly(false)} className="hover:text-foreground" aria-label="Clear remote-only filter">
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            )}
+            {confirmedGraduateOnly && (
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                Confirmed programs only
+                <button
+                  type="button"
+                  onClick={() => setConfirmedGraduateOnly(false)}
+                  className="hover:text-foreground"
+                  aria-label="Include possible early-career roles"
+                >
                   <X className="h-2.5 w-2.5" />
                 </button>
               </Badge>
@@ -1717,9 +1845,16 @@ export default function Jobs() {
         )}
 
         {sortBy === "ats_desc" && !activeAtsResume?.parsed_text ? (
-          <p className="text-[11px] text-muted-foreground">
-            Keyword sorting needs a resume with extracted text. Upload/select one in Resume Library.
-          </p>
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2">
+            <p className="text-[11px] text-muted-foreground">
+              Add a résumé to sort jobs by keyword match.
+            </p>
+            {user ? (
+              <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setResumeUploadOpen(true)}>
+                Add résumé
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {sortBy === "ats_desc" && activeAtsResume?.parsed_text ? (
           <p className="text-[11px] text-muted-foreground">
@@ -1758,23 +1893,49 @@ export default function Jobs() {
                 ))}
               </div>
             ) : jobsError ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                Failed to load jobs: {jobsError instanceof Error ? jobsError.message : "Unknown error"}
+              <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
+                <div>
+                  <p className="font-medium text-destructive">Jobs could not be loaded</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {jobsError instanceof Error ? jobsError.message : "The jobs query failed unexpectedly."}
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void refetchJobs()}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Retry
+                </Button>
               </div>
             ) : jobs.length === 0 ? (
-              <div className="space-y-2 py-12 text-center">
-                <p className="text-sm text-muted-foreground">No jobs found for this lens and filters.</p>
-                <p className="text-xs text-muted-foreground/80">
-                  {searchParams.get("coverage") === "1" && coverageBanner
-                    ? coverageBanner.body
+              <div className="space-y-3 rounded-lg border border-dashed border-border/60 px-5 py-12 text-center">
+                <p className="text-sm font-medium">
+                  {(activeJobCountQuery.data ?? 0) === 0
+                    ? "No active jobs are available yet"
                     : debouncedSearch.trim()
-                    ? activeSearchCount === 0
-                      ? "No active jobs were found for this search in the current source data."
-                      : searchCoverage?.visibleCount === 0
-                        ? "Jobs were found for this search, but all current matches were filtered as non-target/noise."
-                        : "No matches found even after relaxing suppression toggles. Try broadening the search or resetting controls."
-                    : "Try turning off one suppression toggle to recover borderline matches."}
+                      ? `No results for “${debouncedSearch.trim()}”`
+                      : "No jobs match these filters"}
                 </p>
+                <p className="mx-auto max-w-md text-xs text-muted-foreground">
+                  {(activeJobCountQuery.data ?? 0) === 0
+                    ? "Connected sources are still being populated. Try again after the next ingestion cycle."
+                    : searchParams.get("coverage") === "1" && coverageBanner
+                      ? coverageBanner.body
+                      : debouncedSearch.trim()
+                        ? activeSearchCount === 0
+                          ? "Try a broader title or company name, or clear the search."
+                          : searchCoverage?.visibleCount === 0
+                            ? "Current matches were excluded by the software-role trust filters."
+                            : "Try clearing the search or resetting filters."
+                        : "Reset the filters to return to the recommended For You view."}
+                </p>
+                {(activeJobCountQuery.data ?? 0) > 0 ? (
+                  <div className="flex justify-center gap-2">
+                    {debouncedSearch.trim() ? (
+                      <Button variant="outline" size="sm" onClick={() => setSearch("")}>
+                        Clear search
+                      </Button>
+                    ) : null}
+                    <Button size="sm" onClick={clearFilters}>Reset filters</Button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
@@ -1849,9 +2010,20 @@ export default function Jobs() {
                                 </Badge>
                               )}
                               {suitability ? (
-                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-primary/30 text-primary">
-                                  {suitability.label} {suitability.score}
-                                </Badge>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span>
+                                        <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-primary/30 text-primary">
+                                          {suitability.label} fit · {suitability.score}/100
+                                        </Badge>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs text-xs">
+                                      Combines role relevance, career stage, résumé match, source quality, and your preferences.
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               ) : null}
                               {atsSnapshot ? (
                                 <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.displayScore))}>
@@ -1901,7 +2073,7 @@ export default function Jobs() {
                           </p>
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
-                            {job.lang && <span>{job.lang.toUpperCase()}</span>}
+                            {job.lang && <span>{languageLabel(job.lang)}</span>}
                             <span>
                               {lens === "graduate_trainee" || careerBucket !== "stretch"
                                 ? EARLY_CAREER_LABELS[careerBucket]
@@ -1961,6 +2133,47 @@ export default function Jobs() {
           </div>
 
           <AnimatePresence>
+            {selectedId && detailLoading && (
+              <motion.div
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                className="flex-1 space-y-4 rounded-lg border border-border/40 bg-card p-5"
+              >
+                <Skeleton className="h-7 w-2/3" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-48 w-full" />
+              </motion.div>
+            )}
+            {selectedId && detailIsError && (
+              <motion.div
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 8 }}
+                className="flex flex-1 items-center justify-center rounded-lg border border-destructive/30 bg-destructive/5 p-6"
+              >
+                <div className="max-w-sm text-center">
+                  <p className="text-sm font-medium">This job could not be opened</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    It may have expired or the detail query may have failed.
+                  </p>
+                  <div className="mt-4 flex justify-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => void refetchDetail()}>Retry</Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedId(null);
+                        setSelectedIdx(-1);
+                      }}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
             {selectedId && detail && (
               <motion.div
                 initial={{ opacity: 0, x: 8 }}
@@ -1987,12 +2200,12 @@ export default function Jobs() {
                               <MapPin className="h-3 w-3" /> {detail.municipality}
                             </span>
                           )}
-                          {detail.lang && <span>{detail.lang.toUpperCase()}</span>}
+                          {detail.lang && <span>{languageLabel(detail.lang)}</span>}
                           {effectiveCareerStage(detail.career_stage, detail.career_stage_confidence) !== "unknown" && (
                             <span>{effectiveCareerStage(detail.career_stage, detail.career_stage_confidence)}</span>
                           )}
                           {detail.published_at && (
-                            <span>{new Date(detail.published_at).toLocaleDateString("sv-SE")}</span>
+                            <span>Published {formatDisplayDate(detail.published_at)}</span>
                           )}
                         </div>
                       </div>
@@ -2077,80 +2290,44 @@ export default function Jobs() {
                         </Badge>
                       )}
                       {detail.application_deadline && (
-                        <Badge variant="outline" className="font-mono text-xs font-normal">
-                          Due {detail.application_deadline.slice(0, 10)}
+                        <Badge variant="outline" className="text-xs font-normal">
+                          {formatDeadlineDisplay(detail.application_deadline)}
                         </Badge>
                       )}
                     </div>
 
-                    {user && detailTags && detailTags.length > 0 && userSkills && userSkills.size > 0 && (
-                      <div className="space-y-2">
-                        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          <TrendingUp className="h-3 w-3" /> Skill match
-                        </h3>
-                        <div className="flex flex-wrap gap-1">
-                          {matchingTags.map((tag) => (
-                            <Badge
-                              key={tag}
-                              className="border-primary/20 bg-primary/10 text-xs font-normal text-primary"
-                            >
-                              {tag}
-                            </Badge>
-                          ))}
-                          {missingTags.slice(0, 6).map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-xs font-normal text-muted-foreground">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                        {matchingTags.length > 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            {matchingTags.length} of {detailTags.length} skills match your profile
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {detailTags && detailTags.length > 0 && (!user || !userSkills || userSkills.size === 0) && (
-                      <div>
-                        <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Skills
-                        </h3>
-                        <div className="flex flex-wrap gap-1">
-                          {detailTags.map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-xs font-normal">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {detailAtsResult ? (
-                      <div className="space-y-2 border-t border-border/40 pt-4">
-                        <div className="flex items-center gap-3 py-1">
-                          <div className="h-px flex-1 bg-border/40" />
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60">Match analysis</span>
-                          <div className="h-px flex-1 bg-border/40" />
-                        </div>
+                      <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
                         <div className="flex items-center justify-between gap-2">
-                          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Keyword match (ATS)</h3>
+                          <div>
+                            <h3 className="text-sm font-semibold">Fit summary</h3>
+                            <p className="text-[11px] text-muted-foreground">
+                              Based on {activeAtsResume?.file_name || activeAtsResume?.label || "your résumé"}
+                            </p>
+                          </div>
                           <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.displayScore))}>
-                            {detailAtsResult.displayScore}% match
+                            Keyword match · {detailAtsResult.displayScore}%
                           </Badge>
                         </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          This is a keyword overlap score, not a full suitability score. Years-of-experience requirements may still disqualify the role.
-                        </p>
-                        {detailAtsResult.penalty > 0 ? (
-                          <p className="text-[11px] text-muted-foreground">
-                            Seniority adjustment applied ({detailAtsResult.penalty} pts) based on title/stage/experience signals.
-                          </p>
-                        ) : null}
+                        <div className="flex flex-wrap gap-1.5 text-[10px]">
+                          <Badge variant="secondary">
+                            Career stage: {effectiveCareerStage(detail.career_stage, detail.career_stage_confidence)}
+                          </Badge>
+                          {detailRestrictions.map((restriction) => (
+                            <Badge key={restriction} variant="outline" className="border-amber-500/30 text-amber-200">
+                              {restriction}
+                            </Badge>
+                          ))}
+                          {detailRestrictions.length === 0 ? (
+                            <Badge variant="outline" className="border-emerald-500/30 text-emerald-200">
+                              No detected restrictions
+                            </Badge>
+                          ) : null}
+                        </div>
                         {(visibleMatchedKeywords.length > 0 || visibleMissingKeywords.length > 0) && (
-                          <div className="grid gap-2 rounded-lg border border-border/50 bg-muted/20 p-2 md:grid-cols-2">
+                          <div className="grid gap-3 md:grid-cols-2">
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">You have</p>
+                              <p className="mb-1 text-[11px] font-medium text-emerald-200">✓ You have</p>
                               <div className="flex flex-wrap gap-1">
                                 {visibleMatchedKeywords.length > 0 ? (
                                   visibleMatchedKeywords.map((keyword) => (
@@ -2164,7 +2341,7 @@ export default function Jobs() {
                               </div>
                             </div>
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-muted-foreground">Gaps</p>
+                              <p className="mb-1 text-[11px] font-medium text-amber-200">Gaps</p>
                               <div className="flex flex-wrap gap-1">
                                 {visibleMissingKeywords.length > 0 ? (
                                   visibleMissingKeywords.map((keyword) => (
@@ -2179,6 +2356,24 @@ export default function Jobs() {
                             </div>
                           </div>
                         )}
+                        {keyRequirements.length > 0 ? (
+                          <div>
+                            <p className="mb-1 text-[11px] font-medium text-muted-foreground">Key requirements</p>
+                            <div className="flex flex-wrap gap-1">
+                              {keyRequirements.map((keyword) => (
+                                <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
+                                  {keyword}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        <p className="text-[11px] text-muted-foreground">
+                          Keyword overlap supports your decision; it does not predict hiring outcomes.
+                          {detailAtsResult.penalty > 0
+                            ? ` A ${detailAtsResult.penalty}-point seniority adjustment was applied.`
+                            : ""}
+                        </p>
                         <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
                           <CollapsibleTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
@@ -2209,6 +2404,16 @@ export default function Jobs() {
                             </div>
                           </CollapsibleContent>
                         </Collapsible>
+                      </div>
+                    ) : user ? (
+                      <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
+                        <h3 className="text-sm font-semibold">See why this role fits</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Add a résumé to compare your skills with the job requirements without leaving Explore.
+                        </p>
+                        <Button size="sm" className="mt-3 gap-1.5" onClick={() => setResumeUploadOpen(true)}>
+                          <FileUp className="h-3.5 w-3.5" /> Add résumé to see your fit
+                        </Button>
                       </div>
                     ) : null}
 
@@ -2263,25 +2468,32 @@ export default function Jobs() {
                       </div>
                     )}
 
-                    <div>
-                      <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                        Description
-                      </h3>
-                      {detail.lang === "sv" && detail.description_en ? (
-                        <button
-                          type="button"
-                          className="mb-2 text-[11px] text-primary hover:text-primary/80"
-                          onClick={() => setShowOriginalDescription((previous) => !previous)}
-                        >
-                          {showOriginalDescription ? "Show English translation" : "Show original Swedish"}
-                        </button>
-                      ) : null}
-                      <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                        {(detail.lang === "sv" && detail.description_en && !showOriginalDescription
-                          ? detail.description_en
-                          : detail.description) || "No description available."}
-                      </p>
-                    </div>
+                    <Collapsible open={showFullDescription} onOpenChange={setShowFullDescription}>
+                      <div className="rounded-lg border border-border/50">
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" className="flex h-11 w-full justify-between rounded-lg px-3 text-sm">
+                            Full description
+                            <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="border-t border-border/50 px-3 pb-4 pt-3">
+                          {detail.lang === "sv" && detail.description_en ? (
+                            <button
+                              type="button"
+                              className="mb-3 text-[11px] text-primary hover:text-primary/80"
+                              onClick={() => setShowOriginalDescription((previous) => !previous)}
+                            >
+                              {showOriginalDescription ? "Show English translation" : "Show original Swedish"}
+                            </button>
+                          ) : null}
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                            {(detail.lang === "sv" && detail.description_en && !showOriginalDescription
+                              ? detail.description_en
+                              : detail.description) || "No description available."}
+                          </p>
+                        </CollapsibleContent>
+                      </div>
+                    </Collapsible>
                   </div>
                 </ScrollArea>
               </motion.div>
@@ -2289,6 +2501,18 @@ export default function Jobs() {
           </AnimatePresence>
         </div>
       </div>
+      {user ? (
+        <ResumeUploadDialog
+          open={resumeUploadOpen}
+          onOpenChange={setResumeUploadOpen}
+          userId={user.id}
+          makeDefault={(atsResumes?.length ?? 0) === 0}
+          onUploaded={async (resume) => {
+            await qc.invalidateQueries({ queryKey: ["ats-resumes", user.id] });
+            setSelectedAtsResumeId(resume.id);
+          }}
+        />
+      ) : null}
     </AppLayout>
   );
 }

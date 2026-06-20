@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { OverviewSignalStrip } from "@/components/overview/OverviewSignalStrip";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import type { OverviewSignalStripItem } from "./types";
 
@@ -15,6 +16,7 @@ export function OverviewHeroPanel({
   secondaryAction,
   isSignalsLoading,
   signalsUnavailable,
+  isSubtextLoading,
 }: {
   signalItems: OverviewSignalStripItem[];
   headline: string;
@@ -24,6 +26,7 @@ export function OverviewHeroPanel({
   secondaryAction?: { label: string; href: string } | null;
   isSignalsLoading?: boolean;
   signalsUnavailable?: boolean;
+  isSubtextLoading?: boolean;
 }) {
   return (
     <div className="relative overflow-hidden rounded-[30px] border border-border/60 bg-card/80 px-6 py-5 shadow-[0_18px_60px_rgba(2,8,23,0.18)] glow-sm sm:px-7 sm:py-5">
@@ -34,7 +37,11 @@ export function OverviewHeroPanel({
       <div className="relative space-y-5">
         <div className="space-y-2">
           <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">{headline}</h1>
-          {subtext ? <p className="text-sm text-muted-foreground sm:text-base">{subtext}</p> : null}
+          {isSubtextLoading ? (
+            <Skeleton className="h-5 w-72 max-w-full" />
+          ) : subtext ? (
+            <p className="text-sm text-muted-foreground sm:text-base">{subtext}</p>
+          ) : null}
         </div>
 
         <OverviewSignalStrip
