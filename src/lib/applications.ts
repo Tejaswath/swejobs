@@ -34,6 +34,15 @@ export type ApplicationMetrics = {
   responseRate: number;
 };
 
+export type ApplicationMomentum = {
+  awaitingResponse: number;
+  followUpDue: number;
+  activeThisWeek: number;
+  archived: number;
+};
+
+export type ApplicationMomentumFilter = "all" | "awaiting" | "follow_up" | "active_week";
+
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: "Applied",
   oa: "Online Assessment",
@@ -53,6 +62,8 @@ export const STATUS_COLORS: Record<ApplicationStatus, string> = {
 };
 
 const RESPONSE_STATUSES = new Set<ApplicationStatus>(["oa", "interviewing", "offer"]);
+const ARCHIVED_STATUSES = new Set<ApplicationStatus>(["rejected", "withdrawn"]);
+const DAY_MS = 86_400_000;
 
 export function computeApplicationMetrics(applications: Array<{ status: string }>): ApplicationMetrics {
   const base: ApplicationMetrics = {
@@ -103,6 +114,57 @@ export function applicationResponseCount(applications: Array<{ status: string }>
     const status = application.status as ApplicationStatus;
     return RESPONSE_STATUSES.has(status) ? sum + 1 : sum;
   }, 0);
+}
+
+function ageInDays(value: string | null | undefined, now: Date): number | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Math.max(0, Math.floor((now.getTime() - parsed.getTime()) / DAY_MS));
+}
+
+export function isArchivedApplication(application: { status: string }): boolean {
+  return ARCHIVED_STATUSES.has(application.status as ApplicationStatus);
+}
+
+export function matchesApplicationMomentum(
+  application: {
+    status: string;
+    applied_at?: string | null;
+    updated_at?: string | null;
+  },
+  filter: ApplicationMomentumFilter,
+  now = new Date(),
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "awaiting") return application.status === "applied";
+  if (filter === "follow_up") {
+    const age = ageInDays(application.applied_at, now);
+    return application.status === "applied" && age != null && age > 10;
+  }
+  if (isArchivedApplication(application)) return false;
+  const activityAge = ageInDays(application.updated_at ?? application.applied_at, now);
+  return activityAge != null && activityAge <= 7;
+}
+
+export function computeApplicationMomentum(
+  applications: Array<{
+    status: string;
+    applied_at?: string | null;
+    updated_at?: string | null;
+  }>,
+  now = new Date(),
+): ApplicationMomentum {
+  return applications.reduce<ApplicationMomentum>(
+    (momentum, application) => {
+      if (isArchivedApplication(application)) momentum.archived += 1;
+      if (matchesApplicationMomentum(application, "awaiting", now)) momentum.awaitingResponse += 1;
+      if (matchesApplicationMomentum(application, "follow_up", now)) momentum.followUpDue += 1;
+      if (matchesApplicationMomentum(application, "active_week", now)) momentum.activeThisWeek += 1;
+      return momentum;
+    },
+    { awaitingResponse: 0, followUpDue: 0, activeThisWeek: 0, archived: 0 },
+  );
 }
 
 export function sweJobsApplicationRequestId(userId: string, jobId: number) {

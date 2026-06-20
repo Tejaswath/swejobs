@@ -18,7 +18,6 @@ const Applications = lazy(() => import("./pages/Applications"));
 const Profile = lazy(() => import("./pages/Profile"));
 const SavedSearches = lazy(() => import("./pages/SavedSearches"));
 const Export = lazy(() => import("./pages/Export"));
-const SkillGap = lazy(() => import("./pages/SkillGap"));
 const Outreach = lazy(() => import("./pages/Outreach"));
 const Admin = lazy(() => import("./pages/Admin"));
 const Privacy = lazy(() => import("./pages/Privacy"));
@@ -58,7 +57,6 @@ function App() {
                 <Route path="/outreach" element={<Outreach />} />
                 <Route path="/searches" element={<SavedSearches />} />
                 <Route path="/export" element={<Export />} />
-                <Route path="/skills" element={<SkillGap />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="*" element={<NotFound />} />
