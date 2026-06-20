@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import Jobs, {
   isGraduateTraineeCandidate,
@@ -242,6 +242,33 @@ describe("Jobs page", () => {
     expect(screen.queryByText("Build reliable backend services.")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Full description" }));
     expect(screen.getByText("Build reliable backend services.")).toBeInTheDocument();
+  });
+
+  it("keeps card actions separate and supports keyboard detail navigation", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Jobs />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    const openDetails = await screen.findByRole("button", { name: "Open details for Backend Engineer" });
+    const hideJob = screen.getByRole("button", { name: "Hide Backend Engineer" });
+    expect(openDetails.contains(hideJob)).toBe(false);
+
+    fireEvent.keyDown(openDetails, { key: "Enter" });
+    expect(await screen.findByRole("heading", { name: "Backend Engineer", level: 2 })).toBeInTheDocument();
+    const applyLink = screen.getByRole("link", { name: "Apply" });
+    expect(applyLink.querySelector("button")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close job details" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Backend Engineer", level: 2 })).not.toBeInTheDocument();
+    });
   });
 
   it("restores search filters from the URL", async () => {

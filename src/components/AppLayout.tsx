@@ -20,6 +20,7 @@ import {
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -110,6 +111,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     </div>
                     SweJobs
                   </SheetTitle>
+                  <SheetDescription className="sr-only">
+                    Navigate between SweJobs pages. Closing the menu returns focus to the menu button.
+                  </SheetDescription>
                 </SheetHeader>
                 <nav className="mt-6 flex flex-col gap-1">
                   {NAV_ITEMS.map((item) => {
@@ -220,7 +224,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-10 gap-2 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Open account menu for ${userEmail}`}
+                    className="h-10 gap-2 rounded-xl border border-border/60 bg-background/45 px-3 text-sm text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                  >
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
                       {userInitial}
                     </span>
