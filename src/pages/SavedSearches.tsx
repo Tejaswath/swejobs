@@ -360,7 +360,7 @@ export default function SavedSearches() {
                         )}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Checked {s.last_checked_at ? new Date(s.last_checked_at).toLocaleDateString("sv-SE") : "never"}
+                          Checked {s.last_checked_at ? new Date(s.last_checked_at).toLocaleDateString("en-SE") : "never"}
                         </span>
                       </div>
                     </div>

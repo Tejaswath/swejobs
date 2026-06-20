@@ -506,7 +506,13 @@ export default function Index() {
       ? `${greeting}.`
       : "Welcome.";
   const heroSubtext = !user
-    ? `${(jobCountQuery.data ?? 0).toLocaleString()} active roles from connected sources.`
+    ? jobCountQuery.isLoading
+      ? undefined
+      : jobCountQuery.isError
+        ? "Live role counts are temporarily unavailable."
+        : `${(jobCountQuery.data ?? 0).toLocaleString()} active ${
+            (jobCountQuery.data ?? 0) === 1 ? "role" : "roles"
+          } from connected sources.`
     : isReturningUser
       ? (newRolesSinceLastVisitQuery.data ?? 0) > 0
         ? `${newRolesSinceLastVisitQuery.data} new roles since your last visit.`
@@ -559,6 +565,7 @@ export default function Index() {
               secondaryAction={!user ? { label: "Sign up free", href: "/auth" } : null}
               isSignalsLoading={showHeroSignalsLoading}
               signalsUnavailable={heroSignalsUnavailable}
+              isSubtextLoading={!user && jobCountQuery.isLoading}
             />
           </FadeUp>
 
@@ -636,7 +643,7 @@ export default function Index() {
                     watchlistHighlights.slice(0, 5).map((company) => (
                       <Link
                         key={company.name}
-                        to={`/jobs?search=${encodeURIComponent(company.name)}`}
+                        to={`/jobs?q=${encodeURIComponent(company.name)}`}
                         className="rounded-full border border-border/50 bg-background/35 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
                       >
                         {company.name}

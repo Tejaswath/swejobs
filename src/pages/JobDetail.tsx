@@ -123,10 +123,13 @@ export default function JobDetail() {
                   <span className="flex items-center gap-1"><MapPin className="h-4 w-4" /> {job.municipality}, {job.region}</span>
                 )}
                 {job.lang && (
-                  <span className="flex items-center gap-1"><Globe className="h-4 w-4" /> {job.lang.toUpperCase()}</span>
+                  <span className="flex items-center gap-1">
+                    <Globe className="h-4 w-4" />{" "}
+                    {job.lang === "en" ? "English" : job.lang === "sv" ? "Swedish" : "English & Swedish"}
+                  </span>
                 )}
                 {job.published_at && (
-                  <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> {new Date(job.published_at).toLocaleDateString("sv-SE")}</span>
+                  <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> {new Date(job.published_at).toLocaleDateString("en-SE")}</span>
                 )}
               </div>
             </div>
