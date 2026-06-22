@@ -495,7 +495,7 @@ feeds:
     provider: teamtailor
     slug_or_url: https://careers.voi.com/
     company_canonical: voi technology
-    enabled: false
+    enabled: true
     priority: 114
     location_filters:
       - Stockholm
@@ -517,7 +517,7 @@ feeds:
     provider: teamtailor
     slug_or_url: https://jobs.tibber.com/
     company_canonical: tibber
-    enabled: false
+    enabled: true
     priority: 116
     location_filters:
       - Stockholm
@@ -539,7 +539,7 @@ feeds:
     provider: teamtailor
     slug_or_url: https://careers.quinyx.com/
     company_canonical: quinyx
-    enabled: false
+    enabled: true
     priority: 118
     location_filters:
       - Stockholm
