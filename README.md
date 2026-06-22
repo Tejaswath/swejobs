@@ -62,6 +62,7 @@ and guardrails.
 
 ## Documentation
 
+- [Agent operating constraints](docs/agent_operating_constraints.md)
 - [Pipeline operations](pipeline/README.md)
 - [Chrome extension](extension/README.md)
 - [Relevance contract](docs/relevance_contract.md)
