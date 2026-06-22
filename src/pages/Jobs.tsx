@@ -29,6 +29,7 @@ import {
   EyeOff,
   ChevronsUpDown,
   Bookmark,
+  CheckCircle2,
   FileUp,
   RotateCcw,
 } from "lucide-react";
@@ -54,7 +55,7 @@ import {
   jobPassesLens,
   numberValue,
 } from "@/lib/jobEligibility";
-import { suitabilityScore } from "@/lib/jobRanking";
+import { primarySuitabilityReason, suitabilityScore } from "@/lib/jobRanking";
 
 const PAGE_SIZE = 25;
 const LIST_FETCH_LIMIT = 300;
@@ -1246,7 +1247,7 @@ export default function Jobs() {
         setAppliedFeedbackJobId(selectedId ?? null);
         toast({ title: "Added to Applications" });
       } else {
-        toast({ title: "Shortlisted" });
+        toast({ title: "Saved" });
       }
     },
     onError: (error: Error) => {
@@ -1362,10 +1363,18 @@ export default function Jobs() {
   }, [activeAtsResume?.parsed_text, atsByJobId, detail, detailTags, userSkills]);
   const visibleMatchedKeywords = detailAtsResult?.matchedKeywords.slice(0, 6) ?? [];
   const visibleMissingKeywords = detailAtsResult?.missingKeywords.slice(0, 6) ?? [];
-  const keyRequirements = useMemo(() => {
-    const values = detailAtsResult?.missingKeywords ?? detailTags ?? [];
-    return values.slice(0, 5);
-  }, [detailAtsResult?.missingKeywords, detailTags]);
+  const previewMissingKeywords = detailAtsResult?.missingKeywords.slice(0, 3) ?? [];
+  const detailSuitability = useMemo(() => {
+    if (!detail?.id) return null;
+    const cached = suitabilityByJobId[detail.id as number];
+    if (cached) return cached;
+    const canonical = normalizeCompanyName(detail.company_canonical || detail.employer_name);
+    return suitabilityScore(detail, {
+      atsMatch: detailAtsResult?.score ?? null,
+      watched: watchedSet.has(canonical),
+    });
+  }, [detail, detailAtsResult?.score, suitabilityByJobId, watchedSet]);
+  const detailFitReason = detailSuitability ? primarySuitabilityReason(detailSuitability) : null;
   const detailRestrictions = useMemo(() => {
     if (!detail) return [];
     const restrictions: string[] = [];
@@ -1893,8 +1902,26 @@ export default function Jobs() {
                       const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
                       const careerBucket = earlyCareerBucket(job);
                       const displayEmployer = companyDisplayName(job.company_canonical, job.employer_name);
-                      const atsSnapshot = listAtsByJobId[job.id];
                       const suitability = suitabilityByJobId[job.id];
+                      const fitReason = suitability ? primarySuitabilityReason(suitability) : null;
+                      const statusIcons: Array<{ key: string; node: JSX.Element }> = [];
+                      if (trackedStatus === "applied") {
+                        statusIcons.push({
+                          key: "applied",
+                          node: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-label="Applied" />,
+                        });
+                      } else if (trackedStatus === "saved") {
+                        statusIcons.push({
+                          key: "saved",
+                          node: <Bookmark className="h-3.5 w-3.5 fill-primary/20 text-primary" aria-label="Saved" />,
+                        });
+                      }
+                      if (watched && statusIcons.length < 2) {
+                        statusIcons.push({
+                          key: "following",
+                          node: <Star className="h-3.5 w-3.5 fill-amber-400/20 text-amber-400" aria-label="Following company" />,
+                        });
+                      }
 
                       return (
                         <div key={job.id} className="relative">
@@ -1923,59 +1950,37 @@ export default function Jobs() {
                             )}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <h3 className="text-sm font-medium leading-snug line-clamp-1">
+                              <h3 className="min-w-0 flex-1 text-sm font-medium leading-snug line-clamp-1">
                                 {(job.lang === "sv" ? job.headline_en : null) || job.headline}
                               </h3>
-                              <div className="flex shrink-0 items-center gap-1">
-                              {watched && (
-                                <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
-                                  Following
-                                </Badge>
-                              )}
-                              {trackedStatus === "saved" ? (
-                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-primary/25 text-primary">
-                                  Shortlisted
-                                </Badge>
-                              ) : null}
-                              {trackedStatus === "applied" ? (
-                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-emerald-500/25 text-emerald-300">
-                                  Applied
-                                </Badge>
-                              ) : null}
-                              {job.remote_flag && (
-                                <Badge variant="secondary" className="h-4 px-1 text-[9px] font-normal">
-                                  Remote
-                                </Badge>
-                              )}
-                              {job.company_tier && job.company_tier !== "unknown" && (
-                                <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal">
-                                  Tier {job.company_tier}
-                                </Badge>
-                              )}
-                              {suitability ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span>
-                                        <Badge variant="outline" className="h-4 px-1 text-[9px] font-normal border-primary/30 text-primary">
-                                          {suitability.label} fit · {suitability.score}/100
-                                        </Badge>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="max-w-xs text-xs">
-                                      Combines role relevance, career stage, résumé match, source quality, and your preferences.
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : null}
-                              {atsSnapshot ? (
-                                <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.score))}>
-                                  Keyword match {atsSnapshot.score}%
-                                </Badge>
-                              ) : null}
-                              <span className="inline-flex h-4 items-center rounded border border-primary/20 px-1 text-[9px] text-primary/80">
-                                Open details
-                              </span>
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                {suitability ? (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span>
+                                          <Badge
+                                            variant="outline"
+                                            className={cn(
+                                              "h-4 px-1.5 text-[9px] font-normal",
+                                              suitability.label === "Strong" && "border-primary/30 text-primary",
+                                              suitability.label === "Possible" && "border-sky-500/30 text-sky-300",
+                                              suitability.label === "Stretch" && "border-muted-foreground/30 text-muted-foreground",
+                                            )}
+                                          >
+                                            {suitability.label} fit
+                                          </Badge>
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-xs text-xs">
+                                        {suitability.score}/100 — role relevance, career stage, résumé match, source quality, and your preferences.
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                ) : null}
+                                {statusIcons.map((item) => (
+                                  <span key={item.key}>{item.node}</span>
+                                ))}
                               </div>
                             </div>
 
@@ -1990,6 +1995,7 @@ export default function Jobs() {
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                             {job.municipality && <span>{job.municipality}</span>}
+                            {job.remote_flag && <span>Remote</span>}
                             {job.lang && <span>{languageLabel(job.lang)}</span>}
                             <span>
                               {lens === "graduate_trainee" || careerBucket !== "stretch"
@@ -2000,8 +2006,8 @@ export default function Jobs() {
                             </span>
                             <span>{formatDeadlineDisplay(job.application_deadline)}</span>
                           </div>
-                          {suitability?.reasons[0] ? (
-                            <p className="mt-1 text-[10px] text-muted-foreground/80">{suitability.reasons[0]}</p>
+                          {fitReason ? (
+                            <p className="mt-1 text-[10px] text-muted-foreground/80">{fitReason}</p>
                           ) : null}
 
                           <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -2170,11 +2176,33 @@ export default function Jobs() {
 
                     <div className="flex flex-wrap gap-2">
                       {detail.source_url && (
-                        <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                        <Button asChild variant="default" size="sm" className="h-8 gap-1.5 text-xs">
                           <a href={detail.source_url} target="_blank" rel="noopener noreferrer" onClick={trackApplyClick}>
                             <ExternalLink className="h-3 w-3" /> Apply
                           </a>
                         </Button>
+                      )}
+                      {user && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant={tracking?.status === "saved" ? "secondary" : "outline"}
+                            className="h-8 text-xs"
+                            onClick={() => upsertTracking.mutate({ status: "saved", notes })}
+                            disabled={upsertTracking.isPending}
+                          >
+                            <Bookmark className="mr-1 h-3 w-3" /> Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={tracking?.status === "applied" ? "secondary" : "outline"}
+                            className="h-8 text-xs"
+                            onClick={() => upsertTracking.mutate({ status: "applied", notes })}
+                            disabled={upsertTracking.isPending}
+                          >
+                            <CheckCircle2 className="mr-1 h-3 w-3" /> I Applied
+                          </Button>
+                        </>
                       )}
                       {user && detailDisplayEmployer && (
                         <Button
@@ -2183,150 +2211,118 @@ export default function Jobs() {
                           className="h-8 gap-1.5 text-xs text-muted-foreground"
                           onClick={() => watchCompany.mutate(detail.company_canonical || detailDisplayEmployer)}
                         >
-                          <Star className="h-3 w-3" /> Follow {detailDisplayEmployer}
+                          <Star className="h-3 w-3" /> Follow
                         </Button>
                       )}
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
-                      {detail.remote_flag && <Badge>Remote</Badge>}
-                      {detail.is_direct_company_source && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {detailProviderLabel}
-                        </Badge>
-                      )}
-                      {detail.company_tier && detail.company_tier !== "unknown" && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          Tier {detail.company_tier}
-                        </Badge>
-                      )}
-                      {effectiveConsultancyFlag(detail) && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          Consultancy
-                        </Badge>
-                      )}
-                      {detail.swedish_required && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          Swedish required
-                        </Badge>
-                      )}
-                      {detail.citizenship_required && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          Citizenship required
-                        </Badge>
-                      )}
-                      {detail.security_clearance_required && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          Security clearance
-                        </Badge>
-                      )}
-                      {detail.years_required_min != null && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {detail.years_required_min}+ years requested
-                        </Badge>
-                      )}
-                      {detail.employment_type && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {detail.employment_type}
-                        </Badge>
-                      )}
-                      {detail.working_hours && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {detail.working_hours}
-                        </Badge>
-                      )}
-                      {detail.application_deadline && (
-                        <Badge variant="outline" className="text-xs font-normal">
-                          {formatDeadlineDisplay(detail.application_deadline)}
-                        </Badge>
-                      )}
+                    {selectedId && appliedFeedbackJobId === selectedId ? (
+                      <p className="text-xs text-emerald-300">
+                        Added to Applications.{" "}
+                        <Link to="/applications" className="underline">
+                          View →
+                        </Link>
+                      </p>
+                    ) : null}
+
+                    {detailRestrictions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {detailRestrictions.map((restriction) => (
+                          <Badge key={restriction} variant="outline" className="border-amber-500/30 text-xs font-normal text-amber-200">
+                            {restriction}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {detailFitReason ? (
+                      <p className="text-xs text-muted-foreground">{detailFitReason}</p>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+                      {detail.remote_flag && <span>Remote</span>}
+                      {detail.is_direct_company_source && <span>{detailProviderLabel}</span>}
+                      {detail.employment_type && <span>{detail.employment_type}</span>}
+                      {detail.working_hours && <span>{detail.working_hours}</span>}
+                      {detail.application_deadline && <span>{formatDeadlineDisplay(detail.application_deadline)}</span>}
                     </div>
 
                     {detailAtsResult && detailAtsResult.keywordCount > 0 ? (
-                      <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <h3 className="text-sm font-semibold">Keyword match summary</h3>
-                            <p className="text-[11px] text-muted-foreground">
-                              Deterministic keyword comparison between this résumé and the job&apos;s structured skills and description.
-                            </p>
-                          </div>
-                          <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.score))}>
-                            Keyword match · {detailAtsResult.score}%
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 text-[10px]">
-                          <Badge variant="secondary">
-                            Career stage: {effectiveCareerStage(detail.career_stage, detail.career_stage_confidence)}
-                          </Badge>
-                          {detailRestrictions.map((restriction) => (
-                            <Badge key={restriction} variant="outline" className="border-amber-500/30 text-amber-200">
-                              {restriction}
-                            </Badge>
-                          ))}
-                          {detailRestrictions.length === 0 ? (
-                            <Badge variant="outline" className="border-emerald-500/30 text-emerald-200">
-                              No detected restrictions
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {(visibleMatchedKeywords.length > 0 || visibleMissingKeywords.length > 0) && (
-                          <div className="grid gap-3 md:grid-cols-2">
+                      <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
+                        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                          <div className="flex items-center justify-between gap-2">
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-emerald-200">Keywords found</p>
-                              <div className="flex flex-wrap gap-1">
-                                {visibleMatchedKeywords.length > 0 ? (
-                                  visibleMatchedKeywords.map((keyword) => (
-                                    <Badge key={keyword} variant="secondary" className="text-[10px] font-normal">
-                                      {keyword}
-                                    </Badge>
-                                  ))
-                                ) : (
-                                  <span className="text-[11px] text-muted-foreground">No direct keyword matches yet</span>
-                                )}
-                              </div>
+                              <h3 className="text-sm font-semibold">Keyword match</h3>
+                              {!showAtsDetails ? (
+                                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                  {previewMissingKeywords.length > 0
+                                    ? `Top gaps: ${previewMissingKeywords.join(", ")}`
+                                    : "Résumé keywords align with this role."}
+                                </p>
+                              ) : (
+                                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                  Deterministic keyword comparison between your résumé and this job.
+                                </p>
+                              )}
                             </div>
-                            <div>
-                              <p className="mb-1 text-[11px] font-medium text-amber-200">Keyword gaps</p>
-                              <div className="flex flex-wrap gap-1">
-                                {visibleMissingKeywords.length > 0 ? (
-                                  visibleMissingKeywords.map((keyword) => (
-                                    <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
-                                      {keyword}
-                                    </Badge>
-                                  ))
-                                ) : (
-                                  <span className="text-[11px] text-muted-foreground">No obvious keyword gaps</span>
-                                )}
-                              </div>
-                            </div>
+                            <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.score))}>
+                              {detailAtsResult.score}%
+                            </Badge>
                           </div>
-                        )}
-                        {keyRequirements.length > 0 ? (
-                          <div>
-                            <p className="mb-1 text-[11px] font-medium text-muted-foreground">Key requirements</p>
-                            <div className="flex flex-wrap gap-1">
-                              {keyRequirements.map((keyword) => (
-                                <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
-                                  {keyword}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        <p className="text-[11px] text-muted-foreground">
-                          Keyword overlap supports your decision; it does not predict hiring outcomes.
-                        </p>
-                        <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
                           <CollapsibleTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs">
-                              {showAtsDetails ? "Hide keywords" : "Show keywords"}
+                            <Button variant="ghost" size="sm" className="mt-2 h-7 gap-1.5 px-2 text-xs">
+                              {showAtsDetails ? "Hide keyword analysis" : "Show keyword analysis"}
                               <ChevronsUpDown className="h-3.5 w-3.5" />
                             </Button>
                           </CollapsibleTrigger>
                           <CollapsibleContent className="space-y-3 pt-2">
+                            <div className="flex flex-wrap gap-1.5 text-[10px]">
+                              <Badge variant="secondary">
+                                Career stage: {effectiveCareerStage(detail.career_stage, detail.career_stage_confidence)}
+                              </Badge>
+                              {detailRestrictions.length === 0 ? (
+                                <Badge variant="outline" className="border-emerald-500/30 text-emerald-200">
+                                  No detected restrictions
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {(visibleMatchedKeywords.length > 0 || visibleMissingKeywords.length > 0) && (
+                              <div className="grid gap-3 md:grid-cols-2">
+                                <div>
+                                  <p className="mb-1 text-[11px] font-medium text-emerald-200">Keywords found</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {visibleMatchedKeywords.length > 0 ? (
+                                      visibleMatchedKeywords.map((keyword) => (
+                                        <Badge key={keyword} variant="secondary" className="text-[10px] font-normal">
+                                          {keyword}
+                                        </Badge>
+                                      ))
+                                    ) : (
+                                      <span className="text-[11px] text-muted-foreground">No direct keyword matches yet</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="mb-1 text-[11px] font-medium text-amber-200">Keyword gaps</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {visibleMissingKeywords.length > 0 ? (
+                                      visibleMissingKeywords.map((keyword) => (
+                                        <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
+                                          {keyword}
+                                        </Badge>
+                                      ))
+                                    ) : (
+                                      <span className="text-[11px] text-muted-foreground">No obvious keyword gaps</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            <p className="text-[11px] text-muted-foreground">
+                              Keyword overlap supports your decision; it does not predict hiring outcomes.
+                            </p>
                             <div>
-                              <p className="mb-1 text-xs text-muted-foreground">Matched keywords</p>
+                              <p className="mb-1 text-xs text-muted-foreground">All matched keywords</p>
                               <div className="flex flex-wrap gap-1">
                                 {detailAtsResult.matchedKeywords.slice(0, 10).map((keyword) => (
                                   <Badge key={keyword} variant="secondary" className="text-[10px] font-normal">
@@ -2336,7 +2332,7 @@ export default function Jobs() {
                               </div>
                             </div>
                             <div>
-                              <p className="mb-1 text-xs text-muted-foreground">Missing keywords</p>
+                              <p className="mb-1 text-xs text-muted-foreground">All missing keywords</p>
                               <div className="flex flex-wrap gap-1">
                                 {detailAtsResult.missingKeywords.slice(0, 10).map((keyword) => (
                                   <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
@@ -2346,8 +2342,8 @@ export default function Jobs() {
                               </div>
                             </div>
                           </CollapsibleContent>
-                        </Collapsible>
-                      </div>
+                        </div>
+                      </Collapsible>
                     ) : user ? (
                       <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
                         <h3 className="text-sm font-semibold">See keyword match details</h3>
@@ -2361,38 +2357,7 @@ export default function Jobs() {
                     ) : null}
 
                     {user && (
-                      <div className="space-y-3 border-t border-border/40 pt-4">
-                        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          <Bookmark className="h-3 w-3" /> Track
-                        </h3>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant={tracking?.status === "saved" ? "default" : "outline"}
-                            className="h-8 text-xs"
-                            onClick={() => upsertTracking.mutate({ status: "saved", notes })}
-                            disabled={upsertTracking.isPending}
-                          >
-                            Save
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={tracking?.status === "applied" ? "default" : "outline"}
-                            className="h-8 text-xs"
-                            onClick={() => upsertTracking.mutate({ status: "applied", notes })}
-                            disabled={upsertTracking.isPending}
-                          >
-                            I Applied
-                          </Button>
-                        </div>
-                        {selectedId && appliedFeedbackJobId === selectedId ? (
-                          <p className="text-xs text-emerald-300">
-                            Added to Applications.{" "}
-                            <Link to="/applications" className="underline">
-                              View →
-                            </Link>
-                          </p>
-                        ) : null}
+                      <div className="space-y-2 border-t border-border/40 pt-4">
                         {selectedId ? (
                           <Link
                             to={`/applications?prefill_job_id=${selectedId}`}

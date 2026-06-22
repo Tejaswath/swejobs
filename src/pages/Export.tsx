@@ -119,8 +119,8 @@ export default function Export() {
 
     const exports = [
       {
-      title: "My Shortlist",
-      description: "Your discovery list from Explore and Shortlist.",
+      title: "Saved Jobs",
+      description: "Your discovery list from Explore.",
       action: exportTracked,
     },
     {

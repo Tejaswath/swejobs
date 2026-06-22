@@ -5,7 +5,6 @@ import { Bookmark, Building, ChevronDown, ChevronUp, FileText, Zap } from "lucid
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
-import { DeadlineRadarPanel } from "@/components/overview/DeadlineRadarPanel";
 import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +34,7 @@ type DeadlineGroups = {
 type RecentActivityItem = {
   id: string;
   at: string;
-  kind: "shortlist" | "application";
+  kind: "saved" | "application" | "captured";
   company: string;
   role?: string;
   href?: string;
@@ -100,12 +99,6 @@ function relativeTime(value: string): string {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   return `${days}d`;
-}
-
-function formatDateTime(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "Unknown";
-  return new Date(timestamp).toLocaleString();
 }
 
 export default function Index() {
@@ -310,7 +303,7 @@ export default function Index() {
         return {
           id: `tracked-${item.id}`,
           at: item.updated_at ?? "",
-          kind: "shortlist",
+          kind: "saved",
           company: job?.employer_name ?? "Company",
           role: job?.headline ?? `Job #${item.id}`,
           href: item.job_id ? `/jobs/${item.job_id}` : "/jobs",
@@ -396,8 +389,29 @@ export default function Index() {
     () => [...(watchedCompanyDataQuery.data ?? [])].sort((left, right) => right.count - left.count),
     [watchedCompanyDataQuery.data],
   );
-  const recentActivityItems = recentActivityQuery.data ?? [];
-  const recentCapturedApplications = recentCapturedQuery.data ?? [];
+  const mergedRecentItems = useMemo(() => {
+    const activityItems = recentActivityQuery.data ?? [];
+    const capturedApplications = recentCapturedQuery.data ?? [];
+    const capturedItems: RecentActivityItem[] = capturedApplications.map((item) => ({
+      id: `captured-${item.id}`,
+      at: item.created_at,
+      kind: "captured",
+      company: item.company || "Company",
+      role: item.job_title || "Role",
+      href: "/applications",
+    }));
+    const seen = new Set<string>();
+    return [...activityItems, ...capturedItems]
+      .sort((left, right) => right.at.localeCompare(left.at))
+      .filter((item) => {
+        const key = `${item.company}::${item.role ?? ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 6);
+  }, [recentActivityQuery.data, recentCapturedQuery.data]);
+  const pipelineAppliedCount = pipelineQuery.data?.applied ?? 0;
 
   const deadlineBuckets: DeadlineBucketViewModel[] = [
     {
@@ -484,7 +498,7 @@ export default function Index() {
     }
   }, [showOnboardingChecklist]);
 
-  const isReturningUser = !!user && (recentActivityItems.length > 0 || watchlistHighlights.length > 0);
+  const isReturningUser = !!user && ((recentActivityQuery.data?.length ?? 0) > 0 || watchlistHighlights.length > 0);
   const currentHour = new Date().getHours();
   const greeting = currentHour < 12 ? "Good morning" : currentHour < 18 ? "Good afternoon" : "Good evening";
   const heroHeadline = !user
@@ -509,7 +523,6 @@ export default function Index() {
   const showHeroSignalsLoading = useDelayedVisibility(
     highSignalSnapshotQuery.isLoading || upcomingDeadlinesQuery.isLoading,
   );
-  const showUpcomingDeadlineLoading = useDelayedVisibility(upcomingDeadlinesQuery.isLoading);
   const heroSignalsUnavailable = highSignalSnapshotQuery.isError || upcomingDeadlinesQuery.isError;
 
   if (!jobCountQuery.isLoading && !jobCountQuery.isError && (jobCountQuery.data ?? 0) === 0) {
@@ -614,7 +627,7 @@ export default function Index() {
             </FadeUp>
           ) : null}
 
-          {user ? (
+          {user && watchlistHighlights.length > 0 ? (
             <FadeUp>
               <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -622,152 +635,122 @@ export default function Index() {
                     <Building className="h-3 w-3" />
                     Following
                   </p>
-                  {watchedCompanyDataQuery.isLoading ? (
-                    <span className="text-xs text-muted-foreground">Loading…</span>
-                  ) : watchlistHighlights.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">Follow companies from Explore to see updates here.</span>
-                  ) : (
-                    watchlistHighlights.slice(0, 5).map((company) => (
-                      <Link
-                        key={company.name}
-                        to={`/jobs?q=${encodeURIComponent(company.name)}`}
-                        className="rounded-full border border-border/50 bg-background/35 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                      >
-                        {company.name}
-                      </Link>
-                    ))
-                  )}
+                  {watchlistHighlights.slice(0, 5).map((company) => (
+                    <Link
+                      key={company.name}
+                      to={`/jobs?q=${encodeURIComponent(company.name)}`}
+                      className="rounded-full border border-border/50 bg-background/35 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                    >
+                      {company.name}
+                    </Link>
+                  ))}
                 </div>
               </div>
             </FadeUp>
           ) : null}
 
-          {user && pipelineQuery.data && Object.values(pipelineQuery.data).some((count) => count > 0) ? (
+          {(deadlineBuckets.length > 0 || pipelineAppliedCount > 0) ? (
             <FadeUp>
-              <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  Your pipeline
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {[
-                    { key: "applied" as const, label: "Applied", color: "bg-primary/70" },
-                    { key: "oa" as const, label: "OA", color: "bg-amber-500/70" },
-                    { key: "interviewing" as const, label: "Interview", color: "bg-sky-500/70" },
-                    { key: "offer" as const, label: "Offer", color: "bg-emerald-500/70" },
-                    { key: "rejected" as const, label: "Rejected", color: "bg-rose-500/50" },
-                  ].map((stage) => {
-                    const count = pipelineQuery.data?.[stage.key] ?? 0;
-                    if (count === 0) return null;
-                    return (
-                      <Link
-                        key={stage.key}
-                        to={`/applications?status=${stage.key}`}
-                        className="flex items-center gap-1.5 rounded-full border border-border/50 bg-background/35 px-2.5 py-1 text-xs transition-colors hover:border-primary/30"
-                      >
-                        <span className={cn("h-2 w-2 rounded-full", stage.color)} />
-                        <span className="font-medium text-foreground">{count}</span>
-                        <span className="text-muted-foreground">{stage.label}</span>
+              <Card className="rounded-[24px] border-border/60 bg-card/80">
+                <CardContent className="p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">This week</p>
+                    {pipelineAppliedCount > 0 ? (
+                      <Link to="/applications?momentum=awaiting" className="text-xs text-primary hover:underline">
+                        {pipelineAppliedCount} awaiting response →
                       </Link>
-                    );
-                  })}
-                </div>
-              </div>
+                    ) : null}
+                  </div>
+                  {deadlineBuckets.length > 0 ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {deadlineBuckets.map((bucket) => (
+                        <Link
+                          key={bucket.id}
+                          to={bucket.href}
+                          className={cn(
+                            "rounded-xl border px-3 py-2.5 transition-colors hover:border-primary/30",
+                            bucket.accentClassName,
+                          )}
+                        >
+                          <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{bucket.label}</p>
+                          <p className="mt-1 text-lg font-semibold">{bucket.count}</p>
+                          <p className="text-[11px] text-muted-foreground">Open roles</p>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                  {pipelineQuery.data && Object.values(pipelineQuery.data).some((count) => count > 0) ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
+                      {[
+                        { key: "applied" as const, label: "Applied", color: "bg-primary/70" },
+                        { key: "oa" as const, label: "OA", color: "bg-amber-500/70" },
+                        { key: "interviewing" as const, label: "Interview", color: "bg-sky-500/70" },
+                        { key: "offer" as const, label: "Offer", color: "bg-emerald-500/70" },
+                        { key: "rejected" as const, label: "Rejected", color: "bg-rose-500/50" },
+                      ].map((stage) => {
+                        const count = pipelineQuery.data?.[stage.key] ?? 0;
+                        if (count === 0) return null;
+                        return (
+                          <Link
+                            key={stage.key}
+                            to={`/applications?status=${stage.key}`}
+                            className="flex items-center gap-1.5 rounded-full border border-border/50 bg-background/35 px-2.5 py-1 text-xs transition-colors hover:border-primary/30"
+                          >
+                            <span className={cn("h-2 w-2 rounded-full", stage.color)} />
+                            <span className="font-medium text-foreground">{count}</span>
+                            <span className="text-muted-foreground">{stage.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
             </FadeUp>
           ) : null}
 
-          <FadeUp>
-            <DeadlineRadarPanel
-              buckets={deadlineBuckets}
-              isLoading={showUpcomingDeadlineLoading}
-              unavailable={upcomingDeadlinesQuery.isError}
-            />
-          </FadeUp>
-
-          <div className="border-t border-border/30 pt-6">
-            <div className="grid gap-4 xl:grid-cols-2">
-              {user ? (
-                <FadeUp>
-                  <Card className="rounded-[24px] border-border/60 bg-card/80">
-                    <CardContent className="p-5">
-                      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        <Zap className="h-3 w-3" />
-                        Recent activity
-                      </p>
-                      {recentActivityItems.length === 0 ? (
-                        <p className="mt-3 text-sm text-muted-foreground">No activity yet.</p>
-                      ) : (
-                        <div className="mt-3 space-y-2">
-                          {recentActivityItems.map((item) => {
-                            const ItemIcon = item.kind === "application" ? FileText : Bookmark;
-                            return (
-                              <Link
-                                key={item.id}
-                                to={item.href ?? "/"}
-                                className={cn(
-                                  "flex items-center justify-between gap-3 rounded-lg border border-border/50 border-l-2 bg-background/30 px-3 py-2 transition-colors hover:bg-muted/30 hover:border-primary/30",
-                                  item.kind === "shortlist" && "border-l-primary/60",
-                                  item.kind === "application" && "border-l-emerald-500/60",
-                                )}
-                              >
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <ItemIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                  <p className="line-clamp-1 text-sm text-foreground">
-                                    {item.company}
-                                    {item.role ? ` · ${item.role}` : ""}
-                                  </p>
-                                </div>
-                                <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.at)}</span>
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </FadeUp>
-              ) : null}
-
-              {user ? (
-                <FadeUp>
-                  <Card className="rounded-[24px] border-border/60 bg-card/80">
-                    <CardContent className="p-5">
-                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Recently captured</p>
-                      {recentCapturedQuery.isLoading ? (
-                        <p className="mt-3 text-sm text-muted-foreground">Loading captured jobs…</p>
-                      ) : recentCapturedApplications.length === 0 ? (
-                        <p className="mt-3 text-sm text-muted-foreground">
-                          No captured jobs yet. Use the SweJobs extension to save jobs from external sites.
-                        </p>
-                      ) : (
-                        <div className="mt-3 space-y-2">
-                          {recentCapturedApplications.map((item) => (
-                            <Link
-                              key={item.id}
-                              to="/applications"
-                              className="flex items-center justify-between gap-3 rounded-lg border border-border/50 border-l-2 border-l-sky-500/60 bg-background/30 px-3 py-2 transition-colors hover:bg-muted/30 hover:border-primary/30"
-                            >
-                              <div className="min-w-0">
-                                <p className="line-clamp-1 text-sm text-foreground">
-                                  {item.company || "Company"} · {item.job_title || "Role"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</p>
-                              </div>
-                              <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.created_at)}</span>
-                            </Link>
-                          ))}
-                        </div>
-                      )}
-                      <div className="mt-3">
-                        <Link to="/applications" className="text-xs text-primary hover:underline">
-                          Open Applications
-                        </Link>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </FadeUp>
-              ) : null}
-            </div>
-          </div>
+          {user ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-border/60 bg-card/80">
+                <CardContent className="p-5">
+                  <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    <Zap className="h-3 w-3" />
+                    Recent
+                  </p>
+                  {mergedRecentItems.length === 0 ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Save roles, apply, or capture jobs to see activity here.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {mergedRecentItems.map((item) => {
+                        const ItemIcon = item.kind === "application" || item.kind === "captured" ? FileText : Bookmark;
+                        return (
+                          <Link
+                            key={item.id}
+                            to={item.href ?? "/"}
+                            className={cn(
+                              "flex items-center justify-between gap-3 rounded-lg border border-border/50 border-l-2 bg-background/30 px-3 py-2 transition-colors hover:border-primary/30 hover:bg-muted/30",
+                              item.kind === "saved" && "border-l-primary/60",
+                              item.kind === "application" && "border-l-emerald-500/60",
+                              item.kind === "captured" && "border-l-sky-500/60",
+                            )}
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <ItemIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <p className="line-clamp-1 text-sm text-foreground">
+                                {item.company}
+                                {item.role ? ` · ${item.role}` : ""}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.at)}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </FadeUp>
+          ) : null}
         </StaggerContainer>
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-background to-transparent" />
       </div>
