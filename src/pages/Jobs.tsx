@@ -43,7 +43,7 @@ import {
   providerLabel,
 } from "@/lib/companyRegistry";
 import { buildSweJobsApplication } from "@/lib/applications";
-import { extractKeywordsFromJobText, runAtsScan, type AtsScanResult } from "@/lib/ats";
+import { jobRecordToAtsKeywordInput, matchResumeToJob, type AtsScanResult } from "@/lib/ats";
 import { cn } from "@/lib/utils";
 import {
   boolValue,
@@ -219,58 +219,6 @@ function requiresThreePlusYears(job: {
   if (years >= 3) return true;
   if (!Array.isArray(job.reason_codes)) return false;
   return job.reason_codes.some((value) => String(value).toLowerCase() === "years_required_3plus");
-}
-
-type AtsScoreContext = {
-  headline?: string | null;
-  career_stage?: unknown;
-  career_stage_confidence?: unknown;
-  years_required_min?: unknown;
-  is_grad_program?: unknown;
-  reason_codes?: unknown;
-};
-
-function seniorityPenalty(context: AtsScoreContext): number {
-  const title = String(context.headline ?? "").toLowerCase().trim();
-  const stage = effectiveCareerStage(context.career_stage, context.career_stage_confidence);
-  const years = numberValue(context.years_required_min, -1);
-  const reasonCodes = Array.isArray(context.reason_codes)
-    ? context.reason_codes.map((value) => String(value).toLowerCase())
-    : [];
-  const hasSeniorTitleSignal = /\b(senior|lead|principal|staff|experienced|expert)\b/.test(title);
-  const hasJuniorSignal = /\b(junior|graduate|trainee|entry)\b/.test(title) || boolValue(context.is_grad_program);
-
-  let penalty = 0;
-  if (stage === "senior" || stage === "lead" || stage === "staff" || stage === "principal") {
-    penalty = Math.max(penalty, 40);
-  }
-  if (hasSeniorTitleSignal) {
-    penalty = Math.max(penalty, 40);
-  }
-  if (years >= 8) {
-    penalty = Math.max(penalty, 60);
-  } else if (years >= 5) {
-    penalty = Math.max(penalty, 45);
-  } else if (years >= 3) {
-    penalty = Math.max(penalty, 30);
-  }
-  if (reasonCodes.includes("years_required_3plus")) {
-    penalty = Math.max(penalty, 30);
-  }
-  if (reasonCodes.includes("career_stage_senior")) {
-    penalty = Math.max(penalty, 40);
-  }
-  if (years < 0 && stage === "unknown" && !hasJuniorSignal && !reasonCodes.includes("grad_program_detected")) {
-    penalty = Math.max(penalty, 10);
-  }
-  if (hasJuniorSignal) {
-    penalty = Math.max(0, penalty - 20);
-  }
-  return penalty;
-}
-
-function applySeniorityAdjustment(rawScore: number, context: AtsScoreContext): number {
-  return Math.max(0, rawScore - seniorityPenalty(context));
 }
 
 function formatLocalDate(date: Date): string {
@@ -521,7 +469,7 @@ export default function Jobs() {
       let query = supabase
         .from("jobs")
         .select(
-          "id, is_active, headline, headline_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
+          "id, is_active, headline, headline_en, description, description_en, employer_name, company_canonical, company_tier, municipality, region, lang, remote_flag, " +
           "published_at, application_deadline, employment_type, working_hours, occupation_label, source_url, " +
             "relevance_score, role_family, role_family_confidence, career_stage, career_stage_confidence, is_grad_program, years_required_min, " +
             "swedish_required, consultancy_flag, citizenship_required, security_clearance_required, reason_codes, " +
@@ -882,41 +830,19 @@ export default function Jobs() {
       rankAndFilterJobs.length === 0 ||
       (rankedJobIds.length > 0 && Object.keys(tagsByJobId).length === 0)
     ) {
-      return {} as Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>;
+      return {} as Record<number, AtsScanResult>;
     }
 
-    return rankAndFilterJobs.reduce<Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>>(
-      (acc, job) => {
-        const tags = tagsByJobId[job.id] ?? [];
-        const titleKeywords = extractKeywordsFromJobText([job.headline ?? "", job.occupation_label ?? ""].join(" "), 10);
-        const keywords = Array.from(new Set([...tags, ...titleKeywords])).slice(0, 20);
-        if (keywords.length === 0) return acc;
-
-        const context = {
-          headline: job.headline,
-          career_stage: job.career_stage,
-          career_stage_confidence: job.career_stage_confidence,
-          years_required_min: job.years_required_min,
-          is_grad_program: job.is_grad_program,
-          reason_codes: job.reason_codes,
-        };
-
-        const result = runAtsScan({
-          resumeText: parsedText,
-          targetKeywords: keywords,
-          trackedSkills: userSkills ?? [],
-        });
-
-        acc[job.id] = {
-          result,
-          displayScore: applySeniorityAdjustment(result.score, context),
-          penalty: seniorityPenalty(context),
-        };
-
-        return acc;
-      },
-      {},
-    );
+    return rankAndFilterJobs.reduce<Record<number, AtsScanResult>>((acc, job) => {
+      const tags = tagsByJobId[job.id] ?? [];
+      const result = matchResumeToJob(jobRecordToAtsKeywordInput(job, tags), {
+        resumeText: parsedText,
+        trackedSkills: userSkills ?? [],
+      });
+      if (result.keywordCount === 0) return acc;
+      acc[job.id] = result;
+      return acc;
+    }, {});
   }, [activeAtsResume?.parsed_text, rankAndFilterJobs, rankedJobIds.length, tagsByJobId, userSkills]);
 
   const suitabilityByJobId = useMemo(() => {
@@ -948,7 +874,7 @@ export default function Jobs() {
       if (roleFamily && demotedRoleFamilies.has(roleFamily)) feedbackDelta -= 12;
 
       acc[job.id] = suitabilityScore(job, {
-        atsMatch: activeAtsResume?.parsed_text ? (atsByJobId[job.id]?.displayScore ?? null) : null,
+        atsMatch: activeAtsResume?.parsed_text ? (atsByJobId[job.id]?.score ?? null) : null,
         watched: watchedSet.has(canonical),
         qualityBand: feed?.quality_band,
         feedbackDelta,
@@ -1028,8 +954,8 @@ export default function Jobs() {
     if (!activeAtsResume?.parsed_text) return rows;
 
     return rows.sort((a, b) => {
-      const bScore = atsByJobId[b.id]?.displayScore ?? -1;
-      const aScore = atsByJobId[a.id]?.displayScore ?? -1;
+      const bScore = atsByJobId[b.id]?.score ?? -1;
+      const aScore = atsByJobId[a.id]?.score ?? -1;
       const diff = bScore - aScore;
       if (diff !== 0) return diff;
       return baseOrderDiff(a.id, b.id);
@@ -1419,53 +1345,27 @@ export default function Jobs() {
     }
   }, [selectedIdx]);
 
-  const listAtsByJobId = useMemo(() => {
-    if (jobs.length === 0 || Object.keys(atsByJobId).length === 0) {
-      return {} as Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>;
-    }
-    return jobs.reduce<Record<number, { result: AtsScanResult; displayScore: number; penalty: number }>>((acc, job) => {
-      const snapshot = atsByJobId[job.id];
-      if (snapshot) acc[job.id] = snapshot;
-      return acc;
-    }, {});
-  }, [atsByJobId, jobs]);
+  const listAtsByJobId = atsByJobId;
 
   const detailAtsResult = useMemo(() => {
     const parsedText = activeAtsResume?.parsed_text;
     if (!detail || !parsedText) return null;
 
-    const detailTagKeywords = detailTags ?? [];
-    const descriptionKeywords = extractKeywordsFromJobText([detail.headline, detail.description ?? ""].join(" "), 35);
-    const keywords = Array.from(new Set([...detailTagKeywords, ...descriptionKeywords])).slice(0, 35);
-    if (keywords.length === 0) return null;
+    if (detail.id != null && atsByJobId[detail.id]) {
+      return atsByJobId[detail.id];
+    }
 
-    const context = {
-      headline: detail.headline,
-      career_stage: detail.career_stage,
-      career_stage_confidence: detail.career_stage_confidence,
-      years_required_min: detail.years_required_min,
-      is_grad_program: detail.is_grad_program,
-      reason_codes: detail.reason_codes,
-    };
-
-    const result = runAtsScan({
+    return matchResumeToJob(jobRecordToAtsKeywordInput(detail, detailTags ?? []), {
       resumeText: parsedText,
-      targetKeywords: keywords,
       trackedSkills: userSkills ?? [],
     });
-
-    return {
-      result,
-      displayScore: applySeniorityAdjustment(result.score, context),
-      penalty: seniorityPenalty(context),
-    };
-  }, [activeAtsResume?.parsed_text, detail, detailTags, userSkills]);
-  const visibleMatchedKeywords = detailAtsResult?.result.matchedKeywords.slice(0, 6) ?? [];
-  const visibleMissingKeywords = detailAtsResult?.result.missingKeywords.slice(0, 6) ?? [];
+  }, [activeAtsResume?.parsed_text, atsByJobId, detail, detailTags, userSkills]);
+  const visibleMatchedKeywords = detailAtsResult?.matchedKeywords.slice(0, 6) ?? [];
+  const visibleMissingKeywords = detailAtsResult?.missingKeywords.slice(0, 6) ?? [];
   const keyRequirements = useMemo(() => {
-    const values = detailAtsResult?.result.missingKeywords ?? detailTags ?? [];
+    const values = detailAtsResult?.missingKeywords ?? detailTags ?? [];
     return values.slice(0, 5);
-  }, [detailAtsResult?.result.missingKeywords, detailTags]);
+  }, [detailAtsResult?.missingKeywords, detailTags]);
   const detailRestrictions = useMemo(() => {
     if (!detail) return [];
     const restrictions: string[] = [];
@@ -2069,8 +1969,8 @@ export default function Jobs() {
                                 </TooltipProvider>
                               ) : null}
                               {atsSnapshot ? (
-                                <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.displayScore))}>
-                                  Match {atsSnapshot.displayScore}%
+                                <Badge variant="outline" className={cn("h-4 shrink-0 px-1 text-[9px] font-normal", atsBadgeClass(atsSnapshot.score))}>
+                                  Keyword match {atsSnapshot.score}%
                                 </Badge>
                               ) : null}
                               <span className="inline-flex h-4 items-center rounded border border-primary/20 px-1 text-[9px] text-primary/80">
@@ -2342,17 +2242,17 @@ export default function Jobs() {
                       )}
                     </div>
 
-                    {detailAtsResult ? (
+                    {detailAtsResult && detailAtsResult.keywordCount > 0 ? (
                       <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
                         <div className="flex items-center justify-between gap-2">
                           <div>
-                            <h3 className="text-sm font-semibold">Fit summary</h3>
+                            <h3 className="text-sm font-semibold">Keyword match summary</h3>
                             <p className="text-[11px] text-muted-foreground">
-                              Based on {activeAtsResume?.file_name || activeAtsResume?.label || "your résumé"}
+                              Deterministic keyword comparison between this résumé and the job&apos;s structured skills and description.
                             </p>
                           </div>
-                          <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.displayScore))}>
-                            Keyword match · {detailAtsResult.displayScore}%
+                          <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.score))}>
+                            Keyword match · {detailAtsResult.score}%
                           </Badge>
                         </div>
                         <div className="flex flex-wrap gap-1.5 text-[10px]">
@@ -2373,7 +2273,7 @@ export default function Jobs() {
                         {(visibleMatchedKeywords.length > 0 || visibleMissingKeywords.length > 0) && (
                           <div className="grid gap-3 md:grid-cols-2">
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-emerald-200">✓ You have</p>
+                              <p className="mb-1 text-[11px] font-medium text-emerald-200">Keywords found</p>
                               <div className="flex flex-wrap gap-1">
                                 {visibleMatchedKeywords.length > 0 ? (
                                   visibleMatchedKeywords.map((keyword) => (
@@ -2387,7 +2287,7 @@ export default function Jobs() {
                               </div>
                             </div>
                             <div>
-                              <p className="mb-1 text-[11px] font-medium text-amber-200">Gaps</p>
+                              <p className="mb-1 text-[11px] font-medium text-amber-200">Keyword gaps</p>
                               <div className="flex flex-wrap gap-1">
                                 {visibleMissingKeywords.length > 0 ? (
                                   visibleMissingKeywords.map((keyword) => (
@@ -2416,9 +2316,6 @@ export default function Jobs() {
                         ) : null}
                         <p className="text-[11px] text-muted-foreground">
                           Keyword overlap supports your decision; it does not predict hiring outcomes.
-                          {detailAtsResult.penalty > 0
-                            ? ` A ${detailAtsResult.penalty}-point seniority adjustment was applied.`
-                            : ""}
                         </p>
                         <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
                           <CollapsibleTrigger asChild>
@@ -2431,7 +2328,7 @@ export default function Jobs() {
                             <div>
                               <p className="mb-1 text-xs text-muted-foreground">Matched keywords</p>
                               <div className="flex flex-wrap gap-1">
-                                {detailAtsResult.result.matchedKeywords.slice(0, 10).map((keyword) => (
+                                {detailAtsResult.matchedKeywords.slice(0, 10).map((keyword) => (
                                   <Badge key={keyword} variant="secondary" className="text-[10px] font-normal">
                                     {keyword}
                                   </Badge>
@@ -2441,7 +2338,7 @@ export default function Jobs() {
                             <div>
                               <p className="mb-1 text-xs text-muted-foreground">Missing keywords</p>
                               <div className="flex flex-wrap gap-1">
-                                {detailAtsResult.result.missingKeywords.slice(0, 10).map((keyword) => (
+                                {detailAtsResult.missingKeywords.slice(0, 10).map((keyword) => (
                                   <Badge key={keyword} variant="outline" className="text-[10px] font-normal">
                                     {keyword}
                                   </Badge>
@@ -2453,7 +2350,7 @@ export default function Jobs() {
                       </div>
                     ) : user ? (
                       <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
-                        <h3 className="text-sm font-semibold">See why this role fits</h3>
+                        <h3 className="text-sm font-semibold">See keyword match details</h3>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Add a résumé to compare your skills with the job requirements without leaving Explore.
                         </p>

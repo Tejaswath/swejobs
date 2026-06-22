@@ -90,7 +90,56 @@ const STOP_WORDS = new Set([
   "av",
   "har",
   "ska",
+  "din",
+  "dig",
+  "ditt",
+  "dina",
+  "ett",
+  "en",
+  "inom",
+  "karriär",
+  "karriar",
+  "krav",
+  "bidra",
+  "utvecklas",
+  "vi",
+  "du",
+  "kan",
+  "hos",
+  "mot",
+  "från",
+  "fran",
+  "över",
+  "over",
+  "under",
+  "genom",
+  "efter",
+  "innan",
+  "mellan",
+  "utan",
+  "alla",
+  "någon",
+  "nagon",
+  "några",
+  "nagra",
+  "mycket",
+  "mer",
+  "mindre",
+  "helst",
+  "gärna",
+  "garna",
+  "söker",
+  "soker",
+  "rollen",
+  "arbete",
+  "teamet",
+  "företag",
+  "foretag",
 ]);
+
+export const MAX_JOB_ATS_KEYWORDS = 25;
+
+const MIN_TRANSLATION_CHARS = 20;
 
 const SECTION_WEIGHTS: Array<{ pattern: RegExp; weight: number }> = [
   { pattern: /\b(requirements?|qualifications?|must have|what you bring|you have|required skills?)\b/i, weight: 2.6 },
@@ -173,6 +222,16 @@ export type AtsScanResult = {
   trackedMissingKeywords: string[];
   untrackedMissingKeywords: string[];
   recommendations: string[];
+};
+
+export type JobAtsKeywordInput = {
+  tags?: string[];
+  headline?: string | null;
+  description?: string | null;
+  headlineEn?: string | null;
+  descriptionEn?: string | null;
+  language?: string | null;
+  occupationLabel?: string | null;
 };
 
 export function normalizeKeyword(value: string) {
@@ -275,6 +334,106 @@ function hasKeyword(normalizedText: string, keyword: string) {
   return variantsForKeyword(keyword).some((variant) => {
     const paddedVariant = ` ${normalizeKeyword(variant)} `;
     return paddedText.includes(paddedVariant);
+  });
+}
+
+function normalizeStructuredTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const tag of tags) {
+    const canonical = canonicalizeKeyword(String(tag ?? ""));
+    if (!canonical || seen.has(canonical)) continue;
+    seen.add(canonical);
+    result.push(canonical);
+  }
+
+  return result;
+}
+
+function hasMeaningfulEnglishTranslation(input: JobAtsKeywordInput): boolean {
+  const combined = [input.headlineEn, input.descriptionEn]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return combined.length >= MIN_TRANSLATION_CHARS;
+}
+
+function proseSources(input: JobAtsKeywordInput): { headlineText: string; descriptionText: string } {
+  const lang = String(input.language ?? "").toLowerCase();
+  const occupation = String(input.occupationLabel ?? "").trim();
+
+  if (lang === "sv" && hasMeaningfulEnglishTranslation(input)) {
+    const headlineParts = [input.headlineEn, occupation].map((value) => String(value ?? "").trim()).filter(Boolean);
+    return {
+      headlineText: headlineParts.join(" "),
+      descriptionText: String(input.descriptionEn ?? "").trim(),
+    };
+  }
+
+  const headlineParts = [input.headline, occupation].map((value) => String(value ?? "").trim()).filter(Boolean);
+  return {
+    headlineText: headlineParts.join(" "),
+    descriptionText: String(input.description ?? "").trim(),
+  };
+}
+
+export function buildJobAtsKeywords(input: JobAtsKeywordInput): string[] {
+  const tagKeywords = normalizeStructuredTags(input.tags ?? []);
+  const seen = new Set(tagKeywords);
+  const result = [...tagKeywords];
+
+  if (result.length >= MAX_JOB_ATS_KEYWORDS) {
+    return result;
+  }
+
+  const { headlineText, descriptionText } = proseSources(input);
+  const headlineKeywords = headlineText ? extractKeywordsFromJobText(headlineText, MAX_JOB_ATS_KEYWORDS) : [];
+  const descriptionKeywords = descriptionText
+    ? extractKeywordsFromJobText(descriptionText, MAX_JOB_ATS_KEYWORDS)
+    : [];
+
+  for (const keyword of [...headlineKeywords, ...descriptionKeywords]) {
+    const canonical = canonicalizeKeyword(keyword);
+    if (!canonical || seen.has(canonical)) continue;
+    seen.add(canonical);
+    result.push(canonical);
+    if (result.length >= MAX_JOB_ATS_KEYWORDS) break;
+  }
+
+  return result;
+}
+
+export function jobRecordToAtsKeywordInput(
+  job: {
+    headline?: string | null;
+    description?: string | null;
+    headline_en?: unknown;
+    description_en?: unknown;
+    lang?: string | null;
+    occupation_label?: string | null;
+  },
+  tags: string[],
+): JobAtsKeywordInput {
+  return {
+    tags,
+    headline: job.headline,
+    description: job.description,
+    headlineEn: typeof job.headline_en === "string" ? job.headline_en : null,
+    descriptionEn: typeof job.description_en === "string" ? job.description_en : null,
+    language: job.lang,
+    occupationLabel: job.occupation_label,
+  };
+}
+
+export function matchResumeToJob(
+  job: JobAtsKeywordInput,
+  params: { resumeText: string; trackedSkills?: Iterable<string> },
+): AtsScanResult {
+  return runAtsScan({
+    resumeText: params.resumeText,
+    targetKeywords: buildJobAtsKeywords(job),
+    trackedSkills: params.trackedSkills,
   });
 }
 

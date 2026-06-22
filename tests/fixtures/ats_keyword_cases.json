@@ -1,0 +1,54 @@
+[
+  {
+    "id": "english_with_tags",
+    "input": {
+      "tags": ["React", "TypeScript", "AWS"],
+      "headline": "Frontend Engineer",
+      "description": "Requirements: React, TypeScript, and AWS experience. Nice to have GraphQL.",
+      "language": "en"
+    },
+    "notes": "Tags should lead; prose should not duplicate React/TypeScript/AWS."
+  },
+  {
+    "id": "swedish_with_translation",
+    "input": {
+      "tags": ["Python", "Docker"],
+      "headline": "Backendutvecklare",
+      "description": "Vi söker dig som har erfarenhet av din karriär inom utveckling.",
+      "headlineEn": "Backend Developer",
+      "descriptionEn": "Requirements: Python and Docker. Build REST APIs and distributed systems.",
+      "language": "sv"
+    },
+    "notes": "Prose extraction should prefer description_en; Swedish filler must not appear as gaps."
+  },
+  {
+    "id": "swedish_without_translation",
+    "input": {
+      "tags": ["Java"],
+      "headline": "Mjukvaruutvecklare",
+      "description": "Krav: Java och spring boot. Meriterande kubernetes.",
+      "language": "sv"
+    },
+    "notes": "Falls back to Swedish prose when _en fields are absent."
+  },
+  {
+    "id": "tag_heavy",
+    "input": {
+      "tags": ["React", "TypeScript", "Node.js", "PostgreSQL", "Docker", "Kubernetes", "AWS", "GraphQL"],
+      "headline": "Full Stack Developer",
+      "description": "React TypeScript Node PostgreSQL Docker Kubernetes AWS GraphQL required.",
+      "language": "en"
+    },
+    "notes": "All tags preserved even when count exceeds prose cap."
+  },
+  {
+    "id": "description_only",
+    "input": {
+      "tags": [],
+      "headline": "Software Engineer",
+      "description": "Must have Python, machine learning, and SQL experience.",
+      "language": "en"
+    },
+    "notes": "No tags; keywords come entirely from prose."
+  }
+]
