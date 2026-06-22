@@ -46,6 +46,8 @@ import type { Json, Tables } from "@/integrations/supabase/types";
 import {
   type AtsScanResult,
   extractKeywordsFromJobText,
+  jobRecordToAtsKeywordInput,
+  matchResumeToJob,
   runAtsScan,
 } from "@/lib/ats";
 import {
@@ -90,7 +92,15 @@ const RESUME_NONE = "__none";
 type FilterStatus = "all" | ApplicationStatus;
 type ResumeVersion = Tables<"resume_versions">;
 type JobTag = { job_id: number; tag: string };
-type JobSummary = { id: number; headline: string; description: string | null };
+type JobSummary = {
+  id: number;
+  headline: string;
+  description: string | null;
+  headline_en?: string | null;
+  description_en?: string | null;
+  lang?: string | null;
+  occupation_label?: string | null;
+};
 type UrlMatchJob = { id: number; headline: string; employer_name: string | null; source_url: string | null };
 type StatusTimelineEntry = { status: ApplicationStatus; at: string };
 type TrackedAppliedRow = {
@@ -439,7 +449,7 @@ export default function Applications() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("id, headline, description")
+        .select("id, headline, description, headline_en, description_en, lang, occupation_label")
         .in("id", jobIds);
       if (error) throw toDisplayError(error, "Could not load linked job details.");
       return (data ?? []) as JobSummary[];
@@ -493,7 +503,7 @@ export default function Applications() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("id, headline, description")
+        .select("id, headline, description, headline_en, description_en, lang, occupation_label")
         .eq("id", form.job_id!)
         .maybeSingle();
       if (error) throw toDisplayError(error, "Could not load the linked job for ATS preflight.");
@@ -528,27 +538,25 @@ export default function Applications() {
     const selectedResume = availableResumes.find((resumeVersion) => resumeVersion.id === form.resume_version_id);
     if (!selectedResume?.parsed_text) return null;
 
-    const targetKeywords =
-      formLinkedJobTagsQuery.data && formLinkedJobTagsQuery.data.length > 0
-        ? formLinkedJobTagsQuery.data
-        : formLinkedJobQuery.data
-          ? extractKeywordsFromJobText(
-              [formLinkedJobQuery.data.headline, formLinkedJobQuery.data.description ?? ""].join(" "),
-              35,
-            )
-          : extractKeywordsFromJobText(form.ats_job_description, 35);
+    const linkedJob = formLinkedJobQuery.data;
+    const linkedTags = formLinkedJobTagsQuery.data ?? [];
+    const result =
+      linkedJob && form.job_id
+        ? matchResumeToJob(jobRecordToAtsKeywordInput(linkedJob, linkedTags), {
+            resumeText: selectedResume.parsed_text,
+            trackedSkills: userSkillsQuery.data ?? [],
+          })
+        : runAtsScan({
+            resumeText: selectedResume.parsed_text,
+            targetKeywords: extractKeywordsFromJobText(form.ats_job_description, 35),
+            trackedSkills: userSkillsQuery.data ?? [],
+          });
 
-    if (targetKeywords.length === 0) return null;
-
-    const result = runAtsScan({
-      resumeText: selectedResume.parsed_text,
-      targetKeywords,
-      trackedSkills: userSkillsQuery.data ?? [],
-    });
+    if (result.keywordCount === 0) return null;
 
     return {
       result,
-      source: formLinkedJobTagsQuery.data && formLinkedJobTagsQuery.data.length > 0 ? "job_tags" as const : "job_description" as const,
+      source: linkedJob && form.job_id ? ("linked_job" as const) : ("manual_description" as const),
     };
   }, [
     availableResumes,
@@ -1042,16 +1050,21 @@ export default function Applications() {
 
     const linkedJob = atsApplication.job_id ? jobsById[atsApplication.job_id] : null;
     const linkedJobTags = atsApplication.job_id ? tagsByJobId[atsApplication.job_id] ?? [] : [];
-    const source: "job_tags" | "job_description" =
-      linkedJobTags.length > 0 ? "job_tags" : "job_description";
-    const targetKeywords =
-      linkedJobTags.length > 0
-        ? linkedJobTags
-        : linkedJob
-          ? extractKeywordsFromJobText([linkedJob.headline, linkedJob.description ?? ""].join(" "))
-          : extractKeywordsFromJobText(manualJobDescription);
+    const source: "linked_job" | "manual_description" =
+      linkedJob && atsApplication.job_id ? "linked_job" : "manual_description";
+    const result =
+      linkedJob && atsApplication.job_id
+        ? matchResumeToJob(jobRecordToAtsKeywordInput(linkedJob, linkedJobTags), {
+            resumeText: resumeVersion.parsed_text,
+            trackedSkills: userSkillsQuery.data ?? [],
+          })
+        : runAtsScan({
+            resumeText: resumeVersion.parsed_text,
+            targetKeywords: extractKeywordsFromJobText(manualJobDescription),
+            trackedSkills: userSkillsQuery.data ?? [],
+          });
 
-    if (targetKeywords.length === 0) {
+    if (result.keywordCount === 0) {
       toast({
         title: "No job keywords found",
         description: atsApplication.job_id
@@ -1062,11 +1075,6 @@ export default function Applications() {
       return;
     }
 
-    const result = runAtsScan({
-      resumeText: resumeVersion.parsed_text,
-      targetKeywords,
-      trackedSkills: userSkillsQuery.data ?? [],
-    });
     setAtsResult(result);
     void persistAtsMutation.mutateAsync({
       applicationId: atsApplication.id,
@@ -1918,7 +1926,7 @@ export default function Applications() {
                   <div className="grid gap-3 md:grid-cols-3">
                     <Card className="border-border/40 bg-card/60">
                       <CardContent className="p-4">
-                        <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Match score</p>
+                        <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Keyword match</p>
                         <p className="mt-2 text-2xl font-semibold">{atsResult.score}%</p>
                       </CardContent>
                     </Card>

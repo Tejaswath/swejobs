@@ -237,7 +237,7 @@ describe("Jobs page", () => {
     fireEvent.click(jobTitle);
 
     expect(await screen.findByText("Track")).toBeInTheDocument();
-    expect(screen.getByText("Fit summary")).toBeInTheDocument();
+    expect(screen.getByText("Keyword match summary")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Full description" })).toBeInTheDocument();
     expect(screen.queryByText("Build reliable backend services.")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Full description" }));
@@ -302,7 +302,7 @@ describe("Jobs page", () => {
     );
 
     fireEvent.click(await screen.findByText("Backend Engineer"));
-    expect(await screen.findByText("See why this role fits")).toBeInTheDocument();
+    expect(await screen.findByText("See keyword match details")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add résumé to see your fit" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Add a résumé")).toBeInTheDocument();
