@@ -236,8 +236,8 @@ describe("Jobs page", () => {
     const jobTitle = await screen.findByText("Backend Engineer");
     fireEvent.click(jobTitle);
 
-    expect(await screen.findByText("Track")).toBeInTheDocument();
-    expect(screen.getByText("Keyword match summary")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Show keyword analysis" })).toBeInTheDocument();
+    expect(screen.getByText("Keyword match")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Full description" })).toBeInTheDocument();
     expect(screen.queryByText("Build reliable backend services.")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Full description" }));

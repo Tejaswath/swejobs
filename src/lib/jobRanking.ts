@@ -24,6 +24,13 @@ export type SuitabilityResult = {
   reasons: string[];
 };
 
+const GENERIC_SUITABILITY_REASONS = new Set(["Relevant software role"]);
+
+/** First user-facing reason that adds decision value beyond the generic role-family label. */
+export function primarySuitabilityReason(result: SuitabilityResult): string | null {
+  return result.reasons.find((reason) => !GENERIC_SUITABILITY_REASONS.has(reason)) ?? null;
+}
+
 function freshnessScore(value: unknown, now: Date): number {
   const timestamp = Date.parse(String(value || ""));
   if (!Number.isFinite(timestamp)) return 0;

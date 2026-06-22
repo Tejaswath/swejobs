@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowRight, Bookmark, Compass, Trash2 } from "lucide-react";
+import { ArrowRight, Bookmark, CheckCircle2, Compass, Trash2 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
@@ -171,7 +171,7 @@ export default function TrackedJobs() {
             <Bookmark className="mb-4 h-12 w-12 text-muted-foreground/30" />
             <h2 className="text-lg font-medium">No saved jobs yet</h2>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Save jobs from Explore to keep track of roles you're interested in.
+              Save jobs from Explore to keep track of roles you&apos;re interested in before you apply.
             </p>
             <Link to="/jobs" className="mt-5">
               <Button className="gap-2">
@@ -179,26 +179,21 @@ export default function TrackedJobs() {
               </Button>
             </Link>
           </div>
+        ) : discoveryItems.length === 0 && pipelineItems.length > 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/5 py-16 text-center">
+            <CheckCircle2 className="mb-4 h-10 w-10 text-emerald-400" />
+            <h2 className="text-lg font-medium">All saved jobs are in Applications</h2>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              You&apos;ve already moved {pipelineItems.length} saved role{pipelineItems.length === 1 ? "" : "s"} into your tracker.
+            </p>
+            <Link to="/applications" className="mt-5">
+              <Button variant="outline" className="gap-2">
+                Open Applications <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
         ) : (
           <div className="space-y-4">
-            {pipelineItems.length > 0 ? (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-medium">Already in Applications</h2>
-                    <p className="text-xs text-muted-foreground">
-                      {pipelineItems.length} saved job{pipelineItems.length !== 1 ? "s" : ""} already tracked in Applications. You can remove them from this list.
-                    </p>
-                  </div>
-                  <Link to="/applications">
-                    <Button variant="outline" size="sm" className="gap-1.5">
-                      Open Applications <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            ) : null}
-
             <div className="space-y-1.5">
               {discoveryItems.map((item) => {
                 const job = item.jobs;
@@ -245,11 +240,6 @@ export default function TrackedJobs() {
                   </div>
                 );
               })}
-              {discoveryItems.length === 0 && pipelineItems.length > 0 ? (
-                <div className="py-12 text-center">
-                  <p className="text-sm text-muted-foreground">All your saved jobs are already in Applications.</p>
-                </div>
-              ) : null}
             </div>
           </div>
         )}

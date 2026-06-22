@@ -20,6 +20,13 @@ class CompanySourceVerificationTests(unittest.TestCase):
         self.assertEqual(registry["truecaller"].status, "connected")
         self.assertEqual(registry["truecaller"].provider, "greenhouse")
 
+    def test_phase3_supply_feeds_are_enabled(self) -> None:
+        feeds = {feed.feed_key: feed for feed in load_company_feeds("pipeline/config/company_feeds.yaml")}
+        for feed_key in ("voi_teamtailor", "tibber_teamtailor", "quinyx_teamtailor"):
+            with self.subTest(feed_key=feed_key):
+                self.assertIn(feed_key, feeds)
+                self.assertTrue(feeds[feed_key].enabled, f"{feed_key} should be enabled for Phase 3 supply")
+
     def test_configured_feed_is_verifiable_without_registry_duplicate(self) -> None:
         pipeline = object.__new__(IngestionPipeline)
         pipeline.company_feed_config_path = "ignored"

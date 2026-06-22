@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 import fixtures from "../../tests/fixtures/ranking_cases.json";
-import { suitabilityScore } from "@/lib/jobRanking";
+import { primarySuitabilityReason, suitabilityScore } from "@/lib/jobRanking";
+
+describe("primarySuitabilityReason", () => {
+  it("skips the generic software-role fallback when a specific reason exists", () => {
+    const result = suitabilityScore(
+      {
+        is_target_role: true,
+        career_stage: "junior",
+        career_stage_confidence: 0.9,
+        role_family_confidence: 0.95,
+      },
+      { atsMatch: 72 },
+    );
+    expect(primarySuitabilityReason(result)).not.toBe("Relevant software role");
+    expect(primarySuitabilityReason(result)).toMatch(/resume match|title signal|Early-career/i);
+  });
+});
 
 describe("suitability ranking invariants", () => {
   for (const fixture of fixtures) {

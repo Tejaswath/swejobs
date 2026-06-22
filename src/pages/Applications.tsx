@@ -867,7 +867,7 @@ export default function Applications() {
         .select("job_id, status, notes, created_at, updated_at, jobs!inner(id, headline, employer_name, source_url)")
         .eq("user_id", user.id)
         .eq("status", "applied");
-      if (error) throw toDisplayError(error, "Could not load applied jobs from Shortlist.");
+      if (error) throw toDisplayError(error, "Could not load applied jobs from saved jobs.");
 
       const trackedRows = (data ?? []) as TrackedAppliedRow[];
       if (trackedRows.length === 0) {
@@ -904,18 +904,18 @@ export default function Applications() {
       const { error: upsertError } = await supabase
         .from("applications")
         .upsert(rows, { onConflict: "user_id,request_id" });
-      if (upsertError) throw toDisplayError(upsertError, "Could not import applications from Shortlist.");
+      if (upsertError) throw toDisplayError(upsertError, "Could not import applications from saved jobs.");
 
       return { upserted: rows.length };
     },
     onSuccess: ({ upserted }) => {
       void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
       toast({
-        title: upserted > 0 ? `Imported ${upserted} application${upserted === 1 ? "" : "s"} from Shortlist` : "No applied Shortlist jobs to import",
+        title: upserted > 0 ? `Imported ${upserted} application${upserted === 1 ? "" : "s"} from saved jobs` : "No applied saved jobs to import",
       });
     },
     onError: (error: unknown) => {
-      toast({ title: "Could not import from Shortlist", description: getErrorMessage(error), variant: "destructive" });
+      toast({ title: "Could not import saved jobs", description: getErrorMessage(error), variant: "destructive" });
     },
   });
 
@@ -1196,7 +1196,7 @@ export default function Applications() {
               disabled={importSavedAppliedMutation.isPending || !user}
             >
               <ArrowRightLeft className="h-4 w-4" />
-              Import from Shortlist
+              Import saved jobs
             </Button>
             <Button className="gap-2" onClick={openCreateDialog}>
               <Plus className="h-4 w-4" /> New Application
@@ -1425,15 +1425,10 @@ export default function Applications() {
                           />
                         </TableHead>
                         <TableHead className="w-[110px]">Applied</TableHead>
-                        <TableHead className="w-[72px]">Age</TableHead>
-                        <TableHead className="w-[154px]">Company</TableHead>
-                        <TableHead className="w-[190px]">Title</TableHead>
-                        <TableHead className="w-[148px]">Status</TableHead>
-                        <TableHead className="w-[76px]">ATS</TableHead>
-                        <TableHead className="w-[130px]">Resume</TableHead>
-                        <TableHead className="w-[170px]">Job URL</TableHead>
-                        <TableHead className="w-[90px]">Source</TableHead>
-                        <TableHead className="w-[126px] text-right">Actions</TableHead>
+                        <TableHead className="w-[180px]">Company</TableHead>
+                        <TableHead className="min-w-[220px]">Title</TableHead>
+                        <TableHead className="w-[168px]">Status</TableHead>
+                        <TableHead className="w-[120px] text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1452,13 +1447,10 @@ export default function Applications() {
                               aria-label={`Select application ${application.company} ${application.job_title}`}
                             />
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground" title={formatDaysSinceApplied(application.applied_at) ?? undefined}>
                             {formatApplicationDate(application.applied_at)}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                            {formatDaysSinceApplied(application.applied_at)}
-                          </TableCell>
-                          <TableCell className="max-w-[154px]">
+                          <TableCell className="max-w-[180px]">
                             <div className="flex items-center gap-2">
                               {faviconUrl ? (
                                 <img
@@ -1517,50 +1509,22 @@ export default function Applications() {
                               ) : null}
                             </div>
                           </TableCell>
-                          <TableCell>
-                            {application.ats_score != null ? (
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  application.ats_score >= 70
-                                    ? "border-emerald-500/30 text-emerald-300"
-                                    : application.ats_score >= 40
-                                      ? "border-amber-500/30 text-amber-300"
-                                      : "border-rose-500/30 text-rose-300",
-                                )}
-                              >
-                                {application.ats_score}%
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-[130px] truncate text-sm text-muted-foreground" title={application.resume_label || "No resume attached"}>
-                            {application.resume_label || "No resume attached"}
-                          </TableCell>
-                          <TableCell>
-                            {application.job_url ? (
-                              <a
-                                href={application.job_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex max-w-[156px] items-center gap-1 truncate text-sm text-primary hover:underline"
-                                title={application.job_url}
-                              >
-                                <span className="truncate">{application.job_url}</span>
-                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                              </a>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No link</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className="capitalize">
-                              {application.source}
-                            </Badge>
-                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
+                              {application.job_url ? (
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  title="Open posting"
+                                  aria-label="Open posting"
+                                  asChild
+                                >
+                                  <a href={application.job_url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </a>
+                                </Button>
+                              ) : null}
                               <Button
                                 variant="outline"
                                 size="icon"
@@ -1631,7 +1595,7 @@ export default function Applications() {
           <p className="text-xs text-muted-foreground">
             Discovery tracking still lives in{" "}
             <Link to="/tracked" className="text-primary underline">
-              Shortlist
+              Saved Jobs
             </Link>
             . Manage uploaded PDFs in{" "}
             <Link to="/resumes" className="text-primary underline">
