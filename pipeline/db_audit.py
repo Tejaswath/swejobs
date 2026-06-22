@@ -10,6 +10,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Email logs are audit-flagged at this age but NOT deleted by compaction
+# (see docs/agent_operating_constraints.md §5). This is an audit-only window,
+# not a retention setting, which is why it is a constant rather than read from
+# Settings.
+EMAIL_LOGS_AUDIT_FLAG_DAYS = 90
+
 
 def _planned_count(storage: Any, table: str, filters: list[tuple[str, str, Any]] | None = None) -> int:
     """Return a fast planner estimate (count='planned') for table rows."""
@@ -31,11 +37,14 @@ def run_db_audit(storage: Any, settings: Any) -> dict[str, Any]:
     """Query table size proxies and compaction eligibility without mutations."""
     now = datetime.now(UTC)
 
-    raw_json_days = int(getattr(settings, "compaction_raw_json_days", 7))
-    inactive_days = int(getattr(settings, "compaction_inactive_job_days", 60))
-    events_days = int(getattr(settings, "compaction_job_event_days", 30))
-    digests_days = int(getattr(settings, "compaction_weekly_digest_days", 180))
-    email_logs_days = int(getattr(settings, "compaction_email_logs_days", 90))
+    # Read retention windows directly from settings so a renamed or removed
+    # field fails loudly instead of silently reverting to stale defaults that
+    # disagree with docs/agent_operating_constraints.md §5.
+    raw_json_days = int(settings.compaction_raw_json_days)
+    inactive_days = int(settings.compaction_inactive_job_days)
+    events_days = int(settings.compaction_job_event_days)
+    digests_days = int(settings.compaction_weekly_digest_days)
+    email_logs_days = EMAIL_LOGS_AUDIT_FLAG_DAYS
 
     raw_json_cutoff = (now - timedelta(days=raw_json_days)).isoformat()
     inactive_cutoff = (now - timedelta(days=inactive_days)).isoformat()
