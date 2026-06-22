@@ -238,9 +238,7 @@ describe("Jobs page", () => {
 
     expect(await screen.findByRole("button", { name: "Show keyword analysis" })).toBeInTheDocument();
     expect(screen.getByText("Keyword match")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Full description" })).toBeInTheDocument();
-    expect(screen.queryByText("Build reliable backend services.")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Full description" }));
+    expect(screen.getByRole("button", { name: "Job description" })).toBeInTheDocument();
     expect(screen.getByText("Build reliable backend services.")).toBeInTheDocument();
   });
 
@@ -262,8 +260,8 @@ describe("Jobs page", () => {
 
     fireEvent.keyDown(openDetails, { key: "Enter" });
     expect(await screen.findByRole("heading", { name: "Backend Engineer", level: 2 })).toBeInTheDocument();
-    const applyLink = screen.getByRole("link", { name: "Apply" });
-    expect(applyLink.querySelector("button")).toBeNull();
+    const viewPostingLink = screen.getByRole("link", { name: "View posting" });
+    expect(viewPostingLink.querySelector("button")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Close job details" }));
     await waitFor(() => {
