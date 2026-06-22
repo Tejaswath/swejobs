@@ -31,10 +31,11 @@ class RelevanceContractTests(unittest.TestCase):
         self.assertIn('normalized === "high-signal"', jobs_page)
         self.assertIn('next.set("lens", nextLens)', jobs_page)
 
-    def test_apply_link_auto_tracks_application(self) -> None:
+    def test_view_posting_does_not_auto_track_application(self) -> None:
         jobs_page = Path("src/pages/Jobs.tsx").read_text(encoding="utf-8")
-        self.assertIn("const trackApplyClick = () =>", jobs_page)
-        self.assertIn('onClick={trackApplyClick}', jobs_page)
+        self.assertIn("View posting", jobs_page)
+        self.assertNotIn("const trackApplyClick = () =>", jobs_page)
+        self.assertNotIn("onClick={trackApplyClick}", jobs_page)
         self.assertIn('upsertTracking.mutate({ status: "applied", notes })', jobs_page)
 
     def test_explore_does_not_duplicate_senior_eligibility_regex(self) -> None:
