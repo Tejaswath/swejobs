@@ -43,6 +43,7 @@ import {
   normalizeCompanyKey,
   providerLabel,
 } from "@/lib/companyRegistry";
+import { JobDescriptionPanel } from "@/components/jobs/JobDescriptionPanel";
 import { buildSweJobsApplication } from "@/lib/applications";
 import { jobRecordToAtsKeywordInput, matchResumeToJob, type AtsScanResult } from "@/lib/ats";
 import { cn } from "@/lib/utils";
@@ -843,6 +844,30 @@ export default function Jobs() {
     }, {} as Record<number, string>);
   }, [trackedStatuses]);
 
+  const { data: appliedJobIdRows } = useQuery({
+    queryKey: ["applied-job-ids", user?.id, rankedJobIds.join(",")],
+    enabled: !!user && rankedJobIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("applications")
+        .select("job_id")
+        .eq("user_id", user!.id)
+        .not("job_id", "is", null)
+        .in("job_id", rankedJobIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const appliedJobIds = useMemo(() => {
+    return new Set(
+      (appliedJobIdRows ?? [])
+        .map((row) => row.job_id)
+        .filter((jobId): jobId is number => typeof jobId === "number" && jobId > 0),
+    );
+  }, [appliedJobIdRows]);
+
   const atsByJobId = useMemo(() => {
     const parsedText = activeAtsResume?.parsed_text;
     if (
@@ -1253,6 +1278,9 @@ export default function Jobs() {
     onSuccess: (_data, values) => {
       qc.invalidateQueries({ queryKey: ["tracked", selectedId] });
       qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      qc.invalidateQueries({ queryKey: ["tracked-statuses", user?.id] });
+      qc.invalidateQueries({ queryKey: ["applied-job-ids", user?.id] });
+      qc.invalidateQueries({ queryKey: ["overview-recent-activity", user?.id] });
       if (selectedId && detail) {
         void pushFeedbackEvent({
           signalType: values.status === "applied" ? "apply" : "save",
@@ -1268,6 +1296,26 @@ export default function Jobs() {
       } else {
         toast({ title: "Saved" });
       }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const clearAppliedMarkMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("tracked_jobs")
+        .update({ status: "saved" })
+        .eq("user_id", user!.id)
+        .eq("job_id", selectedId!)
+        .eq("status", "applied");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tracked", selectedId] });
+      qc.invalidateQueries({ queryKey: ["tracked-statuses", user?.id] });
+      toast({ title: "Applied mark cleared" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1914,6 +1962,7 @@ export default function Jobs() {
                       const isSelected = job.id === selectedId;
                       const tags = tagsByJobId[job.id] ?? [];
                       const trackedStatus = trackedStatusByJobId[job.id];
+                      const isApplied = appliedJobIds.has(job.id);
                       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
                       const watched = watchedSet.has(canonical);
                       const stage = effectiveCareerStage(job.career_stage, job.career_stage_confidence);
@@ -1922,7 +1971,7 @@ export default function Jobs() {
                       const suitability = suitabilityByJobId[job.id];
                       const fitReason = suitability ? primarySuitabilityReason(suitability) : null;
                       const statusIcons: Array<{ key: string; node: JSX.Element }> = [];
-                      if (trackedStatus === "applied") {
+                      if (isApplied) {
                         statusIcons.push({
                           key: "applied",
                           node: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" aria-label="Applied" />,
@@ -2237,13 +2286,13 @@ export default function Jobs() {
                           </Button>
                           <Button
                             size="sm"
-                            variant={tracking?.status === "applied" ? "default" : "outline"}
+                            variant={selectedId && appliedJobIds.has(selectedId) ? "default" : "outline"}
                             className={cn(
                               "h-8 text-xs",
-                              tracking?.status === "applied" && "bg-emerald-600 hover:bg-emerald-600/90",
+                              selectedId && appliedJobIds.has(selectedId) && "bg-emerald-600 hover:bg-emerald-600/90",
                             )}
                             onClick={() => upsertTracking.mutate({ status: "applied", notes })}
-                            disabled={upsertTracking.isPending}
+                            disabled={upsertTracking.isPending || (selectedId != null && appliedJobIds.has(selectedId))}
                           >
                             <CheckCircle2 className="mr-1 h-3 w-3" /> I applied
                           </Button>
@@ -2272,6 +2321,21 @@ export default function Jobs() {
                           View →
                         </Link>
                       </p>
+                    ) : null}
+
+                    {user && selectedId && tracking?.status === "applied" && !appliedJobIds.has(selectedId) ? (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>This role is marked applied in Explore but not in Applications.</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => clearAppliedMarkMutation.mutate()}
+                          disabled={clearAppliedMarkMutation.isPending}
+                        >
+                          Clear applied mark
+                        </Button>
+                      </div>
                     ) : null}
 
                     {detailRestrictions.length > 0 ? (
@@ -2475,11 +2539,13 @@ export default function Jobs() {
                             </button>
                           ) : null}
                           <div className="max-h-[min(52vh,520px)] overflow-y-auto rounded-lg bg-background/60 p-4">
-                            <p className="whitespace-pre-wrap text-sm leading-7 text-foreground/90">
-                              {(detail.lang === "sv" && detail.description_en && !showOriginalDescription
-                                ? detail.description_en
-                                : detail.description) || "No description available."}
-                            </p>
+                            <JobDescriptionPanel
+                              description={
+                                detail.lang === "sv" && detail.description_en && !showOriginalDescription
+                                  ? detail.description_en
+                                  : detail.description
+                              }
+                            />
                           </div>
                         </CollapsibleContent>
                       </div>

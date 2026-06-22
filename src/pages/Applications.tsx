@@ -71,6 +71,7 @@ import {
   isArchivedApplication,
   matchesApplicationMomentum,
 } from "@/lib/applications";
+import { resetTrackedJobAfterApplicationDelete } from "@/lib/trackedJobsSync";
 import { getErrorMessage, toDisplayError } from "@/lib/errors";
 import { downloadCSV } from "@/lib/export";
 import {
@@ -801,11 +802,19 @@ export default function Applications() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      const application = applicationsById.get(id);
       const { error } = await supabase.from("applications").delete().eq("id", id);
       if (error) throw toDisplayError(error, "Could not delete this application.");
+      if (user && application?.job_id) {
+        await resetTrackedJobAfterApplicationDelete(supabase, user.id, [application.job_id]);
+      }
     },
     onSuccess: (_data, deletedId) => {
       void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["tracked-statuses", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["applied-job-ids", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["all-tracked", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["overview-recent-activity", user?.id] });
       toast({ title: "Application deleted" });
       setSelectedApplicationIds((current) => current.filter((id) => id !== deletedId));
     },
@@ -846,11 +855,21 @@ export default function Applications() {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
+      const jobIds = ids
+        .map((id) => applicationsById.get(id)?.job_id)
+        .filter((jobId): jobId is number => typeof jobId === "number" && jobId > 0);
       const { error } = await supabase.from("applications").delete().in("id", ids);
       if (error) throw toDisplayError(error, "Could not delete selected applications.");
+      if (user && jobIds.length > 0) {
+        await resetTrackedJobAfterApplicationDelete(supabase, user.id, jobIds);
+      }
     },
     onSuccess: (_data, ids) => {
       void qc.invalidateQueries({ queryKey: ["applications", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["tracked-statuses", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["applied-job-ids", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["all-tracked", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["overview-recent-activity", user?.id] });
       toast({ title: `Deleted ${ids.length} applications` });
       setSelectedApplicationIds([]);
     },

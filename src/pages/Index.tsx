@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, Building, ChevronDown, ChevronUp, FileText, Zap } from "lucide-react";
+import { Bookmark, FileText, Zap } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
 import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,10 +14,7 @@ import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { cn } from "@/lib/utils";
 import { jobPassesLens } from "@/lib/jobEligibility";
 
-import type {
-  DeadlineBucketViewModel,
-  OverviewSignalStripItem,
-} from "@/components/overview/types";
+import type { OverviewSignalStripItem } from "@/components/overview/types";
 
 type UpcomingDeadlineJob = {
   id: number;
@@ -104,7 +100,6 @@ function relativeTime(value: string): string {
 export default function Index() {
   const { user } = useAuth();
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-  const [onboardingExpanded, setOnboardingExpanded] = useState(false);
   const [previousVisitIso, setPreviousVisitIso] = useState<string | null>(null);
 
   useEffect(() => {
@@ -409,45 +404,11 @@ export default function Index() {
         seen.add(key);
         return true;
       })
-      .slice(0, 6);
+      .slice(0, 3);
   }, [recentActivityQuery.data, recentCapturedQuery.data]);
   const pipelineAppliedCount = pipelineQuery.data?.applied ?? 0;
 
-  const deadlineBuckets: DeadlineBucketViewModel[] = [
-    {
-      id: "today",
-      label: "Today",
-      count: groupedDeadlines.today.length,
-      href: "/jobs?deadline=today",
-      accentClassName: "border-rose-500/30 bg-rose-500/[0.08] shadow-[inset_0_1px_0_rgba(244,63,94,0.12)]",
-      badgeClassName: "border-rose-500/20 bg-rose-500/10 text-rose-100",
-    },
-    {
-      id: "thisWeek",
-      label: "This week",
-      count: groupedDeadlines.thisWeek.length,
-      href: "/jobs?deadline=week",
-      accentClassName: "border-amber-500/20 bg-amber-500/5",
-      badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-100",
-    },
-    {
-      id: "later",
-      label: "Later",
-      count: groupedDeadlines.later.length,
-      href: "/jobs?deadline=upcoming",
-      accentClassName: "border-sky-500/15 bg-sky-500/[0.03]",
-      badgeClassName: "border-sky-500/20 bg-sky-500/10 text-sky-100",
-    },
-  ].filter((bucket) => bucket.count > 0);
-
   const signalItems: OverviewSignalStripItem[] = [
-    {
-      label: "High signal",
-      value: <AnimatedNumber value={highSignalSnapshotQuery.data?.total ?? 0} />,
-      href: "/jobs?lens=high_signal",
-      accentClassName: "text-foreground",
-      tone: "live",
-    },
     {
       label: "Due today",
       value: <AnimatedNumber value={groupedDeadlines.today.length} />,
@@ -457,10 +418,17 @@ export default function Index() {
       pulse: groupedDeadlines.today.length > 0,
     },
     {
-      label: "New high signal",
-      value: <AnimatedNumber value={highSignalSnapshotQuery.data?.newThisWeek ?? 0} />,
+      label: "High signal",
+      value: <AnimatedNumber value={highSignalSnapshotQuery.data?.total ?? 0} />,
       href: "/jobs?lens=high_signal",
-      fullLabel: `${highSignalSnapshotQuery.data?.newThisWeek ?? 0} High Signal roles posted in the last 7 days`,
+      accentClassName: "text-foreground",
+      tone: "live",
+    },
+    {
+      label: "Awaiting response",
+      value: <AnimatedNumber value={pipelineAppliedCount} />,
+      href: "/applications?momentum=awaiting",
+      accentClassName: pipelineAppliedCount > 0 ? "text-sky-200" : "text-foreground",
     },
   ];
 
@@ -489,14 +457,7 @@ export default function Index() {
     },
   ];
   const onboardingRemaining = onboardingTasks.filter((task) => !task.done);
-  const onboardingCompletionPct = Math.round(((onboardingTasks.length - onboardingRemaining.length) / onboardingTasks.length) * 100);
   const showOnboardingChecklist = !!user && !onboardingDismissed && onboardingRemaining.length > 0;
-
-  useEffect(() => {
-    if (!showOnboardingChecklist) {
-      setOnboardingExpanded(false);
-    }
-  }, [showOnboardingChecklist]);
 
   const isReturningUser = !!user && ((recentActivityQuery.data?.length ?? 0) > 0 || watchlistHighlights.length > 0);
   const currentHour = new Date().getHours();
@@ -571,141 +532,26 @@ export default function Index() {
 
           {showOnboardingChecklist ? (
             <FadeUp>
-              <Card className="rounded-[24px] border-border/60 bg-card/80">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="flex flex-1 items-center gap-3 rounded-2xl border border-border/60 bg-background/25 px-4 py-3 text-left transition-colors hover:border-primary/30"
-                      onClick={() => setOnboardingExpanded((previous) => !previous)}
-                    >
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-background/60">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-primary via-primary to-emerald-500 transition-[width]"
-                          style={{ width: `${onboardingCompletionPct}%` }}
-                        />
-                      </div>
-                      <span className="animate-subtle-pulse shrink-0 rounded-full border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                        {onboardingRemaining.length} steps left
-                      </span>
-                      {onboardingExpanded ? (
-                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-xs"
-                      onClick={() => {
-                        localStorage.setItem(ONBOARDING_DISMISSED_KEY, "true");
-                        setOnboardingDismissed(true);
-                      }}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                  {onboardingExpanded ? (
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {onboardingTasks.map((task) => (
-                        <Link
-                          key={task.id}
-                          to={task.href}
-                          className="flex items-center justify-between rounded-lg border border-border/50 bg-background/30 px-3 py-2 text-sm hover:border-primary/30"
-                        >
-                          <span>{task.label}</span>
-                          <Badge variant={task.done ? "secondary" : "outline"} className="text-[10px]">
-                            {task.done ? "Done" : "Start"}
-                          </Badge>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            </FadeUp>
-          ) : null}
-
-          {user && watchlistHighlights.length > 0 ? (
-            <FadeUp>
-              <div className="rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    <Building className="h-3 w-3" />
-                    Following
-                  </p>
-                  {watchlistHighlights.slice(0, 5).map((company) => (
-                    <Link
-                      key={company.name}
-                      to={`/jobs?q=${encodeURIComponent(company.name)}`}
-                      className="rounded-full border border-border/50 bg-background/35 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                    >
-                      {company.name}
-                    </Link>
-                  ))}
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
+                <Link
+                  to={onboardingRemaining[0]?.href ?? "/jobs"}
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  {onboardingRemaining.length} setup {onboardingRemaining.length === 1 ? "step" : "steps"} left —{" "}
+                  <span className="text-foreground">{onboardingRemaining[0]?.label ?? "Continue setup"}</span>
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => {
+                    localStorage.setItem(ONBOARDING_DISMISSED_KEY, "true");
+                    setOnboardingDismissed(true);
+                  }}
+                >
+                  Dismiss
+                </Button>
               </div>
-            </FadeUp>
-          ) : null}
-
-          {(deadlineBuckets.length > 0 || pipelineAppliedCount > 0) ? (
-            <FadeUp>
-              <Card className="rounded-[24px] border-border/60 bg-card/80">
-                <CardContent className="p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">This week</p>
-                    {pipelineAppliedCount > 0 ? (
-                      <Link to="/applications?momentum=awaiting" className="text-xs text-primary hover:underline">
-                        {pipelineAppliedCount} awaiting response →
-                      </Link>
-                    ) : null}
-                  </div>
-                  {deadlineBuckets.length > 0 ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      {deadlineBuckets.map((bucket) => (
-                        <Link
-                          key={bucket.id}
-                          to={bucket.href}
-                          className={cn(
-                            "rounded-xl border px-3 py-2.5 transition-colors hover:border-primary/30",
-                            bucket.accentClassName,
-                          )}
-                        >
-                          <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{bucket.label}</p>
-                          <p className="mt-1 text-lg font-semibold">{bucket.count}</p>
-                          <p className="text-[11px] text-muted-foreground">Open roles</p>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                  {pipelineQuery.data && Object.values(pipelineQuery.data).some((count) => count > 0) ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
-                      {[
-                        { key: "applied" as const, label: "Applied", color: "bg-primary/70" },
-                        { key: "oa" as const, label: "OA", color: "bg-amber-500/70" },
-                        { key: "interviewing" as const, label: "Interview", color: "bg-sky-500/70" },
-                        { key: "offer" as const, label: "Offer", color: "bg-emerald-500/70" },
-                        { key: "rejected" as const, label: "Rejected", color: "bg-rose-500/50" },
-                      ].map((stage) => {
-                        const count = pipelineQuery.data?.[stage.key] ?? 0;
-                        if (count === 0) return null;
-                        return (
-                          <Link
-                            key={stage.key}
-                            to={`/applications?status=${stage.key}`}
-                            className="flex items-center gap-1.5 rounded-full border border-border/50 bg-background/35 px-2.5 py-1 text-xs transition-colors hover:border-primary/30"
-                          >
-                            <span className={cn("h-2 w-2 rounded-full", stage.color)} />
-                            <span className="font-medium text-foreground">{count}</span>
-                            <span className="text-muted-foreground">{stage.label}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
             </FadeUp>
           ) : null}
 
