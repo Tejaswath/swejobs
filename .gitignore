@@ -38,14 +38,14 @@ supabase/.temp/
 *.sln
 *.sw?
 
-# Local project inventory docs
-PROJECT.md
-project.md
+# Generated point-in-time reports
+docs/company_source_verification*.md
+docs/feed_quality*.md
+docs/launch_gate_report.md
+docs/precision_review*.md
+docs/wave*_verify.md
 
-# Temporary docs freeze: ignore markdown files
-*.md
-**/*.md
-!update for agnet 14th june.md
-!docs/relevance_contract.md
+# Local project inventory aliases
+project.md
 .claude/
 .vercel
