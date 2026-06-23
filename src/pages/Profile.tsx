@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
+import { PersonalDetailsForm } from "@/components/profile/PersonalDetailsForm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,7 +85,7 @@ export default function Profile() {
   };
 
   useEffect(() => {
-    document.title = "Resume Library | SweJobs";
+    document.title = "Profile | SweJobs";
   }, []);
 
   const resumeVersionsQuery = useQuery({
@@ -95,7 +96,7 @@ export default function Profile() {
         .from("resume_versions")
         .select(
           "id, user_id, label, target_role, notes, is_default, storage_path, file_name, file_size_bytes, mime_type, " +
-            "text_extracted_at, created_at, updated_at",
+            "parsed_text, text_extracted_at, created_at, updated_at",
         )
         .eq("user_id", user!.id)
         .order("is_default", { ascending: false })
@@ -242,6 +243,7 @@ export default function Profile() {
   });
 
   const resumeVersions = resumeVersionsQuery.data ?? [];
+  const defaultResume = resumeVersions.find((version) => version.is_default) ?? resumeVersions[0] ?? null;
   const resumeLimitReached = resumeVersions.length >= MAX_RESUMES_PER_USER;
   const lastUsedByResumeId = useMemo(() => {
     const map = new Map<string, string>();
@@ -300,11 +302,13 @@ export default function Profile() {
     <AppLayout>
       <div className="space-y-6">
         <div className="space-y-2">
-          <h1 className="text-xl font-semibold tracking-tight">Resume Library</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
           <p className="text-sm text-muted-foreground">
-            Upload your resume PDFs here. Pick one when logging an application.
+            Save personal details for cover letters and extension apply-assist. Manage résumé PDFs below.
           </p>
         </div>
+
+        {user ? <PersonalDetailsForm userId={user.id} defaultResume={defaultResume} /> : null}
 
         <Card className="border-border/40 bg-card/60">
           <CardHeader className="gap-2 md:flex-row md:items-start md:justify-between">
