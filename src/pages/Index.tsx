@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, FileText, Zap } from "lucide-react";
+import { Bookmark, FileText, Zap, ArrowRight } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
@@ -18,6 +18,9 @@ import type { OverviewSignalStripItem } from "@/components/overview/types";
 
 type UpcomingDeadlineJob = {
   id: number;
+  headline: string | null;
+  employer_name: string | null;
+  company_canonical: string | null;
   application_deadline: string | null;
 };
 
@@ -177,7 +180,7 @@ export default function Index() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
-        .select("id, application_deadline")
+        .select("id, headline, employer_name, company_canonical, application_deadline")
         .eq("is_active", true)
         .eq("is_target_role", true)
         .eq("is_noise", false)
@@ -188,7 +191,13 @@ export default function Index() {
         .gte("application_deadline", new Date().toISOString().slice(0, 10))
         .order("application_deadline", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as UpcomingDeadlineJob[];
+      return (data ?? []) as Array<{
+        id: number;
+        headline: string | null;
+        employer_name: string | null;
+        company_canonical: string | null;
+        application_deadline: string | null;
+      }>;
     },
   });
 
@@ -407,6 +416,29 @@ export default function Index() {
       .slice(0, 3);
   }, [recentActivityQuery.data, recentCapturedQuery.data]);
   const pipelineAppliedCount = pipelineQuery.data?.applied ?? 0;
+  const pipelineInterviewCount = pipelineQuery.data?.interviewing ?? 0;
+  const pipelineOfferCount = pipelineQuery.data?.offer ?? 0;
+
+  const todaysMove = useMemo(() => {
+    const urgent =
+      groupedDeadlines.today[0] ??
+      groupedDeadlines.thisWeek[0] ??
+      null;
+    if (!urgent) return null;
+    const employer = urgent.company_canonical || urgent.employer_name || "Company";
+    return {
+      id: urgent.id,
+      headline: urgent.headline || "Open role",
+      employer,
+      deadline: urgent.application_deadline,
+      href: `/jobs/${urgent.id}`,
+    };
+  }, [groupedDeadlines]);
+
+  const recentActionLabel = (kind: RecentActivityItem["kind"]) => {
+    if (kind === "application" || kind === "captured") return "Follow up";
+    return "Review";
+  };
 
   const signalItems: OverviewSignalStripItem[] = [
     {
@@ -555,6 +587,56 @@ export default function Index() {
             </FadeUp>
           ) : null}
 
+          {user && todaysMove ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-rose-500/20 bg-gradient-to-br from-rose-500/[0.08] via-card/80 to-card/80">
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-rose-200/90">Your move today</p>
+                    <p className="line-clamp-1 text-sm font-medium text-foreground">
+                      {todaysMove.employer} · {todaysMove.headline}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Application deadline {todaysMove.deadline ? new Date(`${todaysMove.deadline}T00:00:00`).toLocaleDateString("en-SE", { month: "short", day: "numeric" }) : "soon"}
+                    </p>
+                  </div>
+                  <Button asChild size="sm" className="h-9 shrink-0 rounded-xl">
+                    <Link to={todaysMove.href}>
+                      Review role
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </FadeUp>
+          ) : null}
+
+          {user && (pipelineAppliedCount > 0 || pipelineInterviewCount > 0 || pipelineOfferCount > 0) ? (
+            <FadeUp>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "applied", label: "Applied", count: pipelineAppliedCount, href: "/applications?status=applied", color: "border-primary/30 bg-primary/10" },
+                  { key: "interviewing", label: "Interviewing", count: pipelineInterviewCount, href: "/applications?status=interviewing", color: "border-sky-500/30 bg-sky-500/10" },
+                  { key: "offer", label: "Offers", count: pipelineOfferCount, href: "/applications?status=offer", color: "border-emerald-500/30 bg-emerald-500/10" },
+                ]
+                  .filter((stage) => stage.count > 0)
+                  .map((stage) => (
+                    <Link
+                      key={stage.key}
+                      to={stage.href}
+                      className={cn(
+                        "flex min-w-[7.5rem] flex-1 items-center justify-between rounded-2xl border px-4 py-3 transition-colors hover:border-primary/40",
+                        stage.color,
+                      )}
+                    >
+                      <span className="text-xs text-muted-foreground">{stage.label}</span>
+                      <span className="text-lg font-semibold text-foreground">{stage.count}</span>
+                    </Link>
+                  ))}
+              </div>
+            </FadeUp>
+          ) : null}
+
           {user ? (
             <FadeUp>
               <Card className="rounded-[24px] border-border/60 bg-card/80">
@@ -587,7 +669,10 @@ export default function Index() {
                                 {item.role ? ` · ${item.role}` : ""}
                               </p>
                             </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(item.at)}</span>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="text-xs font-medium text-primary">{recentActionLabel(item.kind)}</span>
+                              <span className="text-xs text-muted-foreground">{relativeTime(item.at)}</span>
+                            </div>
                           </Link>
                         );
                       })}

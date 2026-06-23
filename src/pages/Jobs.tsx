@@ -46,7 +46,7 @@ import {
 import { JobDescriptionPanel } from "@/components/jobs/JobDescriptionPanel";
 import { buildSweJobsApplication } from "@/lib/applications";
 import { jobRecordToAtsKeywordInput, matchResumeToJob, type AtsScanResult } from "@/lib/ats";
-import { cn } from "@/lib/utils";
+import { deadlineUrgencyClass, listCareerLabel, listLocationHint } from "@/lib/jobListDisplay";
 import {
   boolValue,
   earlyCareerBucket,
@@ -57,6 +57,7 @@ import {
   numberValue,
 } from "@/lib/jobEligibility";
 import { primarySuitabilityReason, suitabilityScore } from "@/lib/jobRanking";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
 const LIST_FETCH_LIMIT = 300;
@@ -263,18 +264,6 @@ function languageBadgeClass(value: string | null | undefined): string {
   if (value === "sv") return "border-amber-500/35 bg-amber-500/10 text-amber-100";
   if (value === "mixed") return "border-violet-500/35 bg-violet-500/10 text-violet-100";
   return "border-border/50 bg-muted/30 text-muted-foreground";
-}
-
-function deadlineUrgencyClass(deadline: string | null | undefined): string | null {
-  if (!deadline) return null;
-  const parsed = new Date(`${deadline}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  const today = startOfLocalDay(new Date());
-  const targetDay = startOfLocalDay(parsed);
-  const diffDays = Math.floor((targetDay.getTime() - today.getTime()) / 86_400_000);
-  if (diffDays <= 0) return "border-rose-500/40 bg-rose-500/10 text-rose-100";
-  if (diffDays <= 7) return "border-orange-500/35 bg-orange-500/10 text-orange-100";
-  return "border-border/50 bg-muted/20 text-muted-foreground";
 }
 
 function pluralizeJobs(count: number): string {
@@ -1230,6 +1219,8 @@ export default function Jobs() {
   const [notes, setNotes] = useState("");
   const [appliedFeedbackJobId, setAppliedFeedbackJobId] = useState<number | null>(null);
   const [showAtsDetails, setShowAtsDetails] = useState(false);
+  const [showRoleTags, setShowRoleTags] = useState(false);
+  const [showJobMetadata, setShowJobMetadata] = useState(false);
   const [showOriginalDescription, setShowOriginalDescription] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
 
@@ -1244,6 +1235,8 @@ export default function Jobs() {
   useEffect(() => {
     setAppliedFeedbackJobId(null);
     setShowAtsDetails(false);
+    setShowRoleTags(false);
+    setShowJobMetadata(false);
     setShowOriginalDescription(false);
     setShowFullDescription(true);
   }, [selectedId]);
@@ -1960,7 +1953,6 @@ export default function Jobs() {
                   <div className="space-y-px pr-2">
                     {jobs.map((job, idx) => {
                       const isSelected = job.id === selectedId;
-                      const tags = tagsByJobId[job.id] ?? [];
                       const trackedStatus = trackedStatusByJobId[job.id];
                       const isApplied = appliedJobIds.has(job.id);
                       const canonical = normalizeCompanyName(job.company_canonical || job.employer_name);
@@ -1969,8 +1961,10 @@ export default function Jobs() {
                       const careerBucket = earlyCareerBucket(job);
                       const displayEmployer = companyDisplayName(job.company_canonical, job.employer_name);
                       const suitability = suitabilityByJobId[job.id];
-                      const fitReason = suitability ? primarySuitabilityReason(suitability) : null;
                       const statusIcons: Array<{ key: string; node: JSX.Element }> = [];
+                      const careerLabel = listCareerLabel(lens, careerBucket, stage);
+                      const locationHint = listLocationHint(job);
+                      const deadlineClass = deadlineUrgencyClass(job.application_deadline);
                       if (isApplied) {
                         statusIcons.push({
                           key: "applied",
@@ -2008,11 +2002,11 @@ export default function Jobs() {
                               }
                             }}
                             className={cn(
-                              "cursor-pointer rounded-md border-l-2 px-3 py-2.5 pr-16 transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50",
-                              isSelected && "border-l-primary bg-primary/5 shadow-sm ring-1 ring-primary/20",
-                              !isSelected && "border-l-transparent hover:bg-muted/40",
-                              !isSelected && job.company_tier === "A" && "border-l-emerald-500/40",
-                              !isSelected && job.company_tier === "B" && "border-l-sky-500/30",
+                              "cursor-pointer rounded-lg border border-transparent px-3 py-3 pr-14 transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-primary/50",
+                              isSelected && "border-primary/30 bg-primary/5 shadow-sm ring-1 ring-primary/20",
+                              !isSelected && "hover:border-border/60 hover:bg-muted/30",
+                              !isSelected && job.company_tier === "A" && "border-l-2 border-l-emerald-500/40",
+                              !isSelected && job.company_tier === "B" && "border-l-2 border-l-sky-500/30",
                             )}
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -2050,64 +2044,42 @@ export default function Jobs() {
                               </div>
                             </div>
 
-                          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                             <span
-                              className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary/20 text-[8px] font-semibold text-primary"
+                              className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-[9px] font-semibold text-primary"
                               aria-hidden
                             >
                               {(displayEmployer || "?").charAt(0).toUpperCase()}
                             </span>
-                            {displayEmployer}
+                            <span className="line-clamp-1">{displayEmployer}</span>
                           </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {job.municipality ? (
-                              <Badge variant="outline" className="h-4 px-1.5 text-[9px] font-normal text-muted-foreground">
-                                {job.municipality}
-                              </Badge>
-                            ) : null}
-                            {job.remote_flag ? (
-                              <Badge variant="outline" className="h-4 border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[9px] font-normal text-emerald-200">
-                                Remote
-                              </Badge>
-                            ) : null}
-                            {job.lang ? (
-                              <Badge variant="outline" className={cn("h-4 px-1.5 text-[9px] font-normal", languageBadgeClass(job.lang))}>
-                                {languageLabel(job.lang)}
-                              </Badge>
-                            ) : null}
-                            <Badge variant="outline" className="h-4 px-1.5 text-[9px] font-normal capitalize text-muted-foreground">
-                              {lens === "graduate_trainee" || careerBucket !== "stretch"
-                                ? EARLY_CAREER_LABELS[careerBucket]
-                                : stage !== "unknown"
-                                  ? stage
-                                  : "experience unspecified"}
-                            </Badge>
-                            {(() => {
-                              const deadlineClass = deadlineUrgencyClass(job.application_deadline);
-                              return (
+                          {(locationHint || careerLabel || deadlineClass) ? (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              {locationHint ? (
                                 <Badge
                                   variant="outline"
                                   className={cn(
                                     "h-4 px-1.5 text-[9px] font-normal",
-                                    deadlineClass ?? "text-muted-foreground",
+                                    job.remote_flag
+                                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                                      : "text-muted-foreground",
                                   )}
                                 >
+                                  {locationHint}
+                                </Badge>
+                              ) : null}
+                              {careerLabel ? (
+                                <Badge variant="outline" className="h-4 px-1.5 text-[9px] font-normal capitalize text-muted-foreground">
+                                  {careerLabel}
+                                </Badge>
+                              ) : null}
+                              {deadlineClass ? (
+                                <Badge variant="outline" className={cn("h-4 px-1.5 text-[9px] font-normal", deadlineClass)}>
                                   {formatDeadlineDisplay(job.application_deadline)}
                                 </Badge>
-                              );
-                            })()}
-                          </div>
-                          {fitReason ? (
-                            <p className="mt-1 text-[10px] text-muted-foreground/80">{fitReason}</p>
+                              ) : null}
+                            </div>
                           ) : null}
-
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                            {tags.slice(0, 3).map((tag) => (
-                              <Badge key={tag} variant="outline" className="h-4 px-1.5 text-[9px] font-normal">
-                                {tag}
-                              </Badge>
-                            ))}
-                          </div>
                           </div>
                           <button
                             type="button"
@@ -2348,78 +2320,101 @@ export default function Jobs() {
                       </div>
                     ) : null}
 
-                    {detailFitReason ? (
-                      <p className="text-xs text-muted-foreground">{detailFitReason}</p>
+                    {detailSuitability ? (
+                      <p className="text-xs text-muted-foreground">
+                        {detailSuitability.label} fit
+                        {detailFitReason ? ` — ${detailFitReason}` : ""}
+                      </p>
                     ) : null}
 
-                    <div className="flex flex-wrap gap-1.5">
-                      {detail.remote_flag ? (
-                        <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-xs font-normal text-emerald-200">
-                          Remote
-                        </Badge>
-                      ) : null}
-                      {detail.lang ? (
-                        <Badge variant="outline" className={cn("text-xs font-normal", languageBadgeClass(detail.lang))}>
-                          {languageLabel(detail.lang)}
-                        </Badge>
-                      ) : null}
-                      {detail.is_direct_company_source ? (
-                        <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
-                          {detailProviderLabel}
-                        </Badge>
-                      ) : null}
-                      {detail.employment_type ? (
-                        <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
-                          {detail.employment_type}
-                        </Badge>
-                      ) : null}
-                      {detail.working_hours ? (
-                        <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
-                          {detail.working_hours}
-                        </Badge>
-                      ) : null}
-                      {detail.application_deadline ? (
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-xs font-normal",
-                            deadlineUrgencyClass(detail.application_deadline) ?? "text-muted-foreground",
-                          )}
-                        >
-                          {formatDeadlineDisplay(detail.application_deadline)}
-                        </Badge>
-                      ) : null}
-                    </div>
+                    <Collapsible open={showJobMetadata} onOpenChange={setShowJobMetadata}>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
+                          {showJobMetadata ? "Hide role details" : "Show role details"}
+                          <ChevronsUpDown className="ml-1 h-3.5 w-3.5" />
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="flex flex-wrap gap-1.5 pt-2">
+                        {detail.remote_flag ? (
+                          <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-xs font-normal text-emerald-200">
+                            Remote
+                          </Badge>
+                        ) : null}
+                        {detail.municipality ? (
+                          <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                            {detail.municipality}
+                          </Badge>
+                        ) : null}
+                        {detail.lang ? (
+                          <Badge variant="outline" className={cn("text-xs font-normal", languageBadgeClass(detail.lang))}>
+                            {languageLabel(detail.lang)}
+                          </Badge>
+                        ) : null}
+                        {detail.is_direct_company_source ? (
+                          <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                            {detailProviderLabel}
+                          </Badge>
+                        ) : null}
+                        {detail.employment_type ? (
+                          <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                            {detail.employment_type}
+                          </Badge>
+                        ) : null}
+                        {detail.working_hours ? (
+                          <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                            {detail.working_hours}
+                          </Badge>
+                        ) : null}
+                        {detail.application_deadline ? (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-xs font-normal",
+                              deadlineUrgencyClass(detail.application_deadline) ?? "text-muted-foreground",
+                            )}
+                          >
+                            {formatDeadlineDisplay(detail.application_deadline)}
+                          </Badge>
+                        ) : null}
+                      </CollapsibleContent>
+                    </Collapsible>
+
+                    {(detailTags ?? []).length > 0 ? (
+                      <Collapsible open={showRoleTags} onOpenChange={setShowRoleTags}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
+                            {showRoleTags ? "Hide role tags" : `Show role tags (${(detailTags ?? []).length})`}
+                            <ChevronsUpDown className="ml-1 h-3.5 w-3.5" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="flex flex-wrap gap-1.5 pt-2">
+                          {(detailTags ?? []).map((tag) => (
+                            <Badge key={tag} variant="outline" className="text-[10px] font-normal">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : null}
 
                     {detailAtsResult && detailAtsResult.keywordCount > 0 ? (
                       <Collapsible open={showAtsDetails} onOpenChange={setShowAtsDetails}>
-                        <div className="rounded-xl border border-sky-500/25 border-l-4 border-l-sky-400/70 bg-sky-500/[0.06] p-4">
+                        <div className="rounded-xl border border-border/60 bg-muted/15 p-3">
                           <div className="flex items-center justify-between gap-2">
                             <div>
-                              <h3 className="text-sm font-semibold text-sky-100">Keyword match</h3>
-                              {!showAtsDetails ? (
-                                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                  {previewMissingKeywords.length > 0
-                                    ? `Top gaps: ${previewMissingKeywords.join(", ")}`
-                                    : "Résumé keywords align with this role."}
-                                </p>
-                              ) : (
-                                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                  Deterministic keyword comparison between your résumé and this job.
-                                </p>
-                              )}
+                              <p className="text-sm font-semibold text-foreground">Keyword match</p>
+                              <p className="text-xs text-muted-foreground">
+                                Résumé keyword match: <span className="font-semibold text-foreground">{detailAtsResult.score}%</span>
+                              </p>
                             </div>
-                            <Badge variant="outline" className={cn("text-xs font-normal", atsBadgeClass(detailAtsResult.score))}>
-                              {detailAtsResult.score}%
-                            </Badge>
+                            <CollapsibleTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs">
+                                {showAtsDetails ? "Hide keyword analysis" : "Show keyword analysis"}
+                                <ChevronsUpDown className="h-3.5 w-3.5" />
+                              </Button>
+                            </CollapsibleTrigger>
                           </div>
-                          <CollapsibleTrigger asChild>
-                            <Button variant="outline" size="sm" className="mt-2 h-7 gap-1.5 border-sky-500/30 bg-sky-500/10 px-2 text-xs text-sky-100 hover:bg-sky-500/20">
-                              {showAtsDetails ? "Hide keyword analysis" : "Show keyword analysis"}
-                              <ChevronsUpDown className="h-3.5 w-3.5" />
-                            </Button>
-                          </CollapsibleTrigger>
-                          <CollapsibleContent className="space-y-3 pt-2">
+                          <CollapsibleContent className="space-y-3 pt-3">
                             <div className="flex flex-wrap gap-1.5 text-[10px]">
                               <Badge variant="secondary">
                                 Career stage: {effectiveCareerStage(detail.career_stage, detail.career_stage_confidence)}

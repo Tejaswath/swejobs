@@ -473,7 +473,7 @@ feeds:
     provider: teamtailor
     slug_or_url: https://jobs.funnel.io/
     company_canonical: funnel
-    enabled: false
+    enabled: true
     priority: 112
     location_filters:
       - Stockholm
@@ -583,7 +583,7 @@ feeds:
     provider: teamtailor
     slug_or_url: https://career.inriver.com/
     company_canonical: inriver
-    enabled: false
+    enabled: true
     priority: 122
     location_filters:
       - Stockholm
@@ -673,7 +673,7 @@ feeds:
     provider: greenhouse
     slug_or_url: adyen
     company_canonical: adyen
-    enabled: false
+    enabled: true
     priority: 130
     location_filters:
       - Stockholm
@@ -690,14 +690,14 @@ feeds:
       - java
       - python
 
-  # Candidate feeds below were added for expansion; keep disabled until their provider/slug
-  # combination is endpoint-verified (several currently return HTTP 404).
+  # Phase 5 supply: endpoint-verified greenhouse/lever/teamtailor slugs with tight
+  # location + keyword filters (FEED_ROW_BUDGET=40 per feed caps ingest volume).
   - feed_key: volvo_cars_greenhouse
     display_name: Volvo Cars
     provider: greenhouse
     slug_or_url: volvocars
     company_canonical: volvo cars
-    enabled: false
+    enabled: true
     priority: 15
     location_filters:
       - Stockholm
@@ -721,7 +721,7 @@ feeds:
     provider: greenhouse
     slug_or_url: ericsson
     company_canonical: ericsson
-    enabled: false
+    enabled: true
     priority: 18
     location_filters:
       - Stockholm
@@ -764,7 +764,7 @@ feeds:
     provider: greenhouse
     slug_or_url: embarkstudios
     company_canonical: embark studios
-    enabled: false
+    enabled: true
     priority: 42
     location_filters:
       - Stockholm
@@ -785,7 +785,7 @@ feeds:
     provider: greenhouse
     slug_or_url: sinch
     company_canonical: sinch
-    enabled: false
+    enabled: true
     priority: 48
     location_filters:
       - Stockholm
@@ -805,7 +805,7 @@ feeds:
     provider: lever
     slug_or_url: kry
     company_canonical: kry
-    enabled: false
+    enabled: true
     priority: 36
     location_filters:
       - Stockholm
@@ -847,7 +847,7 @@ feeds:
     provider: greenhouse
     slug_or_url: trustly
     company_canonical: trustly
-    enabled: false
+    enabled: true
     priority: 46
     location_filters:
       - Stockholm
@@ -867,7 +867,7 @@ feeds:
     provider: greenhouse
     slug_or_url: betssongroup
     company_canonical: betsson
-    enabled: false
+    enabled: true
     priority: 52
     location_filters:
       - Stockholm
