@@ -1,10 +1,13 @@
 import { MAX_CAPTURED_DESCRIPTION_CHARS } from "./constants";
 import { canonicalizeJobUrl } from "@/lib/jobUrlMatching";
 import { inferBrandFromHostname } from "@/lib/extensionCapture";
+import { DEFAULT_COVER_LETTER_TEMPLATE, renderCoverLetter } from "@/lib/coverLetter";
 import {
   getApplicationByUrl,
   getCurrentUser,
+  getDefaultResumeDownload,
   getExtensionConfig,
+  getUserProfile,
   hasValidConfig,
   initializeClientFromStorage,
   signInWithGoogle,
@@ -39,6 +42,7 @@ const elements = {
   saveRecruiterToggle: document.getElementById("save-recruiter-toggle"),
   recruiterStatus: document.getElementById("recruiter-status"),
   autofill: document.getElementById("autofill"),
+  fillApplication: document.getElementById("fill-application"),
   saveApplication: document.getElementById("save-application"),
   savedStateBanner: document.getElementById("saved-state-banner"),
   profileHint: document.getElementById("profile-hint"),
@@ -69,6 +73,7 @@ function clearStatus() {
 function setSavingState(isSaving) {
   elements.saveApplication.disabled = isSaving;
   elements.autofill.disabled = isSaving;
+  if (elements.fillApplication) elements.fillApplication.disabled = isSaving;
   elements.signInGoogle.disabled = isSaving;
   elements.signIn.disabled = isSaving;
 }
@@ -217,12 +222,12 @@ function isAutofillSupportedUrl(url) {
   }
 }
 
-async function requestCaptureJobPage(tabId) {
+async function requestContentMessage(tabId, message) {
   try {
-    return await chrome.tabs.sendMessage(tabId, { action: "captureJobPage" });
+    return await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
-    const message = String(error?.message ?? "");
-    const missingReceiver = /receiving end does not exist/i.test(message);
+    const errorMessage = String(error?.message ?? "");
+    const missingReceiver = /receiving end does not exist/i.test(errorMessage);
     if (!missingReceiver) throw error;
 
     await chrome.scripting.executeScript({
@@ -230,7 +235,30 @@ async function requestCaptureJobPage(tabId) {
       files: ["dist/content.js"],
     });
     await new Promise((resolve) => setTimeout(resolve, 120));
-    return await chrome.tabs.sendMessage(tabId, { action: "captureJobPage" });
+    return await chrome.tabs.sendMessage(tabId, message);
+  }
+}
+
+async function requestCaptureJobPage(tabId) {
+  return requestContentMessage(tabId, { action: "captureJobPage" });
+}
+
+async function refreshFillApplicationVisibility() {
+  if (!elements.fillApplication) return;
+  elements.fillApplication.classList.add("hidden");
+
+  if (!currentUser) return;
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!activeTab?.id || !isAutofillSupportedUrl(activeTab.url)) return;
+
+  try {
+    const response = await requestContentMessage(activeTab.id, { action: "detectApplicationFields" });
+    if (response?.detected) {
+      elements.fillApplication.classList.remove("hidden");
+    }
+  } catch {
+    elements.fillApplication.classList.add("hidden");
   }
 }
 
@@ -290,6 +318,7 @@ async function initializePopup() {
     if (activeTab?.url && isAutofillSupportedUrl(activeTab.url) && captureFieldsAreEmpty()) {
       await runPageCapture({ announce: true });
     }
+    await refreshFillApplicationVisibility();
   }
 }
 
@@ -311,6 +340,7 @@ elements.signIn.addEventListener("click", async () => {
   try {
     currentUser = await signInWithPassword(supabaseClient, email, password);
     toggleAuthAndCapture();
+    await refreshFillApplicationVisibility();
     showStatus("Signed in.");
   } catch (error) {
     showStatus(String(error?.message ?? "Sign-in failed."), "error");
@@ -330,6 +360,7 @@ elements.signInGoogle.addEventListener("click", async () => {
   try {
     currentUser = await signInWithGoogle(supabaseClient, activeConfig);
     toggleAuthAndCapture();
+    await refreshFillApplicationVisibility();
     showStatus("Signed in with Google.");
   } catch (error) {
     showStatus(String(error?.message ?? "Google sign-in failed."), "error");
@@ -349,6 +380,59 @@ elements.signOut.addEventListener("click", async () => {
 
 elements.autofill.addEventListener("click", async () => {
   await runPageCapture({ announce: true });
+});
+
+elements.fillApplication?.addEventListener("click", async () => {
+  clearStatus();
+  if (!supabaseClient || !currentUser) {
+    showStatus("Please sign in again.", "error");
+    return;
+  }
+
+  setSavingState(true);
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab?.id || !isAutofillSupportedUrl(activeTab.url)) {
+      showStatus("Open an employer application page first.", "error");
+      return;
+    }
+
+    const profile = await getUserProfile(supabaseClient, currentUser.id);
+    if (!profile?.first_name && !profile?.email && !profile?.about_me) {
+      showStatus("Add your details in SweJobs Profile first.", "error");
+      return;
+    }
+
+    const coverLetterText = renderCoverLetter(
+      DEFAULT_COVER_LETTER_TEMPLATE,
+      {
+        company: elements.company.value.trim() || "your company",
+        job_title: elements.jobTitle.value.trim() || "this role",
+      },
+      profile,
+    );
+
+    const resumeDownload = await getDefaultResumeDownload(supabaseClient, currentUser.id);
+    const response = await requestContentMessage(activeTab.id, {
+      action: "fillApplicationForm",
+      payload: {
+        profile,
+        coverLetterText,
+        resumeDownload,
+      },
+    });
+
+    if (!response?.ok) {
+      showStatus(String(response?.message ?? "Could not fill this form."), "error");
+      return;
+    }
+
+    showStatus(String(response.message ?? "Application form filled. Review before submitting."));
+  } catch (error) {
+    showStatus(String(error?.message ?? "Form fill failed."), "error");
+  } finally {
+    setSavingState(false);
+  }
 });
 
 async function runPageCapture({ announce = true } = {}) {

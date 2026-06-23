@@ -200,6 +200,46 @@ export async function signOutClient(client) {
   await clearStoredSession();
 }
 
+const PROFILE_COLUMNS =
+  "user_id, first_name, last_name, full_name, email, phone, headline, location, linkedin_url, portfolio_url, about_me, autofill_extra";
+
+export async function getUserProfile(client, userId) {
+  const { data, error } = await client
+    .from("user_profile")
+    .select(PROFILE_COLUMNS)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ?? null;
+}
+
+export async function getDefaultResumeDownload(client, userId) {
+  const { data, error } = await client
+    .from("resume_versions")
+    .select("id, file_name, storage_path, mime_type, is_default, created_at")
+    .eq("user_id", userId)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.storage_path) return null;
+
+  const { data: signed, error: signError } = await client.storage
+    .from("resume-files")
+    .createSignedUrl(data.storage_path, 120);
+
+  if (signError || !signed?.signedUrl) return null;
+
+  return {
+    fileName: data.file_name || "resume.pdf",
+    mimeType: data.mime_type || "application/pdf",
+    signedUrl: signed.signedUrl,
+  };
+}
+
 export async function getApplicationByUrl(client, userId, jobUrl) {
   const candidates = buildUrlLookupCandidates(String(jobUrl ?? "").trim());
   if (candidates.length === 0) return null;
