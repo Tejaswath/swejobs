@@ -1,5 +1,6 @@
 import { MAX_CAPTURED_DESCRIPTION_CHARS } from "./constants";
 import { canonicalizeJobUrl } from "@/lib/jobUrlMatching";
+import { inferBrandFromHostname } from "@/lib/extensionCapture";
 import {
   getApplicationByUrl,
   getCurrentUser,
@@ -39,6 +40,8 @@ const elements = {
   recruiterStatus: document.getElementById("recruiter-status"),
   autofill: document.getElementById("autofill"),
   saveApplication: document.getElementById("save-application"),
+  savedStateBanner: document.getElementById("saved-state-banner"),
+  profileHint: document.getElementById("profile-hint"),
   globalStatus: document.getElementById("global-status"),
 };
 
@@ -73,6 +76,15 @@ function setSavingState(isSaving) {
 function applyExistingApplicationState(application) {
   existingApplication = application;
   elements.saveApplication.textContent = application ? SAVE_LABEL_UPDATE : SAVE_LABEL_NEW;
+  if (!elements.savedStateBanner) return;
+
+  if (application) {
+    elements.savedStateBanner.textContent = `Already saved (${application.status}) — Re-scan updates description and notes.`;
+    elements.savedStateBanner.classList.remove("hidden");
+  } else {
+    elements.savedStateBanner.textContent = "";
+    elements.savedStateBanner.classList.add("hidden");
+  }
 }
 
 function canonicalJobUrl(rawUrl) {
@@ -190,22 +202,7 @@ function inferCompanyFromEmailDomain(email) {
 
 function inferCompanyFromUrl(url) {
   try {
-    const hostname = new URL(String(url ?? "")).hostname.toLowerCase();
-    const labels = hostname.split(".").filter(Boolean);
-    if (labels.length === 0) return "";
-
-    const stopWords = new Set(["www", "jobs", "job", "careers", "career", "boards", "apply", "workdayjobs"]);
-    let brand = labels[0];
-    for (const label of labels) {
-      if (!stopWords.has(label) && label.length > 2) {
-        brand = label;
-        break;
-      }
-    }
-
-    const cleaned = brand.replace(/[^a-z0-9-]/g, " ").replace(/-/g, " ").trim();
-    if (!cleaned) return "";
-    return toTitleCase(cleaned);
+    return inferBrandFromHostname(new URL(String(url ?? "")).hostname);
   } catch {
     return "";
   }
@@ -241,10 +238,17 @@ function toggleAuthAndCapture() {
   if (currentUser) {
     elements.authSection.classList.add("hidden");
     elements.captureSection.classList.remove("hidden");
+    elements.profileHint?.classList.remove("hidden");
   } else {
     elements.authSection.classList.remove("hidden");
     elements.captureSection.classList.add("hidden");
+    elements.profileHint?.classList.add("hidden");
+    applyExistingApplicationState(null);
   }
+}
+
+function captureFieldsAreEmpty() {
+  return !elements.company.value.trim() && !elements.jobTitle.value.trim();
 }
 
 async function hydrateConfigInputs() {
@@ -280,6 +284,13 @@ async function initializePopup() {
 
   currentUser = await getCurrentUser(supabaseClient);
   toggleAuthAndCapture();
+
+  if (currentUser) {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.url && isAutofillSupportedUrl(activeTab.url) && captureFieldsAreEmpty()) {
+      await runPageCapture({ announce: true });
+    }
+  }
 }
 
 elements.signIn.addEventListener("click", async () => {
@@ -337,22 +348,26 @@ elements.signOut.addEventListener("click", async () => {
 });
 
 elements.autofill.addEventListener("click", async () => {
-  clearStatus();
+  await runPageCapture({ announce: true });
+});
+
+async function runPageCapture({ announce = true } = {}) {
+  if (announce) clearStatus();
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!activeTab?.id) {
-      showStatus("No active tab found.", "error");
-      return;
+      if (announce) showStatus("No active tab found.", "error");
+      return false;
     }
     if (!isAutofillSupportedUrl(activeTab.url)) {
-      showStatus("Autofill works only on regular http/https pages.", "error");
-      return;
+      if (announce) showStatus("Re-scan works only on regular http/https pages.", "error");
+      return false;
     }
 
     const response = await requestCaptureJobPage(activeTab.id);
     if (!response) {
-      showStatus("Could not extract job details from this page.", "error");
-      return;
+      if (announce) showStatus("Could not extract job details from this page.", "error");
+      return false;
     }
 
     const resolvedUrl = String(response.jd_url ?? activeTab.url ?? "").trim();
@@ -367,7 +382,7 @@ elements.autofill.addEventListener("click", async () => {
 
     try {
       const duplicate = await lookupExistingApplication(canonicalUrl || resolvedUrl);
-      if (duplicate) {
+      if (duplicate && announce) {
         showStatus(`Already in your tracker (status: ${duplicate.status}).`, "success");
       }
     } catch (lookupError) {
@@ -445,24 +460,31 @@ elements.autofill.addEventListener("click", async () => {
       elements.recruiterContext.textContent = "";
     }
 
-    if (Array.isArray(response.warnings) && response.warnings.length > 0) {
-      showStatus(String(response.warnings[0]), "error");
-    } else if (!existingApplication) {
-      showStatus("Page details extracted.");
+    if (announce) {
+      if (Array.isArray(response.warnings) && response.warnings.length > 0) {
+        showStatus(String(response.warnings[0]), "error");
+      } else if (!existingApplication) {
+        showStatus("Page details extracted.");
+      }
     }
+
+    return true;
   } catch (error) {
-    const message = String(error?.message ?? "Autofill failed.");
+    const message = String(error?.message ?? "Re-scan failed.");
     const cannotInject =
       /cannot access contents of url/i.test(message) ||
       /extensions gallery cannot be scripted/i.test(message) ||
       /missing host permission/i.test(message);
-    if (cannotInject) {
-      showStatus("Autofill is blocked on this page. Open the original job page and retry.", "error");
-      return;
+    if (announce) {
+      if (cannotInject) {
+        showStatus("Re-scan is blocked on this page. Open the original job page and retry.", "error");
+      } else {
+        showStatus(message, "error");
+      }
     }
-    showStatus(message, "error");
+    return false;
   }
-});
+}
 
 elements.saveApplication.addEventListener("click", async () => {
   clearStatus();

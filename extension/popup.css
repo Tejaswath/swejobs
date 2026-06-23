@@ -246,6 +246,22 @@ select {
   display: none;
 }
 
+.saved-banner {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgb(59 130 246 / 12%);
+  border: 1px solid rgb(59 130 246 / 35%);
+  color: #bfdbfe;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.profile-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
