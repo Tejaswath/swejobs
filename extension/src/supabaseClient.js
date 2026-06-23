@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { buildUrlLookupCandidates } from "@/lib/jobUrlMatching";
 import { DEFAULT_CONFIG, EXTENSION_CONFIG_KEY, SESSION_STORAGE_KEY } from "./constants";
 
 function normalizeConfig(value) {
@@ -192,6 +193,33 @@ export async function signInWithGoogle(client, config) {
 export async function signOutClient(client) {
   await client.auth.signOut();
   await clearStoredSession();
+}
+
+export async function getApplicationByUrl(client, userId, jobUrl) {
+  const candidates = buildUrlLookupCandidates(String(jobUrl ?? "").trim());
+  if (candidates.length === 0) return null;
+
+  const { data, error } = await client
+    .from("applications")
+    .select("id, status, job_title, company, job_url")
+    .eq("user_id", userId)
+    .in("job_url", candidates)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ?? null;
+}
+
+export async function updateApplication(client, applicationId, payload) {
+  const { data, error } = await client
+    .from("applications")
+    .update(payload)
+    .eq("id", applicationId)
+    .select("id, status, job_title")
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function refreshStoredSession(client) {

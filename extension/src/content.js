@@ -1,3 +1,9 @@
+import {
+  extractLinkedInJob,
+  filterAggregatorSiteName,
+  sanitizeRecruiterName,
+} from "@/lib/extensionCapture";
+
 function cleanText(value) {
   return String(value ?? "")
     .replace(/<[^>]*>/g, " ")
@@ -186,7 +192,7 @@ function inferTitleFromDocumentTitle() {
 function inferCompanyFromMeta() {
   const ogSiteName = document.querySelector('meta[property="og:site_name"]');
   if (ogSiteName?.getAttribute("content")) {
-    return String(ogSiteName.getAttribute("content")).trim();
+    return filterAggregatorSiteName(String(ogSiteName.getAttribute("content")));
   }
   return "";
 }
@@ -225,6 +231,7 @@ async function captureJobPage() {
   const workdayDescription = extractWorkdayDescription();
   const teamtailorDescription = extractTeamtailorDescription();
   const linkedInDescription = extractLinkedInDescription();
+  const linkedInJob = extractLinkedInJob(document, location.href);
   let atsResult = null;
 
   const greenhouseInfo = detectGreenhouseInfo();
@@ -264,6 +271,7 @@ async function captureJobPage() {
   const roleTitle =
     atsResult?.title ||
     eightfoldData?.title ||
+    linkedInJob?.title ||
     structured?.title ||
     cleanText(
       document.querySelector("h1")?.textContent ??
@@ -274,14 +282,15 @@ async function captureJobPage() {
   const companyHint =
     atsResult?.company ||
     eightfoldData?.company ||
+    linkedInJob?.company ||
     structured?.company ||
     inferCompanyFromMeta() ||
-    inferCompanyFromHostname() ||
     cleanText(
       document.querySelector("[data-company]")?.textContent ??
         document.querySelector(".company, .company-name, [data-automation-id='jobPostingCompanyName']")?.textContent ??
         "",
-    );
+    ) ||
+    inferCompanyFromHostname();
 
   let jdText = "";
   if (atsResult?.description && atsResult.description.length > 180) {
@@ -416,8 +425,11 @@ function extractRecruiterFromJobPage() {
     /(?:kontakta|contact person|recruiter|rekryterare|hiring manager)[:\s]*([A-ZÅÄÖ][a-zåäö]+(?:\s[A-ZÅÄÖ][a-zåäö]+){1,3})/i,
   );
   if (!emailMatch && !contactMatch) return null;
+  const rawName = contactMatch?.[1]?.trim() ?? "";
+  const name = sanitizeRecruiterName(rawName);
+  if (!name && !emailMatch) return null;
   return {
-    name: contactMatch?.[1]?.trim() ?? "",
+    name,
     title: "",
     company: "",
     email: emailMatch?.[1]?.trim() ?? "",

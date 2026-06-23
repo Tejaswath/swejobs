@@ -1,5 +1,7 @@
 import { MAX_CAPTURED_DESCRIPTION_CHARS } from "./constants";
+import { canonicalizeJobUrl } from "@/lib/jobUrlMatching";
 import {
+  getApplicationByUrl,
   getCurrentUser,
   getExtensionConfig,
   hasValidConfig,
@@ -7,6 +9,7 @@ import {
   signInWithGoogle,
   signInWithPassword,
   signOutClient,
+  updateApplication,
 } from "./supabaseClient";
 
 const elements = {
@@ -44,6 +47,10 @@ let currentUser = null;
 let activeConfig = null;
 let capturedDescription = "";
 let capturedRecruiter = null;
+let existingApplication = null;
+
+const SAVE_LABEL_NEW = "Save application";
+const SAVE_LABEL_UPDATE = "Update application";
 
 function showStatus(message, type = "success") {
   elements.globalStatus.textContent = message;
@@ -61,6 +68,26 @@ function setSavingState(isSaving) {
   elements.autofill.disabled = isSaving;
   elements.signInGoogle.disabled = isSaving;
   elements.signIn.disabled = isSaving;
+}
+
+function applyExistingApplicationState(application) {
+  existingApplication = application;
+  elements.saveApplication.textContent = application ? SAVE_LABEL_UPDATE : SAVE_LABEL_NEW;
+}
+
+function canonicalJobUrl(rawUrl) {
+  return canonicalizeJobUrl(String(rawUrl ?? "").trim()) ?? String(rawUrl ?? "").trim();
+}
+
+async function lookupExistingApplication(jobUrl) {
+  if (!supabaseClient || !currentUser) {
+    applyExistingApplicationState(null);
+    return null;
+  }
+
+  const match = await getApplicationByUrl(supabaseClient, currentUser.id, jobUrl);
+  applyExistingApplicationState(match);
+  return match;
 }
 
 function handleKeyboardShortcuts(event) {
@@ -329,13 +356,24 @@ elements.autofill.addEventListener("click", async () => {
     }
 
     const resolvedUrl = String(response.jd_url ?? activeTab.url ?? "").trim();
+    const canonicalUrl = canonicalJobUrl(resolvedUrl);
     const detectedCompany = String(response.company_hint ?? "").trim();
     const inferredCompany = detectedCompany || inferCompanyFromUrl(resolvedUrl);
     elements.company.value = inferredCompany;
     elements.jobTitle.value = String(response.role_title ?? "").trim();
-    elements.jobUrl.value = resolvedUrl;
+    elements.jobUrl.value = canonicalUrl || resolvedUrl;
     capturedDescription = String(response.jd_text ?? "").slice(0, MAX_CAPTURED_DESCRIPTION_CHARS);
     capturedRecruiter = response.recruiter_hint ?? null;
+
+    try {
+      const duplicate = await lookupExistingApplication(canonicalUrl || resolvedUrl);
+      if (duplicate) {
+        showStatus(`Already in your tracker (status: ${duplicate.status}).`, "success");
+      }
+    } catch (lookupError) {
+      console.warn("Duplicate lookup failed:", lookupError);
+      applyExistingApplicationState(null);
+    }
 
     const companyField = elements.company;
     const titleField = elements.jobTitle;
@@ -409,7 +447,7 @@ elements.autofill.addEventListener("click", async () => {
 
     if (Array.isArray(response.warnings) && response.warnings.length > 0) {
       showStatus(String(response.warnings[0]), "error");
-    } else {
+    } else if (!existingApplication) {
       showStatus("Page details extracted.");
     }
   } catch (error) {
@@ -444,7 +482,7 @@ elements.saveApplication.addEventListener("click", async () => {
   const company = elements.company.value.trim();
   const jobTitle = elements.jobTitle.value.trim();
   const status = elements.status.value;
-  const jobUrl = elements.jobUrl.value.trim();
+  const jobUrl = canonicalJobUrl(elements.jobUrl.value.trim());
   const manualNotes = elements.notes.value.trim();
 
   if (!company || !jobTitle) {
@@ -453,22 +491,29 @@ elements.saveApplication.addEventListener("click", async () => {
   }
 
   const payload = {
-    user_id: user.id,
     company,
     job_title: jobTitle,
     status,
     job_url: jobUrl,
-    source: "extension",
-    applied_at: new Date().toISOString(),
     notes: manualNotes || null,
     ats_job_description: capturedDescription || null,
-    request_id: crypto.randomUUID(),
   };
 
   setSavingState(true);
   try {
-    const { error } = await supabaseClient.from("applications").insert(payload);
-    if (error) throw error;
+    if (existingApplication?.id) {
+      await updateApplication(supabaseClient, existingApplication.id, payload);
+    } else {
+      const insertPayload = {
+        ...payload,
+        user_id: user.id,
+        source: "extension",
+        applied_at: new Date().toISOString(),
+        request_id: crypto.randomUUID(),
+      };
+      const { error } = await supabaseClient.from("applications").insert(insertPayload);
+      if (error) throw error;
+    }
 
     const saveRecruiterEnabled = Boolean(elements.saveRecruiterToggle?.checked);
     if (saveRecruiterEnabled && capturedRecruiter && (capturedRecruiter.name || capturedRecruiter.email)) {
@@ -499,13 +544,15 @@ elements.saveApplication.addEventListener("click", async () => {
     elements.jobTitle.value = "";
     elements.company.value = "";
     capturedDescription = "";
+    applyExistingApplicationState(null);
     const jdLength = payload.ats_job_description?.length ?? 0;
+    const actionLabel = existingApplication ? "Updated" : "Saved";
     const message =
       jdLength > 200
-        ? `Saved with ${Math.round(jdLength / 1000)}K description captured.`
+        ? `${actionLabel} with ${Math.round(jdLength / 1000)}K description captured.`
         : jdLength > 0
-          ? `Saved (short description: ${jdLength} chars).`
-          : "Saved (no description captured).";
+          ? `${actionLabel} (short description: ${jdLength} chars).`
+          : `${actionLabel} (no description captured).`;
     showStatus(message);
   } catch (error) {
     showStatus(String(error?.message ?? "Save failed."), "error");
