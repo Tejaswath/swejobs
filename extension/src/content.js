@@ -1,7 +1,13 @@
 import {
+  buildLinkedInJobViewUrl,
   extractLinkedInJob,
   filterAggregatorSiteName,
+  inferBrandFromHostname,
+  isLinkedInJobPage,
+  isLinkedInNoiseTitle,
+  parseLinkedInDocumentTitle,
   sanitizeRecruiterName,
+  shouldShowCaptureFab,
 } from "@/lib/extensionCapture";
 
 function cleanText(value) {
@@ -199,29 +205,24 @@ function inferCompanyFromMeta() {
 
 function inferCompanyFromHostname() {
   try {
-    const hostname = new URL(location.href).hostname.toLowerCase();
-    const labels = hostname.split(".").filter(Boolean);
-    if (labels.length === 0) return "";
-
-    const stopWords = new Set(["www", "jobs", "job", "careers", "career", "boards", "apply", "workdayjobs"]);
-    let brand = labels[0];
-    for (const label of labels) {
-      if (!stopWords.has(label) && label.length > 2) {
-        brand = label;
-        break;
-      }
-    }
-
-    const cleaned = brand.replace(/[^a-z0-9-]/g, " ").replace(/-/g, " ").trim();
-    if (!cleaned) return "";
-    return cleaned
-      .split(" ")
-      .filter(Boolean)
-      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-      .join(" ");
+    return inferBrandFromHostname(new URL(location.href).hostname);
   } catch {
     return "";
   }
+}
+
+function inferTitleForPage() {
+  if (isLinkedInJobPage(location.href)) {
+    const parsed = parseLinkedInDocumentTitle(document.title);
+    if (parsed.title) return parsed.title;
+    return inferTitleFromDocumentTitle();
+  }
+
+  return cleanText(
+    document.querySelector("h1")?.textContent ??
+      document.querySelector("h2")?.textContent ??
+      inferTitleFromDocumentTitle(),
+  );
 }
 
 async function captureJobPage() {
@@ -231,7 +232,7 @@ async function captureJobPage() {
   const workdayDescription = extractWorkdayDescription();
   const teamtailorDescription = extractTeamtailorDescription();
   const linkedInDescription = extractLinkedInDescription();
-  const linkedInJob = extractLinkedInJob(document, location.href);
+  const linkedInJob = extractLinkedInJob(document, location.href, document.title);
   let atsResult = null;
 
   const greenhouseInfo = detectGreenhouseInfo();
@@ -268,16 +269,16 @@ async function captureJobPage() {
     }
   }
 
-  const roleTitle =
+  let roleTitle =
     atsResult?.title ||
     eightfoldData?.title ||
     linkedInJob?.title ||
     structured?.title ||
-    cleanText(
-      document.querySelector("h1")?.textContent ??
-        document.querySelector("h2")?.textContent ??
-        inferTitleFromDocumentTitle(),
-    );
+    inferTitleForPage();
+
+  if (isLinkedInNoiseTitle(roleTitle)) {
+    roleTitle = linkedInJob?.title || structured?.title || "";
+  }
 
   const companyHint =
     atsResult?.company ||
@@ -291,6 +292,10 @@ async function captureJobPage() {
         "",
     ) ||
     inferCompanyFromHostname();
+
+  const captureUrl = linkedInJob?.jobId
+    ? buildLinkedInJobViewUrl(linkedInJob.jobId)
+    : location.href;
 
   let jdText = "";
   if (atsResult?.description && atsResult.description.length > 180) {
@@ -358,7 +363,7 @@ async function captureJobPage() {
 
   return {
     jd_text: jdText.slice(0, 10_000),
-    jd_url: location.href,
+    jd_url: captureUrl,
     page_title: document.title,
     role_title: roleTitle,
     company_hint: companyHint,
@@ -485,3 +490,132 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   return true;
 });
+
+function countApplicationLikeFields() {
+  const fields = document.querySelectorAll("input, textarea, select");
+  let score = 0;
+  for (const field of fields) {
+    const haystack = [
+      field.name,
+      field.id,
+      field.getAttribute("aria-label"),
+      field.placeholder,
+      field.autocomplete,
+    ]
+      .join(" ")
+      .toLowerCase();
+    if (/email|phone|resume|cv|cover|linkedin|portfolio|first.?name|last.?name/.test(haystack)) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+function shouldMountCaptureFab() {
+  if (shouldShowCaptureFab(location.href)) return true;
+  return countApplicationLikeFields() >= 2;
+}
+
+function installCaptureFab() {
+  if (window.__swejobsCaptureFab) return;
+
+  const host = document.createElement("div");
+  host.id = "swejobs-capture-fab-host";
+  host.style.all = "initial";
+  document.documentElement.appendChild(host);
+
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.innerHTML = `
+    <style>
+      :host { all: initial; }
+      .fab-wrap {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 2147483646;
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+      }
+      .fab {
+        width: 46px;
+        height: 46px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #3b82f6, #6366f1);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        box-shadow: 0 8px 24px rgb(59 130 246 / 35%);
+      }
+      .fab:hover { transform: translateY(-1px); }
+      .toast {
+        display: none;
+        margin-bottom: 8px;
+        max-width: 240px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-size: 12px;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgb(15 23 42 / 45%);
+      }
+      .toast.visible { display: block; }
+      .toast strong { color: #fff; display: block; margin-bottom: 2px; }
+    </style>
+    <div class="fab-wrap">
+      <div class="toast" id="toast"></div>
+      <button class="fab" type="button" aria-label="Capture role with SweJobs">SJ</button>
+    </div>
+  `;
+
+  const toast = shadow.querySelector("#toast");
+  const button = shadow.querySelector(".fab");
+  let toastTimer = null;
+
+  function setFabVisible(visible) {
+    host.style.display = visible ? "block" : "none";
+  }
+
+  async function showCaptureToast(result) {
+    const company = String(result?.company_hint ?? "").trim() || "Role";
+    const title = String(result?.role_title ?? "").trim() || "Captured";
+    toast.innerHTML = `<strong>${company}</strong>${title}<br>Open SweJobs to save.`;
+    toast.classList.add("visible");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("visible"), 5000);
+  }
+
+  button?.addEventListener("click", async () => {
+    try {
+      const result = await captureJobPage();
+      await chrome.storage.local.set({ swejobs_last_fab_capture: result });
+      await showCaptureToast(result);
+    } catch (error) {
+      toast.textContent = String(error?.message ?? "Capture failed.");
+      toast.classList.add("visible");
+    }
+  });
+
+  function refreshFab() {
+    setFabVisible(shouldMountCaptureFab());
+  }
+
+  refreshFab();
+  let lastHref = location.href;
+  setInterval(() => {
+    if (location.href !== lastHref) {
+      lastHref = location.href;
+      refreshFab();
+    }
+  }, 1000);
+
+  window.__swejobsCaptureFab = { refreshFab, setFabVisible };
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", installCaptureFab, { once: true });
+} else {
+  installCaptureFab();
+}
