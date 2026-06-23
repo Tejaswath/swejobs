@@ -1,20 +1,26 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
-
 const distDir = path.resolve(process.cwd(), "extension/dist");
+const bundles = ["content.js", "popup.js", "background.js"];
+
+function stripStringLiterals(source) {
+  return source
+    .replace(/`(?:\\.|[^`\\])*`/gs, "")
+    .replace(/"(?:\\.|[^"\\])*"/g, "")
+    .replace(/'(?:\\.|[^'\\])*'/g, "");
+}
 
 describe("extension build integrity", () => {
-  it("ships a self-contained content script without ES module imports", () => {
-    const content = readFileSync(path.join(distDir, "content.js"), "utf8");
-    expect(content.startsWith("(function")).toBe(true);
-    expect(/^import\s/m.test(content)).toBe(false);
-    expect(content.includes('from"./chunks/')).toBe(false);
-  });
+  for (const bundle of bundles) {
+    it(`ships ${bundle} as a self-contained IIFE`, () => {
+      const source = readFileSync(path.join(distDir, bundle), "utf8");
+      const codeOnly = stripStringLiterals(source);
 
-  it("does not emit shared chunk files", () => {
-    const popup = readFileSync(path.join(distDir, "popup.js"), "utf8");
-    expect(popup.includes('from"./chunks/')).toBe(false);
-  });
+      expect(source.startsWith("(function") || source.startsWith("!function")).toBe(true);
+      expect(/^import\s+/m.test(codeOnly)).toBe(false);
+      expect(/^export\s+/m.test(codeOnly)).toBe(false);
+      expect(source.includes('from"./chunks/')).toBe(false);
+    });
+  }
 });

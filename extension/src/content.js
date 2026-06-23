@@ -1,3 +1,4 @@
+import { detectApplicationFields, fillApplicationForm } from "./autofill.js";
 import {
   buildLinkedInJobViewUrl,
   extractLinkedInJob,
@@ -455,6 +456,30 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     sendResponse(extractRecruiterInfo());
     return false;
   }
+
+  if (request?.action === "detectApplicationFields") {
+    sendResponse({
+      count: detectApplicationFields(document),
+      detected: detectApplicationFields(document) >= 2,
+    });
+    return false;
+  }
+
+  if (request?.action === "fillApplicationForm") {
+    fillApplicationForm(request.payload ?? {})
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          message: String(error?.message ?? "Form fill failed."),
+          filled: [],
+          skipped: [],
+          resumeAttached: false,
+        }),
+      );
+    return true;
+  }
+
   if (request?.action !== "captureJobPage") return undefined;
 
   (async () => {

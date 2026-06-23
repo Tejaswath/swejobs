@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:extension": "EXTENSION_ENTRY=content vite build --config extension/vite.config.ts && EXTENSION_ENTRY=popup vite build --config extension/vite.config.ts && EXTENSION_ENTRY=background vite build --config extension/vite.config.ts",
+    "build:extension": "EXTENSION_ENTRY=content vite build --config extension/vite.config.ts && EXTENSION_ENTRY=popup vite build --config extension/vite.config.ts && EXTENSION_ENTRY=background vite build --config extension/vite.config.ts && node scripts/verify-extension-build.mjs",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
