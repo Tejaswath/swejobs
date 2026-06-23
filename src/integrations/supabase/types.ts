@@ -1006,31 +1006,49 @@ export type Database = {
       }
       user_profile: {
         Row: {
+          about_me: string
+          autofill_extra: Json
           created_at: string
+          email: string
+          first_name: string
           full_name: string | null
           headline: string | null
+          last_name: string
           linkedin_url: string | null
           location: string | null
+          phone: string
           portfolio_url: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          about_me?: string
+          autofill_extra?: Json
           created_at?: string
+          email?: string
+          first_name?: string
           full_name?: string | null
           headline?: string | null
+          last_name?: string
           linkedin_url?: string | null
           location?: string | null
+          phone?: string
           portfolio_url?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          about_me?: string
+          autofill_extra?: Json
           created_at?: string
+          email?: string
+          first_name?: string
           full_name?: string | null
           headline?: string | null
+          last_name?: string
           linkedin_url?: string | null
           location?: string | null
+          phone?: string
           portfolio_url?: string | null
           updated_at?: string
           user_id?: string

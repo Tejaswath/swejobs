@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRightLeft,
   ClipboardList,
+  Copy,
   ExternalLink,
   FileDown,
   FileSearch,
@@ -71,6 +72,8 @@ import {
   isArchivedApplication,
   matchesApplicationMomentum,
 } from "@/lib/applications";
+import { DEFAULT_COVER_LETTER_TEMPLATE, renderCoverLetter } from "@/lib/coverLetter";
+import { getUserProfile } from "@/lib/profile";
 import { resetTrackedJobAfterApplicationDelete } from "@/lib/trackedJobsSync";
 import { getErrorMessage, toDisplayError } from "@/lib/errors";
 import { downloadCSV } from "@/lib/export";
@@ -388,6 +391,8 @@ export default function Applications() {
   const [atsResumeId, setAtsResumeId] = useState<string>(RESUME_NONE);
   const [manualJobDescription, setManualJobDescription] = useState("");
   const [atsResult, setAtsResult] = useState<AtsScanResult | null>(null);
+  const [coverLetterDialogOpen, setCoverLetterDialogOpen] = useState(false);
+  const [coverLetterText, setCoverLetterText] = useState("");
 
   const debouncedSearch = useDebouncedValue(search, 275).trim().toLowerCase();
 
@@ -972,6 +977,31 @@ export default function Applications() {
     setManualJobDescription("");
     setAtsResult(null);
     setAtsDialogOpen(true);
+  };
+
+  const handleGenerateCoverLetter = async () => {
+    if (!user) return;
+    if (!form.company.trim() || !form.job_title.trim()) {
+      toast({ title: "Add company and title first", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const profile = await getUserProfile(supabase, user.id);
+      const letter = renderCoverLetter(
+        DEFAULT_COVER_LETTER_TEMPLATE,
+        { company: form.company.trim(), job_title: form.job_title.trim() },
+        profile,
+      );
+      setCoverLetterText(letter);
+      setCoverLetterDialogOpen(true);
+    } catch (error) {
+      toast({
+        title: "Could not generate cover letter",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSubmit = () => {
@@ -1829,6 +1859,15 @@ export default function Applications() {
                 rows={4}
               />
             </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={() => void handleGenerateCoverLetter()}>
+                Generate cover letter
+              </Button>
+              <p className="self-center text-xs text-muted-foreground">
+                Uses your Profile details. Edit them under Profile if the draft looks thin.
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
@@ -1837,6 +1876,40 @@ export default function Applications() {
             </Button>
             <Button onClick={handleSubmit} disabled={upsertMutation.isPending}>
               {editingApplication ? "Save changes" : "Create application"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={coverLetterDialogOpen} onOpenChange={setCoverLetterDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Cover letter draft</DialogTitle>
+            <DialogDescription>
+              Template-based draft from your profile. Review and edit before pasting into an application form.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea value={coverLetterText} readOnly rows={14} className="font-mono text-sm" />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCoverLetterDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(coverLetterText);
+                  toast({ title: "Copied to clipboard" });
+                } catch (error) {
+                  toast({
+                    title: "Could not copy",
+                    description: getErrorMessage(error),
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Copy
             </Button>
           </DialogFooter>
         </DialogContent>

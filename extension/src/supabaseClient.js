@@ -31,6 +31,11 @@ function buildClient(config) {
       persistSession: false,
       detectSessionInUrl: false,
     },
+    realtime: {
+      params: {
+        eventsPerSecond: 0,
+      },
+    },
   });
 }
 
