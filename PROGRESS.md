@@ -2,41 +2,41 @@
 
 Living snapshot of where the work stands. **Read this first every session.**
 
-_Last updated: 2026-06-23 (Phase 4 branch)_
+_Last updated: 2026-06-24 (Phase 0 anchor)_
 
 ## Current branch
-`feat/phase4-explore-overview-fixes` @ `8d218dd` + Phase 4 WIP — PR pending.
+`main` @ `f5c4c3f` — PRs #13–#16 merged (extension capture + Apply Assist + profile/cover letter).
 
 ## Last activity (most recent first)
-- **Phase 4 (single PR)** — applied-state sync (Applications as source of truth),
-  job description HTML decode + section highlighting, minimal Overview (action bar +
-  3 recent items). Green gate: **58 Vitest · 85 pytest · lint · build · security**.
-- **Local feed sync run** — `sync-company-feeds` for voi/tibber/quinyx against prod DB:
-  Voi +1 target row persisted; Tibber/Quinyx 0 matching rows (feeds healthy, no SWE listings now).
-  Launch-gate before/after: **passes** (100% / 40% / 5% / 0% noise — unchanged).
-- `d6e8f96` — merge PR #9 UX + supply feeds.
-- `e019c54` — merge PR #8 Phase 1 canonical ATS.
+- **PR #16** — extension form fill (IIFE bundles), Fill application form on ATS pages.
+- **PR #15** — apply-assist profile fields + cover letter template in SPA.
+- **PR #14** — extension capture UX, LinkedIn collections fix, auto-capture on popup open.
+- **PR #13** — extension capture reliability, canonical job URLs, duplicate detection.
+- Agent harness (`AGENTS.md`, checkpoint/preflight scripts, `.harness/`) is **local-only** — never committed; see `.gitignore`.
 
-## Gates (last run on Phase 4 branch)
-Frontend **58 pass** · Python **85 pass** · lint **0 errors** · build **green** · security_check **pass**
-· launch-gate **pass** (before + after feed sync).
+## Gates (last run on main @ f5c4c3f)
+Frontend **80 pass** · Python **86 pass** · lint **0 errors** · build **green** · security_check **pass**
+· extension build + verify **pass** (v1.1.0).
+
+## Shipped surfaces
+- **Chrome extension 1.1.0** — capture, recruiter hint, Fill application form (local rebuild + reload required).
+- **Apply Assist (SPA)** — Profile autofill fields, cover letter generator in Applications.
+- **Alerts** — UI ready in Saved Searches / schema; **generation unwired** in worker (Phase 2).
 
 ## In flight / to verify
-- [ ] **Phase 4 PR** — merge to `main` (auto-deploys frontend to Vercel).
-- [ ] **Azure worker deploy** — merge does *not* deploy the pipeline; run the manual workflow
-      `Build and deploy container app to Azure Web App - swejobs-worker-tejas-sec` on `main`
-      so recurring `ats_only` cycles pick up the 3 re-enabled feeds in `company_feeds.yaml`.
-- [ ] Phase 1 manual ATS checklist in browser (optional sanity check on live Vercel).
-- [ ] After next worker cycle: spot-check High Signal count on Overview.
+- [ ] **Phase 0 PR** — `chore/phase0-anchor`: PROGRESS refresh, harness gitignore, frontend CI.
+- [ ] **Phase 1 PR** — `feat/apply-assist-telemetry`: autofill_events migration, extension telemetry, Teamtailor/Workday heuristics.
+- [ ] Deploy `autofill_events` migration to Supabase before/with Phase 1 Vercel merge.
+- [ ] After extension PR merge: `npm run build:extension` + reload unpacked extension.
 
 ## Next steps
-1. Trigger Azure worker deploy from GitHub Actions (see above).
-2. Wait one ATS cycle (~interval in worker settings); confirm feeds run in worker logs.
-3. Optional: `python -m pipeline.main launch-gate` weekly after supply changes.
+1. Merge Phase 0 + Phase 1 PRs via GitHub (never push to `main` directly).
+2. Apply Supabase migration for `autofill_events`.
+3. Rebuild + reload Chrome extension; smoke-test Fill on Teamtailor/Workday/Greenhouse pages.
 
 ## Out of scope (this cycle)
-In-app alerts · email · Realtime.
+Email alerts · Realtime · full JobTech poll.
 
 ## Guardrails (never)
 Never push to `main` directly · `ats_only` on prod · never raise `MAX_ACTIVE_JOBS` without
-capacity review · never edit applied migrations · service-role key never in `src/`.
+capacity review · never edit applied migrations · service-role key never in `src/` or `extension/`.

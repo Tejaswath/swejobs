@@ -49,3 +49,11 @@ docs/wave*_verify.md
 project.md
 .claude/
 .vercel
+
+# Local agent harness (never commit)
+AGENTS.md
+CLAUDE.md
+.cursor/rules/
+.harness/
+scripts/checkpoint.sh
+scripts/preflight.sh
