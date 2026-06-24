@@ -57,6 +57,11 @@ import {
   numberValue,
 } from "@/lib/jobEligibility";
 import { primarySuitabilityReason, suitabilityScore } from "@/lib/jobRanking";
+import {
+  aggregatePersonalFeedbackDelta,
+  profileHeadlineBoost,
+  profileLocationBoost,
+} from "@/lib/personalRanking";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
@@ -414,6 +419,21 @@ export default function Jobs() {
     const names = watchedCompanies?.map((item) => normalizeCompanyName(item.employer_name)) ?? [];
     return new Set(names.filter(Boolean));
   }, [watchedCompanies]);
+
+  const { data: userProfile } = useQuery({
+    queryKey: ["user-profile-ranking", user?.id],
+    enabled: !!user,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_profile")
+        .select("location, headline")
+        .eq("user_id", user!.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const { data: userRankingState } = useQuery({
     queryKey: ["user-ranking-state", user?.id],
@@ -901,21 +921,30 @@ export default function Jobs() {
           source_feed_registry?: { quality_band?: string | null } | null;
         }
       ).source_feed_registry;
-      let feedbackDelta = 0;
-      if (canonical && preferredCompanies.has(canonical)) feedbackDelta += 10;
-      if (canonical && demotedCompanies.has(canonical)) feedbackDelta -= 15;
-      if (roleFamily && preferredRoleFamilies.has(roleFamily)) feedbackDelta += 8;
-      if (roleFamily && demotedRoleFamilies.has(roleFamily)) feedbackDelta -= 12;
+      let companyRoleDelta = 0;
+      if (canonical && preferredCompanies.has(canonical)) companyRoleDelta += 10;
+      if (canonical && demotedCompanies.has(canonical)) companyRoleDelta -= 15;
+      if (roleFamily && preferredRoleFamilies.has(roleFamily)) companyRoleDelta += 8;
+      if (roleFamily && demotedRoleFamilies.has(roleFamily)) companyRoleDelta -= 12;
+
+      const locationBoost = profileLocationBoost(job, userProfile);
+      const headlineBoost = profileHeadlineBoost(job, userProfile);
+      const feedbackDelta = aggregatePersonalFeedbackDelta({
+        companyRoleDelta,
+        highSignalScoreDelta: userRankingState?.high_signal_score_delta,
+      });
 
       acc[job.id] = suitabilityScore(job, {
         atsMatch: activeAtsResume?.parsed_text ? (atsByJobId[job.id]?.score ?? null) : null,
         watched: watchedSet.has(canonical),
         qualityBand: feed?.quality_band,
         feedbackDelta,
+        profileLocationBoost: locationBoost,
+        profileHeadlineBoost: headlineBoost,
       });
       return acc;
     }, {});
-  }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, userRankingState, watchedSet]);
+  }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, userProfile, userRankingState, watchedSet]);
 
   const sortedJobs = useMemo(() => {
     const rows = [...rankAndFilterJobs];

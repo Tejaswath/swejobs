@@ -15,6 +15,8 @@ export type RankingContext = {
   watched?: boolean;
   qualityBand?: string | null;
   feedbackDelta?: number;
+  profileLocationBoost?: number;
+  profileHeadlineBoost?: number;
   now?: Date;
 };
 
@@ -102,6 +104,14 @@ export function suitabilityScore(job: RankingJob, context: RankingContext = {}):
   if (context.watched) {
     score += 8;
     reasons.push("Company you follow");
+  }
+  if (numberValue(context.profileLocationBoost) > 0) {
+    score += numberValue(context.profileLocationBoost);
+    reasons.push("Matches your location preference");
+  }
+  if (numberValue(context.profileHeadlineBoost) > 0) {
+    score += numberValue(context.profileHeadlineBoost);
+    reasons.push("Matches your profile focus");
   }
   const tier = String(job.company_tier || "").toUpperCase();
   if (tier === "A") score += 4;
