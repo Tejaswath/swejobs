@@ -1,4 +1,5 @@
 import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import { needsFollowUp } from "@/lib/applicationFunnel";
 
 export const APPLICATION_STATUSES = [
   "applied",
@@ -132,16 +133,14 @@ export function matchesApplicationMomentum(
     status: string;
     applied_at?: string | null;
     updated_at?: string | null;
+    status_history?: Tables<"applications">["status_history"];
   },
   filter: ApplicationMomentumFilter,
   now = new Date(),
 ): boolean {
   if (filter === "all") return true;
   if (filter === "awaiting") return application.status === "applied";
-  if (filter === "follow_up") {
-    const age = ageInDays(application.applied_at, now);
-    return application.status === "applied" && age != null && age > 10;
-  }
+  if (filter === "follow_up") return needsFollowUp(application, now);
   if (isArchivedApplication(application)) return false;
   const activityAge = ageInDays(application.updated_at ?? application.applied_at, now);
   return activityAge != null && activityAge <= 7;
@@ -152,6 +151,7 @@ export function computeApplicationMomentum(
     status: string;
     applied_at?: string | null;
     updated_at?: string | null;
+    status_history?: Tables<"applications">["status_history"];
   }>,
   now = new Date(),
 ): ApplicationMomentum {

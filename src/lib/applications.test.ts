@@ -61,10 +61,10 @@ describe("applications helpers", () => {
   it("computes actionable momentum and keeps terminal statuses archived", () => {
     const now = new Date("2026-06-21T12:00:00Z");
     const applications = [
-      { status: "applied", applied_at: "2026-06-05T12:00:00Z", updated_at: "2026-06-05T12:00:00Z" },
-      { status: "applied", applied_at: "2026-06-19T12:00:00Z", updated_at: "2026-06-19T12:00:00Z" },
-      { status: "interviewing", applied_at: "2026-06-01T12:00:00Z", updated_at: "2026-06-20T12:00:00Z" },
-      { status: "rejected", applied_at: "2026-06-18T12:00:00Z", updated_at: "2026-06-20T12:00:00Z" },
+      { status: "applied", applied_at: "2026-06-05T12:00:00Z", updated_at: "2026-06-05T12:00:00Z", status_history: [{ status: "applied", at: "2026-06-05T12:00:00Z" }] },
+      { status: "applied", applied_at: "2026-06-19T12:00:00Z", updated_at: "2026-06-19T12:00:00Z", status_history: [{ status: "applied", at: "2026-06-19T12:00:00Z" }] },
+      { status: "interviewing", applied_at: "2026-06-01T12:00:00Z", updated_at: "2026-06-20T12:00:00Z", status_history: [{ status: "applied", at: "2026-06-01T12:00:00Z" }, { status: "interviewing", at: "2026-06-20T12:00:00Z" }] },
+      { status: "rejected", applied_at: "2026-06-18T12:00:00Z", updated_at: "2026-06-20T12:00:00Z", status_history: [{ status: "applied", at: "2026-06-18T12:00:00Z" }, { status: "rejected", at: "2026-06-20T12:00:00Z" }] },
     ];
 
     expect(computeApplicationMomentum(applications, now)).toEqual({
