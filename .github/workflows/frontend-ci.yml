@@ -32,14 +32,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Build extension
+        run: npm run build:extension
+
       - name: Test
         run: npm run test
 
       - name: Build SPA
         run: npm run build
-
-      - name: Build extension
-        run: npm run build:extension
 
       - name: Verify extension bundles
         run: node scripts/verify-extension-build.mjs
