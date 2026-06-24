@@ -95,6 +95,45 @@ export type Database = {
           },
         ]
       }
+      autofill_events: {
+        Row: {
+          created_at: string
+          field_details: Json | null
+          fields_detected: number
+          fields_filled: number
+          id: string
+          page_host: string
+          provider: string
+          resume_attached: boolean
+          user_id: string
+          user_note: string | null
+        }
+        Insert: {
+          created_at?: string
+          field_details?: Json | null
+          fields_detected?: number
+          fields_filled?: number
+          id?: string
+          page_host?: string
+          provider?: string
+          resume_attached?: boolean
+          user_id: string
+          user_note?: string | null
+        }
+        Update: {
+          created_at?: string
+          field_details?: Json | null
+          fields_detected?: number
+          fields_filled?: number
+          id?: string
+          page_host?: string
+          provider?: string
+          resume_attached?: boolean
+          user_id?: string
+          user_note?: string | null
+        }
+        Relationships: []
+      }
       alert_delivery_events: {
         Row: {
           channel: string

@@ -262,6 +262,20 @@ select {
   line-height: 1.4;
 }
 
+.fill-report {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgb(15 23 42 / 55%);
+}
+
+.fill-report-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

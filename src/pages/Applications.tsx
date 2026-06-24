@@ -393,6 +393,7 @@ export default function Applications() {
   const [atsResult, setAtsResult] = useState<AtsScanResult | null>(null);
   const [coverLetterDialogOpen, setCoverLetterDialogOpen] = useState(false);
   const [coverLetterText, setCoverLetterText] = useState("");
+  const [coverLetterApplyUrl, setCoverLetterApplyUrl] = useState("");
 
   const debouncedSearch = useDebouncedValue(search, 275).trim().toLowerCase();
 
@@ -994,6 +995,7 @@ export default function Applications() {
         profile,
       );
       setCoverLetterText(letter);
+      setCoverLetterApplyUrl(form.job_url.trim());
       setCoverLetterDialogOpen(true);
     } catch (error) {
       toast({
@@ -1890,10 +1892,18 @@ export default function Applications() {
             </DialogDescription>
           </DialogHeader>
           <Textarea value={coverLetterText} readOnly rows={14} className="font-mono text-sm" />
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCoverLetterDialogOpen(false)}>
               Close
             </Button>
+            {coverLetterApplyUrl ? (
+              <Button variant="secondary" asChild>
+                <a href={coverLetterApplyUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open apply page
+                </a>
+              </Button>
+            ) : null}
             <Button
               onClick={async () => {
                 try {
@@ -1909,7 +1919,7 @@ export default function Applications() {
               }}
             >
               <Copy className="mr-2 h-4 w-4" />
-              Copy
+              Copy to clipboard
             </Button>
           </DialogFooter>
         </DialogContent>
