@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from .logging_utils import configure_logging
 from .main import build_pipeline
 from .settings import load_settings
-from .v3_runtime import recalculate_user_ranking
+from .v3_runtime import recalculate_user_ranking, send_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,51 @@ def start_health_server(port: int) -> HTTPServer:
     return server
 
 
+def _parse_state_datetime(raw_value: str | None) -> datetime | None:
+    if not raw_value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw_value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def maybe_send_alerts(pipeline: Any) -> dict[str, Any]:
+    storage = getattr(pipeline, "storage", None)
+    if storage is None:
+        return {"status": "skipped", "reason": "no_storage"}
+
+    state = storage.get_ingestion_state(["alerts:last_daily_at", "alerts:last_weekly_at"])
+    now = datetime.now(UTC)
+    report: dict[str, Any] = {"status": "skipped", "daily": None, "weekly": None}
+    state_updates: dict[str, str] = {}
+
+    last_daily = _parse_state_datetime(state.get("alerts:last_daily_at"))
+    if last_daily is None or now - last_daily >= timedelta(hours=24):
+        report["daily"] = send_alerts(storage, frequency="daily")
+        state_updates["alerts:last_daily_at"] = now.isoformat()
+
+    last_weekly = _parse_state_datetime(state.get("alerts:last_weekly_at"))
+    if last_weekly is None or now - last_weekly >= timedelta(days=7):
+        report["weekly"] = send_alerts(storage, frequency="weekly")
+        state_updates["alerts:last_weekly_at"] = now.isoformat()
+
+    if not state_updates:
+        return report
+
+    storage.upsert_ingestion_state(state_updates)
+    report["status"] = "applied"
+    logger.info(
+        "Saved-search alerts complete. daily=%s weekly=%s",
+        report.get("daily"),
+        report.get("weekly"),
+    )
+    return report
+
+
 def maybe_recalculate_user_ranking(pipeline: Any, *, interval_hours: int = 24) -> bool:
     storage = getattr(pipeline, "storage", None)
     if storage is None:
@@ -54,15 +99,9 @@ def maybe_recalculate_user_ranking(pipeline: Any, *, interval_hours: int = 24) -
     state_key = "last_user_ranking_recalculation_at"
     state = storage.get_ingestion_state([state_key])
     raw_last_run = state.get(state_key)
-    if raw_last_run:
-        try:
-            last_run = datetime.fromisoformat(str(raw_last_run).replace("Z", "+00:00"))
-            if last_run.tzinfo is None:
-                last_run = last_run.replace(tzinfo=UTC)
-            if datetime.now(UTC) - last_run.astimezone(UTC) < timedelta(hours=max(1, interval_hours)):
-                return False
-        except ValueError:
-            pass
+    last_run = _parse_state_datetime(raw_last_run)
+    if last_run is not None and datetime.now(UTC) - last_run < timedelta(hours=max(1, interval_hours)):
+        return False
 
     report = recalculate_user_ranking(storage, lookback_days=90, apply=True)
     storage.upsert_ingestion_state({state_key: datetime.now(UTC).isoformat()})
@@ -174,6 +213,7 @@ def run_ats_only_cycle(
     for report_key, operation in (
         ("translation", pipeline.maybe_translate_jobs),
         ("compaction", pipeline.maybe_run_compaction),
+        ("alerts", lambda: maybe_send_alerts(pipeline)),
         ("user_ranking", lambda: maybe_recalculate_user_ranking(pipeline)),
     ):
         try:

@@ -121,6 +121,8 @@ def make_pipeline(storage: FakeStorage) -> IngestionPipeline:
         compaction_inactive_job_days=60,
         compaction_job_event_days=30,
         compaction_weekly_digest_days=180,
+        compaction_in_app_alert_unread_days=90,
+        compaction_in_app_alert_read_days=30,
         enable_translation=False,
         max_active_jobs=2,
     )

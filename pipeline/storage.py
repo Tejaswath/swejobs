@@ -97,6 +97,62 @@ class SupabaseStorage:
         )
         return int(response.count or 0)
 
+    def count_in_app_alerts_before_retention(
+        self,
+        *,
+        unread_created_before: str,
+        read_read_before: str,
+    ) -> int:
+        response = self._execute(
+            lambda: self.client.table("in_app_alerts")
+            .select("id", count="exact")
+            .gt("id", 0)
+            .or_(
+                f"and(read_at.is.null,created_at.lt.{unread_created_before}),"
+                f"and(read_at.not.is.null,read_at.lt.{read_read_before})"
+            )
+            .limit(1)
+            .execute(),
+            context="count in_app_alerts before retention cutoffs",
+        )
+        return int(response.count or 0)
+
+    def fetch_in_app_alert_ids_before_retention_with_cursor(
+        self,
+        *,
+        unread_created_before: str,
+        read_read_before: str,
+        after_id: int = 0,
+        limit: int = 500,
+    ) -> list[int]:
+        response = self._execute(
+            lambda: self.client.table("in_app_alerts")
+            .select("id")
+            .gt("id", after_id)
+            .or_(
+                f"and(read_at.is.null,created_at.lt.{unread_created_before}),"
+                f"and(read_at.not.is.null,read_at.lt.{read_read_before})"
+            )
+            .order("id", desc=False)
+            .limit(limit)
+            .execute(),
+            context="fetch in_app_alerts ids before retention cutoffs",
+        )
+        return [int(row["id"]) for row in (response.data or []) if row.get("id") is not None]
+
+    def delete_in_app_alerts_by_ids(self, alert_ids: list[int]) -> int:
+        if not alert_ids:
+            return 0
+        deleted = 0
+        for chunk in self._chunked([{"id": alert_id} for alert_id in alert_ids], chunk_size=self.batch_size):
+            ids = [int(row["id"]) for row in chunk]
+            self._execute(
+                lambda ids=ids: self.client.table("in_app_alerts").delete().in_("id", ids).execute(),
+                context="delete in_app_alerts by ids",
+            )
+            deleted += len(ids)
+        return deleted
+
     def count_active_jobs(self) -> int:
         response = self._execute(
             lambda: self.client.table("jobs")

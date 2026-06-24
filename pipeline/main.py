@@ -70,6 +70,8 @@ def build_pipeline() -> tuple[IngestionPipeline, SupabaseStorage]:
         compaction_inactive_job_days=settings.compaction_inactive_job_days,
         compaction_job_event_days=settings.compaction_job_event_days,
         compaction_weekly_digest_days=settings.compaction_weekly_digest_days,
+        compaction_in_app_alert_unread_days=settings.compaction_in_app_alert_unread_days,
+        compaction_in_app_alert_read_days=settings.compaction_in_app_alert_read_days,
         max_active_jobs=settings.max_active_jobs,
         jobtech_search_region=settings.jobtech_search_region,
         jobtech_topup_no_deadline_ttl_days=settings.jobtech_topup_no_deadline_ttl_days,

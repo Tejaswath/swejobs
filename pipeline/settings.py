@@ -38,6 +38,8 @@ class Settings:
     compaction_inactive_job_days: int
     compaction_job_event_days: int
     compaction_weekly_digest_days: int
+    compaction_in_app_alert_unread_days: int
+    compaction_in_app_alert_read_days: int
     max_active_jobs: int
     jobtech_topup_enabled: bool
     jobtech_topup_limit: int
@@ -119,6 +121,8 @@ def load_settings() -> Settings:
         compaction_inactive_job_days=int(os.getenv("COMPACTION_INACTIVE_JOB_DAYS", "7")),
         compaction_job_event_days=int(os.getenv("COMPACTION_JOB_EVENT_DAYS", "14")),
         compaction_weekly_digest_days=int(os.getenv("COMPACTION_WEEKLY_DIGEST_DAYS", "180")),
+        compaction_in_app_alert_unread_days=int(os.getenv("COMPACTION_IN_APP_ALERT_UNREAD_DAYS", "90")),
+        compaction_in_app_alert_read_days=int(os.getenv("COMPACTION_IN_APP_ALERT_READ_DAYS", "30")),
         max_active_jobs=max(1, int(os.getenv("MAX_ACTIVE_JOBS", "15000"))),
         jobtech_topup_enabled=_bool("JOBTECH_TOPUP_ENABLED", False),
         jobtech_topup_limit=max(1, int(os.getenv("JOBTECH_TOPUP_LIMIT", "100"))),

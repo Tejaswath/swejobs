@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from pipeline.worker import run_ats_only_cycle
+from pipeline.worker import maybe_send_alerts, run_ats_only_cycle
 
 
 class FakePipeline:
@@ -68,6 +68,7 @@ class WorkerModeTests(unittest.TestCase):
                 ("compaction",),
             ],
         )
+        self.assertEqual(report["alerts"]["status"], "skipped")
         self.assertEqual(report["company_feeds"]["target_rows"], 5)
         self.assertEqual(report["deadline_expiry"]["expired_rows"], 2)
         self.assertFalse(report["user_ranking"])
@@ -128,6 +129,39 @@ class WorkerModeTests(unittest.TestCase):
         self.assertEqual(pipeline.storage.state["worker:last_feed_failure_count"], "1")
         self.assertEqual(pipeline.storage.state["worker:last_feed_failures"], "broken")
         self.assertEqual(pipeline.storage.state["worker:last_feed_auto_disabled_count"], "1")
+
+    def test_maybe_send_alerts_runs_due_frequencies_and_persists_state(self) -> None:
+        storage = FakeStateStorage()
+        storage.state.pop("last_user_ranking_recalculation_at", None)
+
+        class AlertStorage(FakeStateStorage):
+            def call_generate_saved_search_alerts(self, *, frequency: str) -> dict:
+                return {"processed_searches": 2, "inserted_alerts": 1, "frequency": frequency}
+
+        alert_storage = AlertStorage()
+        pipeline = FakePipeline()
+        pipeline.storage = alert_storage
+
+        report = maybe_send_alerts(pipeline)
+
+        self.assertEqual(report["status"], "applied")
+        self.assertEqual(report["daily"]["frequency"], "daily")
+        self.assertEqual(report["weekly"]["frequency"], "weekly")
+        self.assertIn("alerts:last_daily_at", alert_storage.state)
+        self.assertIn("alerts:last_weekly_at", alert_storage.state)
+
+    def test_maybe_send_alerts_skips_when_cadence_not_due(self) -> None:
+        storage = FakeStateStorage()
+        storage.state["alerts:last_daily_at"] = "2099-01-01T00:00:00+00:00"
+        storage.state["alerts:last_weekly_at"] = "2099-01-01T00:00:00+00:00"
+        pipeline = FakePipeline()
+        pipeline.storage = storage
+
+        report = maybe_send_alerts(pipeline)
+
+        self.assertEqual(report["status"], "skipped")
+        self.assertIsNone(report["daily"])
+        self.assertIsNone(report["weekly"])
 
 
 if __name__ == "__main__":
