@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildAutofillValues,
   buildFieldHaystack,
+  collectFieldHaystacks,
   countApplicationLikeFields,
+  detectApplicationFieldCount,
+  findAutofillField,
+  findResumeFileInput,
+  inferAutofillProvider,
   matchAutofillKey,
 } from "@/lib/applicationAutofill";
 
@@ -44,5 +49,41 @@ describe("applicationAutofill", () => {
       buildFieldHaystack(["resume", "Upload resume"]),
     ]);
     expect(count).toBe(2);
+  });
+
+  it("infers provider from hostname", () => {
+    expect(inferAutofillProvider("hedvig.teamtailor.com")).toBe("teamtailor");
+    expect(inferAutofillProvider("company.wd3.myworkdayjobs.com")).toBe("workday");
+    expect(inferAutofillProvider("boards.greenhouse.io")).toBe("generic");
+  });
+
+  it("finds Teamtailor candidate fields", () => {
+    document.body.innerHTML = `
+      <input name="candidate[first_name]" id="candidate_first_name" />
+      <input name="candidate[email]" type="email" />
+      <input type="file" name="candidate[resume]" />
+    `;
+
+    expect(findAutofillField(document, "first_name", "teamtailor")?.getAttribute("name")).toBe(
+      "candidate[first_name]",
+    );
+    expect(findAutofillField(document, "email", "teamtailor")?.type).toBe("email");
+    expect(findResumeFileInput(document, "teamtailor")?.getAttribute("name")).toBe("candidate[resume]");
+    expect(detectApplicationFieldCount(document)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("finds Workday data-automation-id fields", () => {
+    document.body.innerHTML = `
+      <input data-automation-id="formField-legalNameSection_firstName" />
+      <input data-automation-id="formField-email" type="email" />
+      <input type="file" data-automation-id="formField-resume" />
+    `;
+
+    expect(findAutofillField(document, "first_name", "workday")?.getAttribute("data-automation-id")).toContain(
+      "firstName",
+    );
+    expect(findAutofillField(document, "email", "workday")?.type).toBe("email");
+    expect(findResumeFileInput(document, "workday")?.getAttribute("data-automation-id")).toContain("resume");
+    expect(collectFieldHaystacks(document).length).toBeGreaterThanOrEqual(3);
   });
 });

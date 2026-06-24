@@ -1,9 +1,10 @@
 import {
   AUTOFILL_FIELD_KEYS,
   buildAutofillValues,
-  buildFieldHaystack,
-  countApplicationLikeFields,
-  matchAutofillKey,
+  detectApplicationFieldCount,
+  findAutofillField,
+  findResumeFileInput,
+  inferAutofillProvider,
 } from "@/lib/applicationAutofill";
 
 const HIGHLIGHT_STYLE = "box-shadow: 0 0 0 2px rgb(59 130 246 / 55%)";
@@ -19,70 +20,8 @@ function setNativeValue(element, value) {
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function collectFieldHaystacks(root = document) {
-  const fields = root.querySelectorAll("input, textarea, select");
-  const haystacks = [];
-
-  for (const field of fields) {
-    if (field instanceof HTMLInputElement && ["hidden", "submit", "button", "checkbox", "radio"].includes(field.type)) {
-      continue;
-    }
-
-    haystacks.push(
-      buildFieldHaystack([
-        field.name,
-        field.id,
-        field.getAttribute("aria-label"),
-        field.placeholder,
-        field.autocomplete,
-        field.labels?.[0]?.textContent,
-      ]),
-    );
-  }
-
-  return haystacks;
-}
-
 export function detectApplicationFields(root = document) {
-  return countApplicationLikeFields(collectFieldHaystacks(root));
-}
-
-function findFieldForKey(root, key) {
-  const selectors = {
-    first_name: ["#first_name", "#firstName", "input[name*='first_name']", "input[name*='firstName']"],
-    last_name: ["#last_name", "#lastName", "input[name*='last_name']", "input[name*='lastName']"],
-    email: ["#email", "input[type='email']", "input[name*='email']"],
-    phone: ["#phone", "input[type='tel']", "input[name*='phone']"],
-    linkedin_url: ["input[name*='linkedin']", "input[id*='linkedin']"],
-    portfolio_url: ["input[name*='portfolio']", "input[name*='website']", "input[id*='portfolio']"],
-    cover_letter: ["textarea[name*='cover']", "textarea[id*='cover']", "textarea[name*='letter']"],
-  };
-
-  for (const selector of selectors[key] ?? []) {
-    const element = root.querySelector(selector);
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      return element;
-    }
-  }
-
-  const fields = root.querySelectorAll("input, textarea");
-  for (const field of fields) {
-    if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) continue;
-    if (field instanceof HTMLInputElement && ["hidden", "submit", "button"].includes(field.type)) continue;
-
-    const haystack = buildFieldHaystack([
-      field.name,
-      field.id,
-      field.getAttribute("aria-label"),
-      field.placeholder,
-      field.autocomplete,
-      field.labels?.[0]?.textContent,
-    ]);
-
-    if (matchAutofillKey(haystack) === key) return field;
-  }
-
-  return null;
+  return detectApplicationFieldCount(root);
 }
 
 function showFillBanner(message) {
@@ -119,36 +58,53 @@ function showFillBanner(message) {
   setTimeout(() => host.remove(), 8000);
 }
 
-async function attachResumeFile(fileInput, resumeDownload) {
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function attachResumeFile(fileInput, resumeDownload, { maxAttempts = 3 } = {}) {
   if (!(fileInput instanceof HTMLInputElement) || fileInput.type !== "file" || !resumeDownload?.signedUrl) {
-    return false;
+    return { attached: false, error: "No resume file input or signed download URL." };
   }
 
-  try {
-    const response = await fetch(resumeDownload.signedUrl);
-    if (!response.ok) throw new Error("Could not download resume.");
-    const blob = await response.blob();
-    const file = new File([blob], resumeDownload.fileName || "resume.pdf", {
-      type: resumeDownload.mimeType || "application/pdf",
-    });
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    fileInput.files = transfer.files;
-    fileInput.dispatchEvent(new Event("input", { bubbles: true }));
-    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-    fileInput.style.cssText += HIGHLIGHT_STYLE;
-    return true;
-  } catch {
-    fileInput.style.cssText += HIGHLIGHT_STYLE;
-    fileInput.title = "Attach your SweJobs resume PDF here.";
-    return false;
+  let lastError = "Could not download resume.";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(resumeDownload.signedUrl);
+      if (!response.ok) {
+        throw new Error(`Resume download failed (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const file = new File([blob], resumeDownload.fileName || "resume.pdf", {
+        type: resumeDownload.mimeType || "application/pdf",
+      });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      fileInput.files = transfer.files;
+      fileInput.dispatchEvent(new Event("input", { bubbles: true }));
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+      fileInput.style.cssText += HIGHLIGHT_STYLE;
+      return { attached: true, error: null };
+    } catch (error) {
+      lastError = String(error?.message ?? "Could not attach resume.");
+      if (attempt < maxAttempts) {
+        await sleep(400 * attempt);
+      }
+    }
   }
+
+  fileInput.style.cssText += HIGHLIGHT_STYLE;
+  fileInput.title = "Attach your SweJobs resume PDF here.";
+  return { attached: false, error: lastError };
 }
 
 export async function fillApplicationForm(payload) {
+  const provider = inferAutofillProvider(typeof location !== "undefined" ? location.hostname : "");
   const values = buildAutofillValues(payload?.profile ?? null, payload?.coverLetterText ?? "");
   const filled = [];
   const skipped = [];
+  const fieldsDetected = detectApplicationFieldCount(document);
 
   for (const key of AUTOFILL_FIELD_KEYS) {
     const value = values[key];
@@ -157,7 +113,7 @@ export async function fillApplicationForm(payload) {
       continue;
     }
 
-    const field = findFieldForKey(document, key);
+    const field = findAutofillField(document, key, provider);
     if (!field) {
       skipped.push(key);
       continue;
@@ -173,23 +129,31 @@ export async function fillApplicationForm(payload) {
     filled.push(key);
   }
 
-  const resumeInput =
-    document.querySelector("input[type='file'][name*='resume']") ??
-    document.querySelector("input[type='file'][id*='resume']") ??
-    document.querySelector("input[type='file'][name*='cv']");
-
+  const resumeInput = findResumeFileInput(document, provider);
   let resumeAttached = false;
-  if (resumeInput instanceof HTMLInputElement && payload?.resumeDownload) {
-    resumeAttached = await attachResumeFile(resumeInput, payload.resumeDownload);
+  let resumeError = null;
+
+  if (resumeInput && payload?.resumeDownload) {
+    const resumeResult = await attachResumeFile(resumeInput, payload.resumeDownload);
+    resumeAttached = resumeResult.attached;
+    resumeError = resumeResult.error;
+  } else if (payload?.resumeDownload) {
+    resumeError = "No resume upload field found on this page.";
   }
 
-  const summary = [
-    filled.length > 0 ? `Filled ${filled.length} field${filled.length === 1 ? "" : "s"}.` : "No empty fields matched.",
-    resumeAttached ? "Resume attached." : payload?.resumeDownload ? "Resume needs manual attach." : "",
-    "Review before submitting.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const summaryParts = [];
+  if (filled.length > 0) {
+    summaryParts.push(`Filled ${filled.length}/${fieldsDetected || filled.length} field${filled.length === 1 ? "" : "s"}.`);
+  } else {
+    summaryParts.push("No empty fields matched.");
+  }
+  if (resumeAttached) {
+    summaryParts.push("Resume attached.");
+  } else if (payload?.resumeDownload) {
+    summaryParts.push(resumeError || "Resume needs manual attach.");
+  }
+  summaryParts.push("Review before submitting.");
+  const summary = summaryParts.join(" ");
 
   showFillBanner(summary);
 
@@ -198,6 +162,17 @@ export async function fillApplicationForm(payload) {
     filled,
     skipped,
     resumeAttached,
+    resumeError,
     message: summary,
+    fields_detected: fieldsDetected,
+    fields_filled: filled.length,
+    provider,
+    page_host: typeof location !== "undefined" ? location.hostname : "",
+    field_details: {
+      filled,
+      skipped,
+      provider,
+      page_host: typeof location !== "undefined" ? location.hostname : "",
+    },
   };
 }

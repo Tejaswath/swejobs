@@ -10,6 +10,7 @@ import {
   getUserProfile,
   hasValidConfig,
   initializeClientFromStorage,
+  insertAutofillEvent,
   signInWithGoogle,
   signInWithPassword,
   signOutClient,
@@ -47,6 +48,9 @@ const elements = {
   savedStateBanner: document.getElementById("saved-state-banner"),
   profileHint: document.getElementById("profile-hint"),
   globalStatus: document.getElementById("global-status"),
+  fillReport: document.getElementById("fill-report"),
+  fillReportSummary: document.getElementById("fill-report-summary"),
+  reportMisfill: document.getElementById("report-misfill"),
 };
 
 let supabaseClient = null;
@@ -55,6 +59,7 @@ let activeConfig = null;
 let capturedDescription = "";
 let capturedRecruiter = null;
 let existingApplication = null;
+let lastFillEvent = null;
 
 const SAVE_LABEL_NEW = "Save application";
 const SAVE_LABEL_UPDATE = "Update application";
@@ -63,6 +68,40 @@ function showStatus(message, type = "success") {
   elements.globalStatus.textContent = message;
   elements.globalStatus.className = `status ${type}`;
   elements.globalStatus.classList.remove("hidden");
+}
+
+function clearFillReport() {
+  lastFillEvent = null;
+  if (!elements.fillReport) return;
+  elements.fillReport.classList.add("hidden");
+  if (elements.fillReportSummary) elements.fillReportSummary.textContent = "";
+}
+
+function showFillReport(result) {
+  if (!elements.fillReport || !elements.fillReportSummary) return;
+  const detected = Number(result?.fields_detected ?? 0);
+  const filled = Number(result?.fields_filled ?? result?.filled?.length ?? 0);
+  elements.fillReportSummary.textContent = `Filled ${filled}/${detected || filled} fields${
+    result?.resumeAttached ? " · resume attached" : result?.resumeError ? " · resume needs manual attach" : ""
+  }.`;
+  elements.fillReport.classList.remove("hidden");
+}
+
+async function recordAutofillEvent(event, { userNote = null } = {}) {
+  if (!supabaseClient || !currentUser || !event) return;
+  try {
+    await insertAutofillEvent(supabaseClient, currentUser.id, {
+      provider: event.provider,
+      fields_detected: event.fields_detected,
+      fields_filled: event.fields_filled,
+      resume_attached: event.resumeAttached,
+      page_host: event.page_host,
+      field_details: event.field_details,
+      user_note: userNote,
+    });
+  } catch (error) {
+    console.warn("Autofill telemetry failed:", error);
+  }
 }
 
 function clearStatus() {
@@ -384,6 +423,7 @@ elements.autofill.addEventListener("click", async () => {
 
 elements.fillApplication?.addEventListener("click", async () => {
   clearStatus();
+  clearFillReport();
   if (!supabaseClient || !currentUser) {
     showStatus("Please sign in again.", "error");
     return;
@@ -427,9 +467,34 @@ elements.fillApplication?.addEventListener("click", async () => {
       return;
     }
 
-    showStatus(String(response.message ?? "Application form filled. Review before submitting."));
+    lastFillEvent = response;
+    showFillReport(response);
+    await recordAutofillEvent(response);
+
+    const detected = Number(response.fields_detected ?? 0);
+    const filled = Number(response.fields_filled ?? response.filled?.length ?? 0);
+    showStatus(
+      response.resumeError
+        ? `${response.message ?? `Filled ${filled}/${detected || filled} fields.`} (${response.resumeError})`
+        : String(response.message ?? `Filled ${filled}/${detected || filled} fields.`),
+      response.resumeError ? "error" : "success",
+    );
   } catch (error) {
     showStatus(String(error?.message ?? "Form fill failed."), "error");
+  } finally {
+    setSavingState(false);
+  }
+});
+
+elements.reportMisfill?.addEventListener("click", async () => {
+  if (!lastFillEvent) return;
+  clearStatus();
+  setSavingState(true);
+  try {
+    await recordAutofillEvent(lastFillEvent, { userNote: "misfill reported" });
+    showStatus("Thanks — misfill reported.");
+  } catch (error) {
+    showStatus(String(error?.message ?? "Could not report misfill."), "error");
   } finally {
     setSavingState(false);
   }

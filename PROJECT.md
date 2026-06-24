@@ -357,6 +357,15 @@ Extension root: `extension/`
 - `Cmd/Ctrl + Enter` -> save
 - `Cmd/Ctrl + Shift + A` -> autofill
 
+### Apply Assist (form fill)
+
+- Detects application-like fields on employer apply pages (≥2 fields → Fill button).
+- Fills profile fields + template cover letter; attaches default resume PDF when a file input is found.
+- Provider heuristics for Teamtailor (`candidate[…]` names) and Workday (`data-automation-id`).
+- Post-fill popup shows **Filled N/M** summary and optional **Report misfill**.
+- Telemetry: inserts rows into `autofill_events` via anon key + user session (RLS-scoped).
+- Resume attach retries signed-URL download up to 3 times with user-visible errors in popup.
+
 ## Pipeline capabilities
 
 Primary files: `pipeline/main.py`, `pipeline/ingest.py`, `pipeline/translate.py`

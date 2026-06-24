@@ -267,6 +267,20 @@ export async function updateApplication(client, applicationId, payload) {
   return data;
 }
 
+export async function insertAutofillEvent(client, userId, event) {
+  const { error } = await client.from("autofill_events").insert({
+    user_id: userId,
+    provider: String(event.provider ?? "unknown"),
+    fields_detected: Number(event.fields_detected ?? 0),
+    fields_filled: Number(event.fields_filled ?? 0),
+    resume_attached: Boolean(event.resume_attached),
+    page_host: String(event.page_host ?? ""),
+    field_details: event.field_details ?? null,
+    user_note: event.user_note ?? null,
+  });
+  if (error) throw error;
+}
+
 export async function refreshStoredSession(client) {
   const storedSession = await getStoredSession();
   if (!storedSession?.access_token || !storedSession?.refresh_token) {
