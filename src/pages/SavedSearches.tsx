@@ -207,6 +207,8 @@ export default function SavedSearches() {
     navigate(`/jobs${params.toString() ? `?${params.toString()}` : ""}`);
   };
 
+  const alertsEnabledOnAnySearch = (searches ?? []).some((search) => search.alerts_enabled);
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -302,7 +304,7 @@ export default function SavedSearches() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">{s.name}</h3>
                         {newCount > 0 && (
-                          <Badge className="text-xs">{newCount} new</Badge>
+                          <Badge className="text-xs">{newCount} matching</Badge>
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -429,7 +431,11 @@ export default function SavedSearches() {
           </CardHeader>
           <CardContent className="space-y-2">
             {(inAppAlerts ?? []).length === 0 ? (
-              <p className="text-xs text-muted-foreground">No alerts yet. Alerts are generated from your saved searches.</p>
+              <p className="text-xs text-muted-foreground">
+                {alertsEnabledOnAnySearch
+                  ? "No alert notifications yet — we check daily when new matches appear."
+                  : "Turn on alerts on a saved search to get notified here."}
+              </p>
             ) : (
               (inAppAlerts ?? []).map((alert) => (
                 <div

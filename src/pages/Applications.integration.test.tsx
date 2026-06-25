@@ -128,9 +128,8 @@ describe("Applications page", () => {
     );
     expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /New Application/i })).toBeInTheDocument();
-    expect(screen.getByText("Awaiting response")).toBeInTheDocument();
-    expect(screen.getByText("Follow-up due")).toBeInTheDocument();
-    expect(screen.getByText("Active this week")).toBeInTheDocument();
+    expect(screen.getByText("Response Rate")).toBeInTheDocument();
+    expect(screen.queryByText("Awaiting response")).not.toBeInTheDocument();
     const showArchived = await screen.findByRole("button", { name: "Show archived (1)" });
     expect(screen.queryByText("Archived AB")).not.toBeInTheDocument();
 

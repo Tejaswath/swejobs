@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { OverviewSignalStrip } from "@/components/overview/OverviewSignalStrip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 import type { OverviewSignalStripItem } from "./types";
 
@@ -13,6 +14,7 @@ export function OverviewHeroPanel({
   subtext,
   primaryActionLabel = "Explore roles",
   primaryActionHref = "/jobs",
+  primaryActionVariant = "default",
   secondaryAction,
   isSignalsLoading,
   signalsUnavailable,
@@ -23,6 +25,7 @@ export function OverviewHeroPanel({
   subtext?: string;
   primaryActionLabel?: string;
   primaryActionHref?: string;
+  primaryActionVariant?: "default" | "outline";
   secondaryAction?: { label: string; href: string } | null;
   isSignalsLoading?: boolean;
   signalsUnavailable?: boolean;
@@ -51,7 +54,16 @@ export function OverviewHeroPanel({
         />
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild size="default" className="h-9 rounded-xl bg-gradient-to-r from-primary to-primary/80 px-4 text-sm shadow-lg shadow-primary/20 hover:shadow-primary/30">
+          <Button
+            asChild
+            size="default"
+            variant={primaryActionVariant}
+            className={cn(
+              "h-9 rounded-xl px-4 text-sm",
+              primaryActionVariant === "default" &&
+                "bg-gradient-to-r from-primary to-primary/80 shadow-lg shadow-primary/20 hover:shadow-primary/30",
+            )}
+          >
             <Link to={primaryActionHref}>
               <Compass className="h-4 w-4" />
               {primaryActionLabel}

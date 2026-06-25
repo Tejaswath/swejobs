@@ -23,57 +23,37 @@ export function OverviewSignalStrip({
   }
 
   if (isLoading) {
-    const skeletonCount = Math.max(2, Math.min(3, items.length || 3));
     return (
-      <div className={cn(
-        "grid overflow-hidden rounded-[22px] border border-border/60 bg-background/45",
-        skeletonCount === 2 ? "md:grid-cols-2" : "md:grid-cols-3 lg:grid-cols-[0.95fr_0.95fr_1.1fr]",
-      )}>
-        {Array.from({ length: skeletonCount }).map((_, index) => (
-          <div key={index} className="border-b border-border/40 px-4 py-3 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
-            <Skeleton className="h-7 w-24 animate-shimmer bg-muted/70" />
-            <Skeleton className="mt-2 h-3 w-16 animate-shimmer bg-muted/60" />
-          </div>
-        ))}
+      <div className="rounded-[22px] border border-border/60 bg-background/45 px-4 py-3">
+        <Skeleton className="h-5 w-56 max-w-full animate-shimmer bg-muted/70" />
       </div>
     );
   }
 
+  if (items.length === 0) {
+    return <p className="text-sm text-muted-foreground">You&apos;re all caught up.</p>;
+  }
+
   return (
-    <div className={cn(
-      "grid overflow-hidden rounded-[22px] border border-border/60 bg-background/45",
-      items.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3 lg:grid-cols-[0.95fr_0.95fr_1.1fr]",
-    )}>
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
       {items.map((item, index) => (
-        <Link
-          key={item.label}
-          to={item.href}
-          title={item.fullLabel}
-          aria-label={item.fullLabel ? `${item.label}: ${item.fullLabel}` : item.label}
-          className={cn(
-            "px-4 py-3 transition-colors hover:bg-background/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-            index < items.length - 1 && "border-b border-border/40 md:border-b-0 md:border-r",
-            index === 0 && "md:border-l-2 md:border-l-primary/40",
-            item.tone === "due" && item.pulse && "bg-rose-500/[0.03]",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <div className={cn("min-w-0 text-[2rem] font-semibold tracking-tight text-foreground", item.accentClassName)}>
-              {item.value}
-            </div>
+        <span key={item.label} className="flex items-center gap-1.5">
+          {index > 0 ? <span className="text-muted-foreground/40">·</span> : null}
+          <Link
+            to={item.href}
+            title={item.fullLabel}
+            aria-label={item.fullLabel ? `${item.label}: ${item.fullLabel}` : item.label}
+            className={cn(
+              "inline-flex items-center gap-1.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+              item.tone === "due" && item.pulse && "text-rose-200/90",
+            )}
+          >
+            <span className={cn("font-mono font-medium text-foreground", item.accentClassName)}>{item.value}</span>
+            <span className="lowercase">{item.label}</span>
             {item.badge}
-          </div>
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-            {item.tone === "due" && item.pulse ? (
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-500" />
-              </span>
-            ) : null}
-            {item.label}
-          </p>
-        </Link>
+          </Link>
+        </span>
       ))}
-    </div>
+    </p>
   );
 }
