@@ -3,10 +3,10 @@ import { cn } from "@/lib/utils";
 type FitLabel = "Strong" | "Possible" | "Stretch";
 
 const SEGMENTS: Record<FitLabel, number> = { Strong: 3, Possible: 2, Stretch: 1 };
-const TONE: Record<FitLabel, { fill: string; text: string }> = {
-  Strong: { fill: "bg-primary", text: "text-primary" },
-  Possible: { fill: "bg-sky-400", text: "text-sky-300" },
-  Stretch: { fill: "bg-muted-foreground/70", text: "text-muted-foreground" },
+const TONE: Record<FitLabel, { fill: string; empty: string; text: string }> = {
+  Strong: { fill: "bg-emerald-400", empty: "bg-emerald-400/20", text: "text-emerald-300" },
+  Possible: { fill: "bg-amber-400", empty: "bg-amber-400/20", text: "text-amber-300" },
+  Stretch: { fill: "bg-zinc-500", empty: "bg-zinc-500/25", text: "text-zinc-400" },
 };
 
 export function FitIndicator({
@@ -35,11 +35,14 @@ export function FitIndicator({
         {[0, 1, 2].map((index) => (
           <span
             key={index}
-            className={cn("h-3 w-[5px] rounded-[1px]", index < filled ? tone.fill : "bg-muted-foreground/20")}
+            className={cn(
+              "h-3.5 w-1.5 rounded-[2px]",
+              index < filled ? tone.fill : tone.empty,
+            )}
           />
         ))}
       </span>
-      <span className={cn("text-[11px] font-medium", tone.text)}>{label}</span>
+      <span className={cn("text-xs font-medium", tone.text)}>{label}</span>
     </span>
   );
 }
