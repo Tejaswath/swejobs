@@ -285,6 +285,28 @@ describe("Jobs page", () => {
     expect(screen.getByRole("button", { name: /Read description/i })).toBeInTheDocument();
   });
 
+  it("hides fit meter when no résumé is available", async () => {
+    supabase.setResumeRows([]);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Jobs />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Backend Engineer");
+    expect(screen.queryByLabelText(/fit,/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Backend Engineer"));
+    expect(await screen.findByRole("heading", { name: "Backend Engineer", level: 2 })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/fit,/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add résumé to see your fit/i })).toBeInTheDocument();
+  });
+
   it("restores search filters from the URL", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

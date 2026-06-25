@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, Bell, FileText, Zap, ArrowRight, ExternalLink, Compass } from "lucide-react";
+import { Bookmark, Bell, FileText, Zap, ArrowRight, ExternalLink, Compass, FileUp } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
+import { HowItWorks } from "@/components/overview/HowItWorks";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
 import { FadeUp, AnimatedNumber, StaggerContainer } from "@/components/motion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,10 +16,37 @@ import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { cn } from "@/lib/utils";
 import { jobPassesLens } from "@/lib/jobEligibility";
 import { computeWeeklyFunnelSummary, listFollowUpNudges } from "@/lib/applicationFunnel";
-import { suitabilityScore } from "@/lib/jobRanking";
-import { FitIndicator } from "@/components/jobs/FitIndicator";
 
 import type { OverviewSignalStripItem } from "@/components/overview/types";
+
+type TopMatchJob = {
+  id: number;
+  headline: string | null;
+  employer_name: string | null;
+  company_canonical: string | null;
+};
+
+function TopMatchLinks({ jobs }: { jobs: TopMatchJob[] }) {
+  return (
+    <div className="space-y-1">
+      {jobs.map((job) => (
+        <Link
+          key={job.id}
+          to={`/jobs?selected=${job.id}`}
+          className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/30 px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-muted/30"
+        >
+          <div className="min-w-0">
+            <p className="line-clamp-1 text-sm font-medium text-foreground">{job.headline}</p>
+            <p className="line-clamp-1 text-xs text-muted-foreground">
+              {job.company_canonical || job.employer_name}
+            </p>
+          </div>
+          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 type UpcomingDeadlineJob = {
   id: number;
@@ -351,6 +379,21 @@ export default function Index() {
     },
   });
 
+  const resumeQuery = useQuery({
+    queryKey: ["overview-resume", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("resume_versions")
+        .select("id, parsed_text")
+        .eq("user_id", user!.id)
+        .eq("is_default", true)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const groupedDeadlines = useMemo<DeadlineGroups>(() => {
     const groups: DeadlineGroups = {
       today: [],
@@ -414,6 +457,7 @@ export default function Index() {
   );
   const topFollowUpNudge = followUpNudges[0] ?? null;
   const topMatches = highSignalSnapshotQuery.data?.topRows ?? [];
+  const hasParsedResume = Boolean(resumeQuery.data?.parsed_text?.trim());
 
   const pipelineAppliedCount = pipelineQuery.data?.applied ?? 0;
   const pipelineInterviewCount = pipelineQuery.data?.interviewing ?? 0;
@@ -554,15 +598,65 @@ export default function Index() {
               signalItems={visibleSignalItems}
               headline={heroHeadline}
               subtext={heroSubtext}
-              primaryActionLabel="Explore roles"
-              primaryActionHref="/jobs"
-              primaryActionVariant={hasFocalAction ? "outline" : "default"}
-              secondaryAction={!user ? { label: "Sign up free", href: "/auth" } : null}
+              primaryActionLabel={!user ? "Sign up free" : "Explore roles"}
+              primaryActionHref={!user ? "/auth" : "/jobs"}
+              primaryActionVariant={!user ? "default" : hasFocalAction ? "outline" : "default"}
+              secondaryAction={!user ? { label: "Explore roles", href: "/jobs" } : null}
               isSignalsLoading={showHeroSignalsLoading}
               signalsUnavailable={heroSignalsUnavailable}
               isSubtextLoading={!user && jobCountQuery.isLoading}
             />
           </FadeUp>
+
+          {!user ? (
+            <FadeUp>
+              <HowItWorks />
+            </FadeUp>
+          ) : null}
+
+          {!user && topMatches.length > 0 ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-border/60 bg-card/80">
+                <CardContent className="p-5">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Live roles right now
+                  </p>
+                  <div className="mt-3">
+                    <TopMatchLinks jobs={topMatches} />
+                  </div>
+                  <Button asChild size="sm" className={cn("mt-4", primaryActionClassName)}>
+                    <Link to="/auth">
+                      Sign up free
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </FadeUp>
+          ) : null}
+
+          {user && !hasParsedResume && !resumeQuery.isLoading ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-primary/20 bg-gradient-to-br from-primary/[0.08] via-card/80 to-card/80">
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-primary/80">
+                      Unlock personalized fit
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Upload your résumé to unlock personalized fit, keyword matching, and better-ranked roles.
+                    </p>
+                  </div>
+                  <Button asChild size="sm" className={primaryActionClassName}>
+                    <Link to="/resumes">
+                      <FileUp className="h-4 w-4" />
+                      Upload résumé
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </FadeUp>
+          ) : null}
 
           {user && topFollowUpNudge && !todaysMove ? (
             <FadeUp>
@@ -624,25 +718,8 @@ export default function Index() {
                       See all →
                     </Link>
                   </div>
-                  <div className="mt-3 space-y-1">
-                    {topMatches.map((job) => {
-                      const fit = suitabilityScore(job, {});
-                      return (
-                        <Link
-                          key={job.id}
-                          to={`/jobs?selected=${job.id}`}
-                          className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/30 px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-muted/30"
-                        >
-                          <div className="min-w-0">
-                            <p className="line-clamp-1 text-sm font-medium text-foreground">{job.headline}</p>
-                            <p className="line-clamp-1 text-xs text-muted-foreground">
-                              {job.company_canonical || job.employer_name}
-                            </p>
-                          </div>
-                          <FitIndicator label={fit.label} score={fit.score} />
-                        </Link>
-                      );
-                    })}
+                  <div className="mt-3">
+                    <TopMatchLinks jobs={topMatches} />
                   </div>
                 </CardContent>
               </Card>
