@@ -175,6 +175,8 @@ class IngestionPipeline:
         compaction_inactive_job_days: int,
         compaction_job_event_days: int,
         compaction_weekly_digest_days: int,
+        compaction_in_app_alert_unread_days: int,
+        compaction_in_app_alert_read_days: int,
         enable_translation: bool,
         max_active_jobs: int = 15000,
         jobtech_search_region: str | None = None,
@@ -209,6 +211,8 @@ class IngestionPipeline:
         self.compaction_inactive_job_days = max(1, compaction_inactive_job_days)
         self.compaction_job_event_days = max(1, compaction_job_event_days)
         self.compaction_weekly_digest_days = max(1, compaction_weekly_digest_days)
+        self.compaction_in_app_alert_unread_days = max(1, compaction_in_app_alert_unread_days)
+        self.compaction_in_app_alert_read_days = max(1, compaction_in_app_alert_read_days)
         self.max_active_jobs = max(1, int(max_active_jobs))
         self.jobtech_search_region = str(jobtech_search_region or "").strip() or None
         self.jobtech_topup_no_deadline_ttl_days = max(1, int(jobtech_topup_no_deadline_ttl_days))
@@ -1457,6 +1461,8 @@ class IngestionPipeline:
         inactive_job_cutoff = (now - timedelta(days=self.compaction_inactive_job_days)).isoformat()
         job_event_cutoff = (now - timedelta(days=self.compaction_job_event_days)).isoformat()
         weekly_digest_cutoff = (now - timedelta(days=self.compaction_weekly_digest_days)).isoformat()
+        in_app_alert_unread_cutoff = (now - timedelta(days=self.compaction_in_app_alert_unread_days)).isoformat()
+        in_app_alert_read_cutoff = (now - timedelta(days=self.compaction_in_app_alert_read_days)).isoformat()
 
         batch_size = max(1, int(batch_size))
         max_batches_per_phase = max(1, int(max_batches_per_phase))
@@ -1471,6 +1477,8 @@ class IngestionPipeline:
                 "inactive_jobs_before": inactive_job_cutoff,
                 "job_events_before": job_event_cutoff,
                 "weekly_digests_before": weekly_digest_cutoff,
+                "in_app_alerts_unread_created_before": in_app_alert_unread_cutoff,
+                "in_app_alerts_read_read_before": in_app_alert_read_cutoff,
                 "jobtech_no_deadline_before": (now - timedelta(days=self.jobtech_topup_no_deadline_ttl_days)).isoformat(),
             },
         }
@@ -1481,6 +1489,10 @@ class IngestionPipeline:
                 "inactive_jobs_older_than_cutoff": self.storage.count_inactive_jobs_before(inactive_job_cutoff),
                 "job_events_older_than_cutoff": self.storage.count_job_events_before(job_event_cutoff),
                 "weekly_digests_older_than_cutoff": self.storage.count_weekly_digests_before(weekly_digest_cutoff),
+                "in_app_alerts_older_than_retention": self.storage.count_in_app_alerts_before_retention(
+                    unread_created_before=in_app_alert_unread_cutoff,
+                    read_read_before=in_app_alert_read_cutoff,
+                ),
             }
             report["status"] = "dry_run"
             return report
@@ -1493,6 +1505,7 @@ class IngestionPipeline:
             "inactive_jobs_referenced_preserved": 0,
             "job_events_deleted": 0,
             "weekly_digests_deleted": 0,
+            "in_app_alerts_deleted": 0,
         }
         batches = {
             "raw_json": 0,
@@ -1500,6 +1513,7 @@ class IngestionPipeline:
             "weekly_digests": 0,
             "jobtech_no_deadline": 0,
             "inactive_jobs": 0,
+            "in_app_alerts": 0,
         }
         phases_at_limit: list[str] = []
 
@@ -1578,6 +1592,25 @@ class IngestionPipeline:
         else:
             phases_at_limit.append("inactive_jobs")
 
+        in_app_alert_cursor = 0
+        for _ in range(max_batches_per_phase):
+            alert_ids = self.storage.fetch_in_app_alert_ids_before_retention_with_cursor(
+                unread_created_before=in_app_alert_unread_cutoff,
+                read_read_before=in_app_alert_read_cutoff,
+                after_id=in_app_alert_cursor,
+                limit=batch_size,
+            )
+            if not alert_ids:
+                break
+
+            batches["in_app_alerts"] += 1
+            in_app_alert_cursor = max(alert_ids)
+            summary["in_app_alerts_deleted"] += self.storage.delete_in_app_alerts_by_ids(alert_ids)
+            if len(alert_ids) < batch_size:
+                break
+        else:
+            phases_at_limit.append("in_app_alerts")
+
         finished_at = datetime.now(UTC).isoformat()
         self.storage.upsert_ingestion_state({"last_compaction_at": finished_at})
         report["status"] = "applied_partial" if phases_at_limit else "applied"
@@ -1599,13 +1632,14 @@ class IngestionPipeline:
         # still-bounded worker drain while keeping the manual CLI conservative.
         report = self.compact_storage(confirm=True, max_batches_per_phase=50)
         logger.info(
-            "Storage compaction complete. raw_json_cleared=%s jobtech_no_deadline_deactivated=%s inactive_jobs_deleted=%s inactive_jobs_referenced_preserved=%s job_events_deleted=%s weekly_digests_deleted=%s",
+            "Storage compaction complete. raw_json_cleared=%s jobtech_no_deadline_deactivated=%s inactive_jobs_deleted=%s inactive_jobs_referenced_preserved=%s job_events_deleted=%s weekly_digests_deleted=%s in_app_alerts_deleted=%s",
             report.get("summary", {}).get("raw_json_cleared", 0),
             report.get("summary", {}).get("jobtech_no_deadline_deactivated", 0),
             report.get("summary", {}).get("inactive_jobs_deleted", 0),
             report.get("summary", {}).get("inactive_jobs_referenced_preserved", 0),
             report.get("summary", {}).get("job_events_deleted", 0),
             report.get("summary", {}).get("weekly_digests_deleted", 0),
+            report.get("summary", {}).get("in_app_alerts_deleted", 0),
         )
         return True
 

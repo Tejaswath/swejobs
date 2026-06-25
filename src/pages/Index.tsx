@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, FileText, Zap, ArrowRight } from "lucide-react";
+import { Bookmark, Bell, FileText, Zap, ArrowRight, ExternalLink } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useInAppAlerts } from "@/hooks/useInAppAlerts";
 import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { cn } from "@/lib/utils";
 import { jobPassesLens } from "@/lib/jobEligibility";
@@ -102,6 +103,7 @@ function relativeTime(value: string): string {
 
 export default function Index() {
   const { user } = useAuth();
+  const { alerts: inAppAlerts, unreadCount: unreadAlertCount, markAlertRead } = useInAppAlerts(user?.id);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [previousVisitIso, setPreviousVisitIso] = useState<string | null>(null);
 
@@ -440,6 +442,11 @@ export default function Index() {
     return "Review";
   };
 
+  const topUnreadAlerts = useMemo(
+    () => inAppAlerts.filter((alert) => !alert.read_at).slice(0, 3),
+    [inAppAlerts],
+  );
+
   const signalItems: OverviewSignalStripItem[] = [
     {
       label: "Due today",
@@ -455,6 +462,14 @@ export default function Index() {
       href: "/jobs?lens=high_signal",
       accentClassName: "text-foreground",
       tone: "live",
+    },
+    {
+      label: "Alerts",
+      value: <AnimatedNumber value={unreadAlertCount} />,
+      href: "/searches",
+      accentClassName: unreadAlertCount > 0 ? "text-amber-200" : "text-foreground",
+      tone: unreadAlertCount > 0 ? "due" : "neutral",
+      pulse: unreadAlertCount > 0,
     },
     {
       label: "Awaiting response",
@@ -634,6 +649,54 @@ export default function Index() {
                     </Link>
                   ))}
               </div>
+            </FadeUp>
+          ) : null}
+
+          {user && topUnreadAlerts.length > 0 ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-amber-500/20 bg-card/80">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      <Bell className="h-3 w-3" />
+                      Saved-search alerts
+                    </p>
+                    <Link to="/searches" className="text-xs text-muted-foreground hover:text-foreground">
+                      View all
+                    </Link>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {topUnreadAlerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/30 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="line-clamp-1 text-sm font-medium text-foreground">{alert.title}</p>
+                          <p className="line-clamp-1 text-xs text-muted-foreground">{alert.body}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {alert.jobs?.source_url ? (
+                            <a href={alert.jobs.source_url} target="_blank" rel="noopener noreferrer">
+                              <Button variant="outline" size="sm" className="h-7 gap-1 text-[11px]">
+                                <ExternalLink className="h-3 w-3" /> Open
+                              </Button>
+                            </a>
+                          ) : null}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-[11px]"
+                            onClick={() => markAlertRead.mutate(alert.id)}
+                          >
+                            Mark read
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </FadeUp>
           ) : null}
 

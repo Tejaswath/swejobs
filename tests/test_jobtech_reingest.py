@@ -80,6 +80,8 @@ def _pipeline(storage: _Storage) -> IngestionPipeline:
         compaction_inactive_job_days=7,
         compaction_job_event_days=14,
         compaction_weekly_digest_days=180,
+        compaction_in_app_alert_unread_days=90,
+        compaction_in_app_alert_read_days=30,
         enable_translation=False,
     )
 

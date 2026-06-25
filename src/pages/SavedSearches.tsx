@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Trash2, Search, Clock, Bell, BellOff, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useInAppAlerts } from "@/hooks/useInAppAlerts";
 
 export default function SavedSearches() {
   const { user, loading } = useAuth();
@@ -113,21 +114,7 @@ export default function SavedSearches() {
     },
   });
 
-  const { data: inAppAlerts } = useQuery({
-    queryKey: ["in-app-alerts", user?.id],
-    enabled: !!user,
-    staleTime: 30_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("in_app_alerts")
-        .select("id, saved_search_id, job_id, title, body, created_at, read_at, job_external_key, jobs(id, headline, employer_name, source_url)")
-        .eq("user_id", user!.id)
-        .order("created_at", { ascending: false })
-        .limit(40);
-      if (error) throw error;
-      return data ?? [];
-    },
-  });
+  const { alerts: inAppAlerts, unreadCount: unreadAlerts, markAlertRead } = useInAppAlerts(user?.id);
 
   const createSearch = useMutation({
     mutationFn: async () => {
@@ -137,7 +124,7 @@ export default function SavedSearches() {
         keywords: keywords ? keywords.split(",").map((k) => k.trim()) : [],
         remote_only: remoteOnly,
         english_only: englishOnly,
-        alerts_enabled: false,
+        alerts_enabled: true,
         lens,
         include_jobtech_in_high_signal: includeJobtechInHighSignal,
       });
@@ -201,22 +188,7 @@ export default function SavedSearches() {
     },
   });
 
-  const markAlertRead = useMutation({
-    mutationFn: async (alertId: number) => {
-      const { error } = await supabase
-        .from("in_app_alerts")
-        .update({ read_at: new Date().toISOString() })
-        .eq("id", alertId)
-        .eq("user_id", user!.id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["in-app-alerts", user?.id] });
-    },
-  });
-
   if (!loading && !user) return <Navigate to="/auth" replace />;
-  const unreadAlerts = (inAppAlerts ?? []).filter((alert) => !alert.read_at).length;
 
   const runSearch = (search: {
     keywords: string[] | null;

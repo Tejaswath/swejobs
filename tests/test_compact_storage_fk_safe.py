@@ -77,6 +77,22 @@ class CompactStorageFake:
         self.deleted_job_calls.append(list(job_ids))
         return len(job_ids)
 
+    def count_in_app_alerts_before_retention(self, *, unread_created_before: str, read_read_before: str) -> int:
+        return 0
+
+    def fetch_in_app_alert_ids_before_retention_with_cursor(
+        self,
+        *,
+        unread_created_before: str,
+        read_read_before: str,
+        after_id: int = 0,
+        limit: int = 500,
+    ) -> list[int]:
+        return []
+
+    def delete_in_app_alerts_by_ids(self, alert_ids: list[int]) -> int:
+        return len(alert_ids)
+
     def upsert_ingestion_state(self, values: dict[str, str]) -> None:
         self.state.update(values)
 
@@ -105,6 +121,8 @@ class CompactStorageSafetyTests(unittest.TestCase):
             compaction_inactive_job_days=7,
             compaction_job_event_days=14,
             compaction_weekly_digest_days=180,
+            compaction_in_app_alert_unread_days=90,
+            compaction_in_app_alert_read_days=30,
             enable_translation=False,
             max_active_jobs=15000,
             jobtech_topup_no_deadline_ttl_days=30,
