@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   FileUp,
   RotateCcw,
+  FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1898,10 +1899,8 @@ export default function Jobs() {
         <div className="flex min-w-0 flex-col gap-4 md:h-[calc(100vh-320px)] md:flex-row">
           <div
             className={cn(
-              "min-w-0 flex-col transition-all duration-200",
-              selectedId
-                ? "hidden md:flex md:w-[380px] md:shrink-0"
-                : "flex w-full md:max-w-2xl",
+              "min-w-0 flex-col transition-all duration-200 md:w-[380px] md:shrink-0",
+              selectedId ? "hidden md:flex" : "flex w-full",
             )}
           >
             {searchParams.get("coverage") === "1" && coverageBanner && (
@@ -2154,6 +2153,21 @@ export default function Jobs() {
               </>
             )}
           </div>
+
+          {!selectedId && (
+            <div className="hidden min-w-0 flex-1 items-center justify-center rounded-lg border border-border/40 bg-card/40 p-8 md:flex">
+              <div className="max-w-sm text-center text-muted-foreground">
+                <FileText className="mx-auto mb-3 h-8 w-8 opacity-40" />
+                <p className="text-sm font-medium text-foreground">Select a role</p>
+                <p className="mt-1 text-xs">See why it fits, your keyword match, and skills.</p>
+                <div className="mt-3 flex items-center justify-center gap-3 text-[11px]">
+                  <span className="text-emerald-300">▮▮▮ Strong</span>
+                  <span className="text-amber-300">▮▮ Possible</span>
+                  <span className="text-zinc-400">▮ Stretch</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <AnimatePresence>
             {selectedId && detailLoading && (

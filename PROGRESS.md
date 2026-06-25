@@ -2,10 +2,10 @@
 
 Living snapshot of where the work stands. **Read this first every session.**
 
-_Last updated: 2026-06-25 (UX clarity pass)_
+_Last updated: 2026-06-25 (UX contrast/density polish)_
 
 ## Current branch
-`main` @ `73d2c7e` — Phases 0–4 shipped (PRs #17–#22).
+`main` @ `e107439` (+ clarity #23) — Phases 0–4 shipped (PRs #17–#22).
 
 ## Last activity (most recent first)
 - **UX clarity (`feat/ux-clarity`)** — Overview "Today" screen (hide-zero strip, value prop, focal action), Explore `FitIndicator` + tuned fit thresholds, Saved Searches honest matching/alerts copy, Applications hide-zero stats.
@@ -26,8 +26,9 @@ Run green gate before merge: Vitest · lint · build · pytest · security_check
 - **UX clarity** — calm Overview, fit hierarchy on Explore, honest Saved Searches labels.
 
 ## In flight / to verify
-- [ ] Merge `feat/ux-clarity` PR → Vercel auto-deploy.
-- [ ] Manual QA: Overview all-clear state, Explore fit meter spread, Saved Searches copy.
+- [x] Merge `feat/ux-clarity` PR #23 → Vercel auto-deploy.
+- [ ] Merge `feat/ux-contrast-density` PR → Vercel auto-deploy.
+- [ ] Manual QA: Explore split placeholder + fit legend, contrast on dark theme.
 
 ## Next steps
 1. Merge UX clarity PR.

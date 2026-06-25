@@ -32,11 +32,9 @@ export function OverviewHeroPanel({
   isSubtextLoading?: boolean;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-[30px] border border-border/60 bg-card/80 px-6 py-5 shadow-[0_18px_60px_rgba(2,8,23,0.18)] glow-sm sm:px-7 sm:py-5">
+    <div className="relative overflow-hidden rounded-[30px] border border-border/60 bg-card/80 px-6 py-4 shadow-[0_18px_60px_rgba(2,8,23,0.18)] glow-sm sm:px-7 sm:py-4">
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-primary/60 via-sky-400/40 to-primary/20" />
       <div className="pointer-events-none absolute -left-10 top-0 h-44 w-44 rounded-full bg-primary/20 blur-3xl" />
-      <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-sky-500/10 blur-3xl" />
-
       <div className="relative space-y-5">
         <div className="space-y-2">
           <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">{headline}</h1>

@@ -8,17 +8,17 @@ describe("FitIndicator", () => {
     const { container } = render(<FitIndicator label="Strong" score={82} />);
     const segments = container.querySelectorAll('[aria-hidden="true"] > span');
     expect(segments).toHaveLength(3);
-    expect(segments[0]).toHaveClass("bg-primary");
-    expect(segments[1]).toHaveClass("bg-primary");
-    expect(segments[2]).toHaveClass("bg-primary");
+    expect(segments[0]).toHaveClass("bg-emerald-400");
+    expect(segments[1]).toHaveClass("bg-emerald-400");
+    expect(segments[2]).toHaveClass("bg-emerald-400");
     expect(screen.getByLabelText("Strong fit, 82 of 100")).toBeInTheDocument();
   });
 
   it("renders one filled segment for Stretch fit", () => {
     const { container } = render(<FitIndicator label="Stretch" score={40} />);
     const segments = container.querySelectorAll('[aria-hidden="true"] > span');
-    expect(segments[0]).toHaveClass("bg-muted-foreground/70");
-    expect(segments[1]).toHaveClass("bg-muted-foreground/20");
-    expect(segments[2]).toHaveClass("bg-muted-foreground/20");
+    expect(segments[0]).toHaveClass("bg-zinc-500");
+    expect(segments[1]).toHaveClass("bg-zinc-500/25");
+    expect(segments[2]).toHaveClass("bg-zinc-500/25");
   });
 });
