@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Bookmark, Bell, FileText, Zap, ArrowRight, ExternalLink } from "lucide-react";
+import { Bookmark, Bell, FileText, Zap, ArrowRight, ExternalLink, Compass } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { OverviewHeroPanel } from "@/components/overview/OverviewHeroPanel";
@@ -15,6 +15,8 @@ import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { cn } from "@/lib/utils";
 import { jobPassesLens } from "@/lib/jobEligibility";
 import { computeWeeklyFunnelSummary, listFollowUpNudges } from "@/lib/applicationFunnel";
+import { suitabilityScore } from "@/lib/jobRanking";
+import { FitIndicator } from "@/components/jobs/FitIndicator";
 
 import type { OverviewSignalStripItem } from "@/components/overview/types";
 
@@ -144,7 +146,9 @@ export default function Index() {
         .select(
           "is_active,is_target_role,is_noise,relevance_score,headline,career_stage,career_stage_confidence," +
             "years_required_min,swedish_required,citizenship_required,security_clearance_required,reason_codes," +
-            "source_kind,source_feed_key,published_at,source_feed_registry(enabled,high_signal_eligible,quality_band)",
+            "source_kind,source_feed_key,published_at,id,employer_name,company_canonical,role_family_confidence," +
+            "application_deadline,company_tier,is_direct_company_source," +
+            "source_feed_registry(enabled,high_signal_eligible,quality_band)",
         )
         .eq("is_active", true)
         .limit(300);
@@ -162,9 +166,13 @@ export default function Index() {
           false,
         ),
       );
+      const ranked = [...rows]
+        .sort((a, b) => (Number(b.relevance_score) || 0) - (Number(a.relevance_score) || 0))
+        .slice(0, 4);
       return {
         total: rows.length,
         newThisWeek: rows.filter((job) => Date.parse(String(job.published_at || "")) >= weekAgo).length,
+        topRows: ranked,
       };
     },
   });
@@ -405,6 +413,7 @@ export default function Index() {
     [funnelApplicationsQuery.data],
   );
   const topFollowUpNudge = followUpNudges[0] ?? null;
+  const topMatches = highSignalSnapshotQuery.data?.topRows ?? [];
 
   const pipelineAppliedCount = pipelineQuery.data?.applied ?? 0;
   const pipelineInterviewCount = pipelineQuery.data?.interviewing ?? 0;
@@ -598,6 +607,43 @@ export default function Index() {
                       <ArrowRight className="h-4 w-4" />
                     </Link>
                   </Button>
+                </CardContent>
+              </Card>
+            </FadeUp>
+          ) : null}
+
+          {user && topMatches.length > 0 ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-border/60 bg-card/80">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between">
+                    <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      <Compass className="h-3 w-3" /> Top matches for you
+                    </p>
+                    <Link to="/jobs" className="text-xs text-muted-foreground hover:text-foreground">
+                      See all →
+                    </Link>
+                  </div>
+                  <div className="mt-3 space-y-1">
+                    {topMatches.map((job) => {
+                      const fit = suitabilityScore(job, {});
+                      return (
+                        <Link
+                          key={job.id}
+                          to={`/jobs?selected=${job.id}`}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background/30 px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-muted/30"
+                        >
+                          <div className="min-w-0">
+                            <p className="line-clamp-1 text-sm font-medium text-foreground">{job.headline}</p>
+                            <p className="line-clamp-1 text-xs text-muted-foreground">
+                              {job.company_canonical || job.employer_name}
+                            </p>
+                          </div>
+                          <FitIndicator label={fit.label} score={fit.score} />
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </CardContent>
               </Card>
             </FadeUp>

@@ -269,6 +269,22 @@ describe("Jobs page", () => {
     });
   });
 
+  it("opens detail panel from ?selected= deep link", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <MemoryRouter initialEntries={["/jobs?selected=1"]}>
+        <QueryClientProvider client={queryClient}>
+          <Jobs />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Backend Engineer", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Read description/i })).toBeInTheDocument();
+  });
+
   it("restores search filters from the URL", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
