@@ -72,6 +72,7 @@ import {
   isArchivedApplication,
   matchesApplicationMomentum,
 } from "@/lib/applications";
+import { computeWeeklyFunnelSummary } from "@/lib/applicationFunnel";
 import { DEFAULT_COVER_LETTER_TEMPLATE, renderCoverLetter } from "@/lib/coverLetter";
 import { getUserProfile } from "@/lib/profile";
 import { resetTrackedJobAfterApplicationDelete } from "@/lib/trackedJobsSync";
@@ -704,6 +705,10 @@ export default function Applications() {
     () => computeApplicationMomentum(applicationsQuery.data ?? []),
     [applicationsQuery.data],
   );
+  const weeklyFunnel = useMemo(
+    () => computeWeeklyFunnelSummary(applicationsQuery.data ?? []),
+    [applicationsQuery.data],
+  );
   const editingStatusTimeline = useMemo(
     () => parseStatusHistory(editingApplication?.status_history),
     [editingApplication?.status_history],
@@ -1255,6 +1260,27 @@ export default function Applications() {
           </div>
         </div>
 
+        <Card className="border-border/50 bg-card/60">
+          <CardContent className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Submitted this week</p>
+              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.submittedThisWeek}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Status updates</p>
+              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.statusChangesThisWeek}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Responses logged</p>
+              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.responsesThisWeek}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Follow-ups due</p>
+              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.followUpDue}</p>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <button
             type="button"
@@ -1294,7 +1320,7 @@ export default function Applications() {
               <CardContent className="p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Follow-up due</p>
                 <p className="mt-2 text-2xl font-semibold">{momentum.followUpDue}</p>
-                <p className="mt-1 text-xs text-muted-foreground">No reply after 10 days</p>
+                <p className="mt-1 text-xs text-muted-foreground">Applied 14+ days with no status change</p>
               </CardContent>
             </Card>
           </button>

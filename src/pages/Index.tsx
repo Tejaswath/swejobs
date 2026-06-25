@@ -14,6 +14,7 @@ import { useInAppAlerts } from "@/hooks/useInAppAlerts";
 import { useDelayedVisibility } from "@/hooks/useDelayedVisibility";
 import { cn } from "@/lib/utils";
 import { jobPassesLens } from "@/lib/jobEligibility";
+import { computeWeeklyFunnelSummary, listFollowUpNudges } from "@/lib/applicationFunnel";
 
 import type { OverviewSignalStripItem } from "@/components/overview/types";
 
@@ -417,6 +418,29 @@ export default function Index() {
       })
       .slice(0, 3);
   }, [recentActivityQuery.data, recentCapturedQuery.data]);
+  const funnelApplicationsQuery = useQuery({
+    queryKey: ["overview-funnel-applications", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("applications")
+        .select("id, company, job_title, status, applied_at, updated_at, status_history")
+        .eq("user_id", user!.id);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const weeklyFunnelSummary = useMemo(
+    () => computeWeeklyFunnelSummary(funnelApplicationsQuery.data ?? []),
+    [funnelApplicationsQuery.data],
+  );
+  const followUpNudges = useMemo(
+    () => listFollowUpNudges(funnelApplicationsQuery.data ?? []),
+    [funnelApplicationsQuery.data],
+  );
+  const topFollowUpNudge = followUpNudges[0] ?? null;
+
   const pipelineAppliedCount = pipelineQuery.data?.applied ?? 0;
   const pipelineInterviewCount = pipelineQuery.data?.interviewing ?? 0;
   const pipelineOfferCount = pipelineQuery.data?.offer ?? 0;
@@ -470,6 +494,14 @@ export default function Index() {
       accentClassName: unreadAlertCount > 0 ? "text-amber-200" : "text-foreground",
       tone: unreadAlertCount > 0 ? "due" : "neutral",
       pulse: unreadAlertCount > 0,
+    },
+    {
+      label: "Follow-ups due",
+      value: <AnimatedNumber value={weeklyFunnelSummary.followUpDue} />,
+      href: "/applications?momentum=follow_up",
+      accentClassName: weeklyFunnelSummary.followUpDue > 0 ? "text-amber-200" : "text-foreground",
+      tone: weeklyFunnelSummary.followUpDue > 0 ? "due" : "neutral",
+      pulse: weeklyFunnelSummary.followUpDue > 0,
     },
     {
       label: "Awaiting response",
@@ -599,6 +631,30 @@ export default function Index() {
                   Dismiss
                 </Button>
               </div>
+            </FadeUp>
+          ) : null}
+
+          {user && topFollowUpNudge ? (
+            <FadeUp>
+              <Card className="rounded-[24px] border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] via-card/80 to-card/80">
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-amber-200/90">Follow-up nudge</p>
+                    <p className="line-clamp-1 text-sm font-medium text-foreground">
+                      {topFollowUpNudge.company} · {topFollowUpNudge.jobTitle}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Applied {topFollowUpNudge.daysInStatus} days ago with no status change
+                    </p>
+                  </div>
+                  <Button asChild size="sm" className="h-9 shrink-0 rounded-xl">
+                    <Link to={topFollowUpNudge.href}>
+                      Review application
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
             </FadeUp>
           ) : null}
 
