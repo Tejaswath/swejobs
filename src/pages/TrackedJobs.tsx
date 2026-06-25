@@ -171,7 +171,7 @@ export default function TrackedJobs() {
             <Bookmark className="mb-4 h-12 w-12 text-muted-foreground/30" />
             <h2 className="text-lg font-medium">No saved jobs yet</h2>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              Save jobs from Explore to keep track of roles you&apos;re interested in before you apply.
+              Save roles from Explore to build your shortlist.
             </p>
             <Link to="/jobs" className="mt-5">
               <Button className="gap-2">

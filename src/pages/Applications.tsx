@@ -1493,7 +1493,7 @@ export default function Applications() {
                     {(applicationsQuery.data?.length ?? 0) > 0 ? "No applications match this view" : "No applications yet"}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Mark SweJobs roles as applied to bring them here automatically, or add your outside applications manually.
+                    Mark roles applied or capture with the extension to track them here.
                   </p>
                 </div>
                 <Button className="gap-2" onClick={openCreateDialog}>

@@ -59,7 +59,7 @@ import {
   jobPassesLens,
   numberValue,
 } from "@/lib/jobEligibility";
-import { primarySuitabilityReason, suitabilityScore } from "@/lib/jobRanking";
+import { suitabilityScore } from "@/lib/jobRanking";
 import {
   aggregatePersonalFeedbackDelta,
   profileHeadlineBoost,
@@ -964,19 +964,6 @@ export default function Jobs() {
     }, {});
   }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, userProfile, userRankingState, watchedSet]);
 
-  const fitLabelByJobId = useMemo(() => {
-    const scored = rankAndFilterJobs
-      .map((j) => ({ id: j.id, score: suitabilityByJobId[j.id]?.score ?? 0 }))
-      .sort((a, b) => b.score - a.score);
-    const n = scored.length;
-    const out: Record<number, "Strong" | "Possible" | "Stretch"> = {};
-    scored.forEach((row, i) => {
-      const pct = n <= 1 ? 0 : i / (n - 1);
-      out[row.id] = pct <= 0.2 ? "Strong" : pct <= 0.55 ? "Possible" : "Stretch";
-    });
-    return out;
-  }, [rankAndFilterJobs, suitabilityByJobId]);
-
   const sortedJobs = useMemo(() => {
     const rows = [...rankAndFilterJobs];
     if (rows.length <= 1) return rows;
@@ -1489,7 +1476,15 @@ export default function Jobs() {
       watched: watchedSet.has(canonical),
     });
   }, [detail, detailAtsResult?.score, suitabilityByJobId, watchedSet]);
-  const detailFitReason = detailSuitability ? primarySuitabilityReason(detailSuitability) : null;
+  const detailFitReason = useMemo(() => {
+    if (!detailSuitability) return null;
+    return (
+      detailSuitability.reasons.find(
+        (candidate) =>
+          candidate !== "Relevant software role" && !/resume match/i.test(candidate),
+      ) ?? null
+    );
+  }, [detailSuitability]);
   const detailRestrictions = useMemo(() => {
     if (!detail) return [];
     const restrictions: string[] = [];
@@ -1773,6 +1768,19 @@ export default function Jobs() {
             </Button>
           )}
         </div>
+
+        {user && !activeAtsResume?.parsed_text ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm text-muted-foreground">
+            Add a résumé to see how you fit each role.{" "}
+            <Button
+              variant="link"
+              className="h-auto p-0 text-sm"
+              onClick={() => setResumeUploadOpen(true)}
+            >
+              Upload résumé
+            </Button>
+          </div>
+        ) : null}
 
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -2074,11 +2082,8 @@ export default function Jobs() {
                                 {(job.lang === "sv" ? job.headline_en : null) || job.headline}
                               </h3>
                               <div className="flex shrink-0 items-center gap-1.5">
-                                {suitability ? (
-                                  <FitIndicator
-                                    label={fitLabelByJobId[job.id] ?? suitability.label}
-                                    score={suitability.score}
-                                  />
+                                {activeAtsResume?.parsed_text && suitability ? (
+                                  <FitIndicator label={suitability.label} score={suitability.score} />
                                 ) : null}
                                 {statusIcons.map((item) => (
                                   <span key={item.key}>{item.node}</span>
@@ -2385,15 +2390,24 @@ export default function Jobs() {
                       </div>
                     ) : null}
 
-                    {detailSuitability ? (
+                    {activeAtsResume?.parsed_text && detailSuitability ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        <FitIndicator
-                          label={fitLabelByJobId[detail.id as number] ?? detailSuitability.label}
-                          score={detailSuitability.score}
-                        />
+                        <FitIndicator label={detailSuitability.label} score={detailSuitability.score} />
                         {detailFitReason ? (
                           <span className="text-xs text-muted-foreground">— {detailFitReason}</span>
                         ) : null}
+                      </div>
+                    ) : null}
+
+                    {user && !activeAtsResume?.parsed_text ? (
+                      <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
+                        <h3 className="text-sm font-semibold">See keyword match details</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Add a résumé to compare your skills with the job requirements without leaving Explore.
+                        </p>
+                        <Button size="sm" className="mt-3 gap-1.5" onClick={() => setResumeUploadOpen(true)}>
+                          <FileUp className="h-3.5 w-3.5" /> Add résumé to see your fit
+                        </Button>
                       </div>
                     ) : null}
 
@@ -2553,16 +2567,6 @@ export default function Jobs() {
                           </CollapsibleContent>
                         </div>
                       </Collapsible>
-                    ) : user ? (
-                      <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
-                        <h3 className="text-sm font-semibold">See keyword match details</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Add a résumé to compare your skills with the job requirements without leaving Explore.
-                        </p>
-                        <Button size="sm" className="mt-3 gap-1.5" onClick={() => setResumeUploadOpen(true)}>
-                          <FileUp className="h-3.5 w-3.5" /> Add résumé to see your fit
-                        </Button>
-                      </div>
                     ) : null}
 
                     {user && (

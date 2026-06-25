@@ -286,7 +286,7 @@ export default function SavedSearches() {
             <Search className="h-12 w-12 text-muted-foreground/30 mb-4" />
             <h2 className="text-lg font-medium">No saved searches yet</h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-              Create a search to get notified when new jobs match your criteria
+              Save a search to get notified when matching roles appear.
             </p>
             <Button size="sm" className="mt-5 gap-1.5" onClick={() => setOpen(true)}>
               <Plus className="h-4 w-4" /> Create your first search
