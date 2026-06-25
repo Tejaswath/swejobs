@@ -33,6 +33,7 @@ import {
   FileUp,
   RotateCcw,
   FileText,
+  ArrowDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -349,6 +350,7 @@ export default function Jobs() {
           : "none";
 
   const listRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     syncingFromUrlRef.current = true;
@@ -364,6 +366,20 @@ export default function Jobs() {
       syncingFromUrlRef.current = false;
     });
   }, [lensParam, searchParams]);
+
+  useEffect(() => {
+    const selectedParam = searchParams.get("selected");
+    if (selectedParam) {
+      const id = Number(selectedParam);
+      if (Number.isFinite(id)) {
+        setSelectedId(id);
+        const next = new URLSearchParams(searchParams);
+        next.delete("selected");
+        setSearchParams(next, { replace: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (syncingFromUrlRef.current) return;
@@ -948,6 +964,19 @@ export default function Jobs() {
     }, {});
   }, [activeAtsResume?.parsed_text, atsByJobId, rankAndFilterJobs, userProfile, userRankingState, watchedSet]);
 
+  const fitLabelByJobId = useMemo(() => {
+    const scored = rankAndFilterJobs
+      .map((j) => ({ id: j.id, score: suitabilityByJobId[j.id]?.score ?? 0 }))
+      .sort((a, b) => b.score - a.score);
+    const n = scored.length;
+    const out: Record<number, "Strong" | "Possible" | "Stretch"> = {};
+    scored.forEach((row, i) => {
+      const pct = n <= 1 ? 0 : i / (n - 1);
+      out[row.id] = pct <= 0.2 ? "Strong" : pct <= 0.55 ? "Possible" : "Stretch";
+    });
+    return out;
+  }, [rankAndFilterJobs, suitabilityByJobId]);
+
   const sortedJobs = useMemo(() => {
     const rows = [...rankAndFilterJobs];
     if (rows.length <= 1) return rows;
@@ -1064,17 +1093,12 @@ export default function Jobs() {
   }, [page, totalPages]);
 
   useEffect(() => {
-    if (jobs.length === 0) {
-      setSelectedId(null);
-      setSelectedIdx(-1);
-      return;
-    }
+    if (isLoading) return;
     if (selectedId == null) return;
     if (!jobs.some((job) => job.id === selectedId)) {
-      setSelectedId(null);
       setSelectedIdx(-1);
     }
-  }, [jobs, selectedId]);
+  }, [jobs, selectedId, isLoading]);
 
   const hasActiveFilters =
     deadlineFocus !== "none" ||
@@ -1254,6 +1278,13 @@ export default function Jobs() {
   const [showJobMetadata, setShowJobMetadata] = useState(false);
   const [showOriginalDescription, setShowOriginalDescription] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
+
+  const handleJumpToDescription = () => {
+    setShowFullDescription(true);
+    window.setTimeout(() => {
+      descriptionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
 
   useEffect(() => {
     if (tracking) {
@@ -2044,7 +2075,10 @@ export default function Jobs() {
                               </h3>
                               <div className="flex shrink-0 items-center gap-1.5">
                                 {suitability ? (
-                                  <FitIndicator label={suitability.label} score={suitability.score} />
+                                  <FitIndicator
+                                    label={fitLabelByJobId[job.id] ?? suitability.label}
+                                    score={suitability.score}
+                                  />
                                 ) : null}
                                 {statusIcons.map((item) => (
                                   <span key={item.key}>{item.node}</span>
@@ -2268,6 +2302,14 @@ export default function Jobs() {
                           </a>
                         </Button>
                       )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
+                        onClick={handleJumpToDescription}
+                      >
+                        <FileText className="h-3 w-3" /> Read description <ArrowDown className="h-3 w-3" />
+                      </Button>
                       {user && (
                         <>
                           <Button
@@ -2345,7 +2387,10 @@ export default function Jobs() {
 
                     {detailSuitability ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        <FitIndicator label={detailSuitability.label} score={detailSuitability.score} />
+                        <FitIndicator
+                          label={fitLabelByJobId[detail.id as number] ?? detailSuitability.label}
+                          score={detailSuitability.score}
+                        />
                         {detailFitReason ? (
                           <span className="text-xs text-muted-foreground">— {detailFitReason}</span>
                         ) : null}
@@ -2541,7 +2586,10 @@ export default function Jobs() {
                     )}
 
                     <Collapsible open={showFullDescription} onOpenChange={setShowFullDescription}>
-                      <div className="rounded-xl border border-border/60 border-l-4 border-l-foreground/20 bg-muted/20">
+                      <div
+                        ref={descriptionRef}
+                        className="scroll-mt-4 rounded-xl border border-border/60 border-l-4 border-l-foreground/20 bg-muted/20"
+                      >
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" className="flex h-11 w-full justify-between rounded-xl px-4 text-sm font-medium text-foreground hover:bg-muted/30">
                             Job description
