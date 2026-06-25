@@ -50,8 +50,8 @@ type RecentCapturedApplication = {
 
 type PipelineStatus = "applied" | "oa" | "interviewing" | "offer" | "rejected";
 
-const ONBOARDING_DISMISSED_KEY = "swejobs.overview.onboarding.dismissed.v1";
 const OVERVIEW_LAST_VISIT_KEY = "swejobs.overview.last-visit.v1";
+const VALUE_PROP_LINE = "Find the few roles worth your time, see your fit, apply, track.";
 
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -105,20 +105,11 @@ function relativeTime(value: string): string {
 export default function Index() {
   const { user } = useAuth();
   const { alerts: inAppAlerts, unreadCount: unreadAlertCount, markAlertRead } = useInAppAlerts(user?.id);
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [previousVisitIso, setPreviousVisitIso] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "SweJobs — Swedish Tech Job Tracker";
   }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setOnboardingDismissed(false);
-      return;
-    }
-    setOnboardingDismissed(localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "true");
-  }, [user]);
 
   useEffect(() => {
     const previous = localStorage.getItem(OVERVIEW_LAST_VISIT_KEY);
@@ -254,32 +245,6 @@ export default function Index() {
         .gt("published_at", previousVisitIso!);
       if (error) throw error;
       return count ?? 0;
-    },
-  });
-
-  const onboardingProgressQuery = useQuery({
-    queryKey: ["onboarding-progress", user?.id],
-    enabled: !!user,
-    queryFn: async () => {
-      const [resumeResult, searchResult] = await Promise.all([
-        supabase
-          .from("resume_versions")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user!.id)
-          .not("storage_path", "is", null),
-        supabase
-          .from("saved_searches")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user!.id),
-      ]);
-
-      if (resumeResult.error) throw resumeResult.error;
-      if (searchResult.error) throw searchResult.error;
-
-      return {
-        resumeCount: resumeResult.count ?? 0,
-        searchCount: searchResult.count ?? 0,
-      };
     },
   });
 
@@ -461,11 +426,6 @@ export default function Index() {
     };
   }, [groupedDeadlines]);
 
-  const recentActionLabel = (kind: RecentActivityItem["kind"]) => {
-    if (kind === "application" || kind === "captured") return "Follow up";
-    return "Review";
-  };
-
   const topUnreadAlerts = useMemo(
     () => inAppAlerts.filter((alert) => !alert.read_at).slice(0, 3),
     [inAppAlerts],
@@ -474,6 +434,7 @@ export default function Index() {
   const signalItems: OverviewSignalStripItem[] = [
     {
       label: "Due today",
+      rawValue: groupedDeadlines.today.length,
       value: <AnimatedNumber value={groupedDeadlines.today.length} />,
       href: "/jobs?deadline=today",
       accentClassName: groupedDeadlines.today.length > 0 ? "text-rose-200" : "text-foreground",
@@ -482,6 +443,7 @@ export default function Index() {
     },
     {
       label: "High signal",
+      rawValue: highSignalSnapshotQuery.data?.total ?? 0,
       value: <AnimatedNumber value={highSignalSnapshotQuery.data?.total ?? 0} />,
       href: "/jobs?lens=high_signal",
       accentClassName: "text-foreground",
@@ -489,6 +451,7 @@ export default function Index() {
     },
     {
       label: "Alerts",
+      rawValue: unreadAlertCount,
       value: <AnimatedNumber value={unreadAlertCount} />,
       href: "/searches",
       accentClassName: unreadAlertCount > 0 ? "text-amber-200" : "text-foreground",
@@ -497,6 +460,7 @@ export default function Index() {
     },
     {
       label: "Follow-ups due",
+      rawValue: weeklyFunnelSummary.followUpDue,
       value: <AnimatedNumber value={weeklyFunnelSummary.followUpDue} />,
       href: "/applications?momentum=follow_up",
       accentClassName: weeklyFunnelSummary.followUpDue > 0 ? "text-amber-200" : "text-foreground",
@@ -505,38 +469,13 @@ export default function Index() {
     },
     {
       label: "Awaiting response",
+      rawValue: pipelineAppliedCount,
       value: <AnimatedNumber value={pipelineAppliedCount} />,
       href: "/applications?momentum=awaiting",
       accentClassName: pipelineAppliedCount > 0 ? "text-sky-200" : "text-foreground",
     },
   ];
-
-  const onboardingProgress = onboardingProgressQuery.data ?? {
-    resumeCount: 0,
-    searchCount: 0,
-  };
-  const onboardingTasks = [
-    {
-      id: "resume",
-      done: onboardingProgress.resumeCount > 0,
-      label: "Upload a resume",
-      href: "/resumes",
-    },
-    {
-      id: "watchlist",
-      done: watchlistHighlights.length >= 3,
-      label: "Watch 3 companies",
-      href: "/jobs",
-    },
-    {
-      id: "searches",
-      done: onboardingProgress.searchCount > 0,
-      label: "Save your first search",
-      href: "/searches",
-    },
-  ];
-  const onboardingRemaining = onboardingTasks.filter((task) => !task.done);
-  const showOnboardingChecklist = !!user && !onboardingDismissed && onboardingRemaining.length > 0;
+  const visibleSignalItems = signalItems.filter((item) => item.rawValue > 0);
 
   const isReturningUser = !!user && ((recentActivityQuery.data?.length ?? 0) > 0 || watchlistHighlights.length > 0);
   const currentHour = new Date().getHours();
@@ -554,11 +493,17 @@ export default function Index() {
         : `${(jobCountQuery.data ?? 0).toLocaleString()} active ${
             (jobCountQuery.data ?? 0) === 1 ? "role" : "roles"
           } from connected sources.`
-    : isReturningUser
-      ? (newRolesSinceLastVisitQuery.data ?? 0) > 0
-        ? `${newRolesSinceLastVisitQuery.data} new roles since your last visit.`
-        : undefined
-      : undefined;
+    : (() => {
+        const newRoles = newRolesSinceLastVisitQuery.data ?? 0;
+        if (newRoles > 0) {
+          return `${newRoles} new ${newRoles === 1 ? "role" : "roles"} since your last visit · ${VALUE_PROP_LINE}`;
+        }
+        return VALUE_PROP_LINE;
+      })();
+
+  const hasFocalAction = !!(user && (todaysMove || topFollowUpNudge));
+  const primaryActionClassName =
+    "h-9 shrink-0 rounded-xl bg-gradient-to-r from-primary to-primary/80 px-4 text-sm shadow-lg shadow-primary/20 hover:shadow-primary/30";
 
   const showHeroSignalsLoading = useDelayedVisibility(
     highSignalSnapshotQuery.isLoading || upcomingDeadlinesQuery.isLoading,
@@ -597,11 +542,12 @@ export default function Index() {
         <StaggerContainer className="relative space-y-4">
           <FadeUp>
             <OverviewHeroPanel
-              signalItems={signalItems}
+              signalItems={visibleSignalItems}
               headline={heroHeadline}
               subtext={heroSubtext}
               primaryActionLabel="Explore roles"
               primaryActionHref="/jobs"
+              primaryActionVariant={hasFocalAction ? "outline" : "default"}
               secondaryAction={!user ? { label: "Sign up free", href: "/auth" } : null}
               isSignalsLoading={showHeroSignalsLoading}
               signalsUnavailable={heroSignalsUnavailable}
@@ -609,32 +555,7 @@ export default function Index() {
             />
           </FadeUp>
 
-          {showOnboardingChecklist ? (
-            <FadeUp>
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/50 bg-background/30 px-4 py-3">
-                <Link
-                  to={onboardingRemaining[0]?.href ?? "/jobs"}
-                  className="text-sm text-muted-foreground hover:text-foreground"
-                >
-                  {onboardingRemaining.length} setup {onboardingRemaining.length === 1 ? "step" : "steps"} left —{" "}
-                  <span className="text-foreground">{onboardingRemaining[0]?.label ?? "Continue setup"}</span>
-                </Link>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
-                  onClick={() => {
-                    localStorage.setItem(ONBOARDING_DISMISSED_KEY, "true");
-                    setOnboardingDismissed(true);
-                  }}
-                >
-                  Dismiss
-                </Button>
-              </div>
-            </FadeUp>
-          ) : null}
-
-          {user && topFollowUpNudge ? (
+          {user && topFollowUpNudge && !todaysMove ? (
             <FadeUp>
               <Card className="rounded-[24px] border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] via-card/80 to-card/80">
                 <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
@@ -647,7 +568,7 @@ export default function Index() {
                       Applied {topFollowUpNudge.daysInStatus} days ago with no status change
                     </p>
                   </div>
-                  <Button asChild size="sm" className="h-9 shrink-0 rounded-xl">
+                  <Button asChild size="sm" className={primaryActionClassName}>
                     <Link to={topFollowUpNudge.href}>
                       Review application
                       <ArrowRight className="h-4 w-4" />
@@ -671,7 +592,7 @@ export default function Index() {
                       Application deadline {todaysMove.deadline ? new Date(`${todaysMove.deadline}T00:00:00`).toLocaleDateString("en-SE", { month: "short", day: "numeric" }) : "soon"}
                     </p>
                   </div>
-                  <Button asChild size="sm" className="h-9 shrink-0 rounded-xl">
+                  <Button asChild size="sm" className={primaryActionClassName}>
                     <Link to={todaysMove.href}>
                       Review role
                       <ArrowRight className="h-4 w-4" />
@@ -789,7 +710,6 @@ export default function Index() {
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
-                              <span className="text-xs font-medium text-primary">{recentActionLabel(item.kind)}</span>
                               <span className="text-xs text-muted-foreground">{relativeTime(item.at)}</span>
                             </div>
                           </Link>

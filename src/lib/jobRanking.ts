@@ -119,6 +119,6 @@ export function suitabilityScore(job: RankingJob, context: RankingContext = {}):
 
   score += Math.max(-15, Math.min(15, numberValue(context.feedbackDelta)));
   score = Math.max(0, Math.min(100, Math.round(score)));
-  const label = score >= 70 ? "Strong" : score >= 45 ? "Possible" : "Stretch";
+  const label = score >= 78 ? "Strong" : score >= 55 ? "Possible" : "Stretch";
   return { score, label, reasons: reasons.slice(0, 3) };
 }

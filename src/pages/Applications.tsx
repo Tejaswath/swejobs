@@ -709,6 +709,16 @@ export default function Applications() {
     () => computeWeeklyFunnelSummary(applicationsQuery.data ?? []),
     [applicationsQuery.data],
   );
+  const weeklyFunnelTiles = useMemo(
+    () =>
+      [
+        { key: "submitted", label: "Submitted this week", value: weeklyFunnel.submittedThisWeek },
+        { key: "updates", label: "Status updates", value: weeklyFunnel.statusChangesThisWeek },
+        { key: "responses", label: "Responses logged", value: weeklyFunnel.responsesThisWeek },
+        { key: "followups", label: "Follow-ups due", value: weeklyFunnel.followUpDue },
+      ].filter((tile) => tile.value > 0),
+    [weeklyFunnel],
+  );
   const editingStatusTimeline = useMemo(
     () => parseStatusHistory(editingApplication?.status_history),
     [editingApplication?.status_history],
@@ -1261,27 +1271,24 @@ export default function Applications() {
         </div>
 
         <Card className="border-border/50 bg-card/60">
-          <CardContent className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Submitted this week</p>
-              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.submittedThisWeek}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Status updates</p>
-              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.statusChangesThisWeek}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Responses logged</p>
-              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.responsesThisWeek}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Follow-ups due</p>
-              <p className="mt-2 text-2xl font-semibold">{weeklyFunnel.followUpDue}</p>
-            </div>
+          <CardContent className="p-4">
+            {weeklyFunnelTiles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No application activity this week yet.</p>
+            ) : (
+              <div className={cn("grid gap-4", weeklyFunnelTiles.length >= 2 ? "sm:grid-cols-2" : "", weeklyFunnelTiles.length >= 3 ? "lg:grid-cols-3" : "")}>
+                {weeklyFunnelTiles.map((tile) => (
+                  <div key={tile.key}>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{tile.label}</p>
+                    <p className="mt-2 text-2xl font-semibold">{tile.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {momentum.awaitingResponse > 0 ? (
           <button
             type="button"
             aria-pressed={momentumFilter === "awaiting"}
@@ -1303,6 +1310,8 @@ export default function Applications() {
               </CardContent>
             </Card>
           </button>
+          ) : null}
+          {momentum.followUpDue > 0 ? (
           <button
             type="button"
             aria-pressed={momentumFilter === "follow_up"}
@@ -1324,6 +1333,8 @@ export default function Applications() {
               </CardContent>
             </Card>
           </button>
+          ) : null}
+          {momentum.activeThisWeek > 0 ? (
           <button
             type="button"
             aria-pressed={momentumFilter === "active_week"}
@@ -1345,6 +1356,7 @@ export default function Applications() {
               </CardContent>
             </Card>
           </button>
+          ) : null}
           <Card className="border-border/40 border-t-2 border-t-emerald-500/40 bg-card/60">
             <CardContent className="p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Response Rate</p>

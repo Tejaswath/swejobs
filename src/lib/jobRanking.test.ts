@@ -18,6 +18,23 @@ describe("primarySuitabilityReason", () => {
   });
 });
 
+describe("suitabilityScore labels", () => {
+  it("reserves Strong for higher scores after threshold tuning", () => {
+    const midHigh = suitabilityScore(
+      {
+        is_target_role: true,
+        career_stage: "graduate",
+        career_stage_confidence: 0.9,
+        role_family_confidence: 0.95,
+      },
+      { atsMatch: 5, now: new Date("2026-06-14T00:00:00Z") },
+    );
+    expect(midHigh.score).toBeGreaterThanOrEqual(55);
+    expect(midHigh.score).toBeLessThan(78);
+    expect(midHigh.label).toBe("Possible");
+  });
+});
+
 describe("suitability ranking invariants", () => {
   for (const fixture of fixtures) {
     it(fixture.name, () => {

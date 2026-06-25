@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 export type OverviewSignalStripItem = {
   label: string;
+  rawValue: number;
   value: ReactNode;
   href: string;
   accentClassName?: string;

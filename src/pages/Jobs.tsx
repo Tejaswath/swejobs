@@ -44,6 +44,7 @@ import {
   providerLabel,
 } from "@/lib/companyRegistry";
 import { JobDescriptionPanel } from "@/components/jobs/JobDescriptionPanel";
+import { FitIndicator } from "@/components/jobs/FitIndicator";
 import { buildSweJobsApplication } from "@/lib/applications";
 import { jobRecordToAtsKeywordInput, matchResumeToJob, type AtsScanResult } from "@/lib/ats";
 import { deadlineUrgencyClass, listCareerLabel, listLocationHint } from "@/lib/jobListDisplay";
@@ -2044,28 +2045,7 @@ export default function Jobs() {
                               </h3>
                               <div className="flex shrink-0 items-center gap-1.5">
                                 {suitability ? (
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span>
-                                          <Badge
-                                            variant="outline"
-                                            className={cn(
-                                              "h-4 px-1.5 text-[9px] font-normal",
-                                              suitability.label === "Strong" && "border-primary/30 text-primary",
-                                              suitability.label === "Possible" && "border-sky-500/30 text-sky-300",
-                                              suitability.label === "Stretch" && "border-muted-foreground/30 text-muted-foreground",
-                                            )}
-                                          >
-                                            {suitability.label} fit
-                                          </Badge>
-                                        </span>
-                                      </TooltipTrigger>
-                                      <TooltipContent className="max-w-xs text-xs">
-                                        {suitability.score}/100 — role relevance, career stage, résumé match, source quality, and your preferences.
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
+                                  <FitIndicator label={suitability.label} score={suitability.score} />
                                 ) : null}
                                 {statusIcons.map((item) => (
                                   <span key={item.key}>{item.node}</span>
@@ -2350,10 +2330,12 @@ export default function Jobs() {
                     ) : null}
 
                     {detailSuitability ? (
-                      <p className="text-xs text-muted-foreground">
-                        {detailSuitability.label} fit
-                        {detailFitReason ? ` — ${detailFitReason}` : ""}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FitIndicator label={detailSuitability.label} score={detailSuitability.score} />
+                        {detailFitReason ? (
+                          <span className="text-xs text-muted-foreground">— {detailFitReason}</span>
+                        ) : null}
+                      </div>
                     ) : null}
 
                     <Collapsible open={showJobMetadata} onOpenChange={setShowJobMetadata}>
